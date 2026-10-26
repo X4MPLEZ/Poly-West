@@ -50,7 +50,8 @@ class NPC {
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
   canBeHeard() { return this.room ? G.room === this.room : Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
-  speak(text, dur, mood) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood); return true; }
+  // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
+  speak(text, dur, mood, keep) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w

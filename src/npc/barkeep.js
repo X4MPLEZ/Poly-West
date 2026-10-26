@@ -11,28 +11,54 @@ const BARKEEP = {
   X: { stand: 4.8, pour: 4.42, back: 5.2, pourSpot: 3.82 }, Z0: -9.7, Z1: -3.3,
   props: {}, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _m: new THREE.Matrix4(), _q: new THREE.Matrix4(),
   cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0, sc: null, damage: { holes: 0, glass: 0 },
-  // in which mood each kind of line is said (see VOICE.MOODS)
-  MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
-    leave: 'amused', shot: 'angry', smash: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
+  // in which mood each kind of line is said (see VOICE.MOODS); a line can bring its own: [text, mood]
+  MOOD: { hello: 'neutral', helloNew: 'neutral', helloBack: 'amused', helloAngry: 'disgusted', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'neutral', bottle: 'surprised',
+    tipsy: 'amused', drunk: 'disgusted', leave: 'amused', shot: 'angry', smash: 'angry', aimed: 'neutral', aimed2: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry',
+    broke: 'disgusted', cheers: 'amused', thanks: 'neutral', bye: 'neutral', price: 'neutral', refuse: 'disgusted' },
+  /* ready-made lines: each kind is a bag that is used up before a line comes again (and never twice in a row).
+     They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
   LINES: {
-    hello: ['Howdy, Fremder.', 'Willkommen im Saloon.', 'Na, wieder Durst?', 'Komm rein, setz dich.'],
-    what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
-    whiskey: ['Ein Whiskey. Kommt sofort.', 'Whiskey, sauber.', 'Einer vom Guten.'],
-    beer: ['Ein kühles Bier.', 'Bier kommt.', 'Frisch vom Fass. Fast.'],
-    water: ['Wasser? Na gut.', 'Wasser… wie du meinst.', 'Ein Wasser für den Herrn.'],
-    bottle: ['Die ganze Flasche? Respekt.', 'Teil sie dir ein.', 'Für die lange Nacht, was?'],
-    tipsy: ['Langsam, Freund.', 'Du schwankst ja schon.', 'Noch einen? Na schön.'],
-    drunk: ['Ich glaub, du hast genug.', 'Der Boden bewegt sich nicht. Das bist du.', 'Letzter, dann ist Schluss.'],
-    leave: ['Geh schlafen, Cowboy.', 'Komm gut heim!', 'Pass auf die Stufe auf.'],
-    shot: ['Nicht in meinem Saloon!', 'Steck das Ding weg!', 'Bist du verrückt geworden?!'],
-    aimed: ['Ganz ruhig, Mister…', 'Nimm das Ding runter.', 'Die Kasse ist leer, ehrlich.'],
-    punch: ['Keine Prügelei hier drin!', 'Raus damit auf die Straße!'],
-    fall: ['Hoppla! Alles noch dran?', 'Steh auf, der Boden ist dreckig.'],
-    behind: ['He! Hinter die Theke gehört nur einer.', 'Raus aus meinem Revier.'],
-    broke: ['Erst Geld, dann Whiskey.', 'Anschreiben gibt’s nicht.'],
-    cheers: ['Prost.', 'Wohl bekomm’s.'],
-    smash: ['Das zahlst du.', 'Hände weg von meinem Glas!', 'Noch eins, und du fliegst raus.']
+    helloNew: ['Howdy, Fremder.', 'Neu in der Stadt? Setz dich.', 'Tag. Der Staub bleibt draußen.', 'Willkommen im Saloon. Was darf’s sein?', 'Komm rein. Hier gibt’s Whiskey und Ruhe.', 'Ein neues Gesicht. Hab ich gern, solange es friedlich bleibt.'],
+    helloBack: ['Da bist du ja wieder.', 'Na, wieder Durst?', 'Der Platz an der Theke ist noch frei.', 'Wieder im Lande, Cowboy?', 'Dachte mir, dass du wiederkommst.', ['Das Übliche?', 'neutral']],
+    helloAngry: ['Du schon wieder.', ['Benimm dich diesmal.', 'angry'], ['Ich hab dich im Auge, Freund.', 'neutral'], ['Wenn du Ärger suchst, such ihn woanders.', 'angry'], 'Die Löcher in meiner Decke hab ich nicht vergessen.'],
+    what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.', 'Was trinkst du?', 'Whiskey, Bier oder Wasser. Mehr gibt’s nicht.', 'Na, was soll’s sein?'],
+    whiskey: ['Ein Whiskey. Kommt sofort.', 'Whiskey, sauber.', 'Einer vom Guten.', 'Whiskey. Der brennt ehrlich.', 'Hier, für die Kehle.', 'Kommt.'],
+    beer: ['Ein kühles Bier.', 'Bier kommt.', 'Frisch vom Fass. Fast.', 'Ein Bier. Lauwarm, wie immer.', 'Da hast du dein Bier.'],
+    water: ['Wasser? Na gut.', 'Wasser… wie du meinst.', 'Ein Wasser für den Herrn.', 'Wasser. Auch gut.', 'Ein Wasser. Kluger Mann.'],
+    bottle: ['Die ganze Flasche? Respekt.', 'Teil sie dir ein.', 'Für die lange Nacht, was?', 'Die ganze Flasche. Wird ein langer Abend.', 'Pass auf, dass sie dich nicht trinkt.'],
+    tipsy: ['Langsam, Freund.', 'Du schwankst ja schon.', 'Noch einen? Na schön.', 'Mach mal halblang.', 'Der Whiskey wirkt, was?', 'Halt dich an der Theke fest.'],
+    drunk: ['Ich glaub, du hast genug.', 'Der Boden bewegt sich nicht. Das bist du.', 'Letzter, dann ist Schluss.', 'Noch einer, und du schläfst auf dem Boden.', 'Trink ein Wasser, Freund.'],
+    refuse: ['Nein. Für dich gibt’s nur noch Wasser.', 'Schluss für heute. Wasser kannst du haben.', 'Du hattest genug. Wasser oder nichts.'],
+    leave: ['Geh schlafen, Cowboy.', 'Komm gut heim!', 'Pass auf die Stufe auf.', 'Vorsicht an der Tür.', 'Find den Weg nach Hause.', 'Morgen tut der Kopf weh.'],
+    shot: ['Nicht in meinem Saloon!', 'Steck das Ding weg!', 'Bist du verrückt geworden?!', 'Leg das Ding weg, sofort!', 'Noch ein Schuss, und ich hol den Sheriff.', 'Das hier ist ein Saloon, kein Schießstand!'],
+    aimed: ['Ganz ruhig, Mister…', 'Nimm das Ding runter.', 'Ich bin unbewaffnet. Ganz ruhig.', 'Was willst du? Sag’s einfach.', 'Keiner muss hier sterben.', ['Die Kasse ist fast leer, ehrlich.', 'surprised'], 'Überleg dir gut, was du tust.'],
+    aimed2: ['Wie lange willst du da noch stehen?', ['Entweder du schießt oder du gehst.', 'angry'], 'Meine Arme werden müde, Freund.', 'Der Sheriff ist nicht weit. Denk daran.', 'Steck ihn weg, dann vergess ich das hier.'],
+    punch: ['Keine Prügelei hier drin!', 'Raus damit auf die Straße!', 'Hände runter, oder du fliegst.', 'Schlag dich draußen, nicht hier.', 'Noch einmal, und es ist Schluss.'],
+    fall: ['Hoppla! Alles noch dran?', 'Steh auf, der Boden ist dreckig.', 'Steh auf, Cowboy.', 'Der Boden ist nicht zum Schlafen da.', ['Alles in Ordnung da unten?', 'surprised']],
+    behind: ['He! Hinter die Theke gehört nur einer.', 'Raus aus meinem Revier.', 'Zurück auf deine Seite.', 'Hinter der Theke hast du nichts verloren.'],
+    broke: ['Erst Geld, dann Whiskey.', 'Anschreiben gibt’s nicht.', 'Kein Geld, kein Whiskey.', 'Komm wieder, wenn die Taschen voll sind.'],
+    cheers: ['Prost.', 'Wohl bekomm’s.', 'Zum Wohl.', 'Lass es dir schmecken.', 'Auf Dust Creek.'],
+    smash: ['Das zahlst du.', 'Hände weg von meinem Glas!', 'Noch eins, und du fliegst raus.', 'Das war ein gutes Glas.', 'Willst du alles kaputtmachen?', 'Die Scherben kehrst du auf.'],
+    thanks: ['Schon gut.', 'Gern.', 'Nichts zu danken.', 'Passt schon.'],
+    bye: ['Komm wieder.', 'Mach’s gut, Cowboy.', 'Pass auf dich auf.', 'Bis bald.', 'Reite vorsichtig.'],
+    price: ['Whiskey fünfundzwanzig Cent, Bier zehn, Wasser fünf. Die Flasche einen Dollar fünfzig.', 'Bier zehn Cent, Whiskey fünfundzwanzig, Wasser fünf. Für die Flasche einsfünfzig.']
   },
+  bags: {}, lastLine: {},
+  // the next line of a kind: a shuffled bag, refilled when empty, never the last one again first
+  pick(kind) {
+    const L = this.LINES[kind]; if (!L) return null;
+    let b = this.bags[kind];
+    if (!b || !b.length) { b = this.bags[kind] = L.map((_, i) => i).sort(() => Math.random() - 0.5); if (b.length > 1 && L[b[b.length - 1]] === this.lastLine[kind]) b.unshift(b.pop()); }
+    const x = L[b.pop()], text = Array.isArray(x) ? x[0] : x, mood = Array.isArray(x) ? x[1] : this.MOOD[kind];
+    this.lastLine[kind] = x;
+    return { text, mood };
+  },
+  // how he stands to you (-1 hostile … 1 friendly): what you did moves it, time lets it settle back slowly; kept
+  att: 0, recent: [],
+  feel(d, why) { this.att = clamp(this.att + d, -1, 1); if (why) this.note(why); },
+  note(text) { this.recent.push({ t: G.time, text }); if (this.recent.length > 6) this.recent.shift(); },
+  attWord() { const a = this.att; return a < -0.6 ? 'feindselig, du traust ihm alles zu' : a < -0.25 ? 'misstrauisch und gereizt' : a < 0.15 ? 'neutral, abwartend' : a < 0.5 ? 'freundlich' : 'herzlich, er ist ein guter Gast'; },
+  helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
     if (!R) return;
@@ -96,7 +122,7 @@ const BARKEEP = {
     this.remember('Er hat ' + (sc.outside >= sc.shots ? 'vor deinem Saloon' : 'in deinem Saloon') + ' herumgeschossen (' + bits.join(', ') + ').');
   },
   // the settings button: he has never seen you before
-  forget() { this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
+  forget() { this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
   persona() {
     const B = this;
     return {
@@ -120,6 +146,10 @@ const BARKEEP = {
         if (GLASS.obj && GLASS.obj.left > 0) lines.push('Vor ihm steht ein ' + GLASS.obj.it.name + ', noch nicht ausgetrunken.');
         if (GUN.state !== 'holster') lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
         if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
+        if (B.aimedT > 0.2 && B.standoff) lines.push('Seit ' + Math.round(G.time - B.standoff.t0) + ' Sekunden hältst du die Hände oben.');
+        lines.push('Deine Haltung zu ihm: ' + B.attWord() + '.');
+        const rec = B.recent.filter((r) => G.time - r.t < 600).map((r) => 'vor ' + Math.max(1, Math.round((G.time - r.t) / 60)) + ' Min.: ' + r.text);
+        if (rec.length) lines.push('Was eben passiert ist: ' + rec.join(' '));
         if (B.damage.holes || B.damage.glass) lines.push('Bisher hat er dir insgesamt ' + B.damage.holes + ' Einschusslöcher in den Saloon gemacht und ' + B.damage.glass + ' Flaschen/Gläser zerschossen.');
         if (B.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + B.mem.slice(-6).join(' '));
         return lines.join('\n');
@@ -141,10 +171,30 @@ const BARKEEP = {
         return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
       },
       forget() { B.forget(); },
+      /* plain things need no thinking: a short order, a greeting, thanks, goodbye, the prices. Answered from his own
+         lines (and the order served); everything else goes to the AI. Returns null when it is not that simple */
+      quick(text) {
+        const t = text.toLowerCase().replace(/[.!,;:"„“”']/g, ' ').replace(/\s+/g, ' ').trim(), words = t.split(' ').length, q = /\?/.test(t);
+        if (!t || words > 7) return null;
+        const line = (kind, action) => { const l = B.pick(kind); return l && { say: l.text, mood: l.mood, action: action || 'none', quick: true }; };
+        if (/\b(was kostet|wie teuer|preise?|preisliste)\b/.test(t)) return line('price');
+        if (q && /\b(was|wie|warum|wieso|wer|wo|wann|hast du|gibt es|gibt’s)\b/.test(t)) return null;   // a question: let him think
+        const drink = /\b(whiske?y|schnaps|bourbon)\b/.test(t) ? 'whiskey' : /\bflasche\b/.test(t) ? 'bottle' : /\bbier\b/.test(t) ? 'beer' : /\bwasser\b/.test(t) ? 'water' : null;
+        if (drink && (words <= 3 || /\b(bitte|gib|geb|nehm|hätte|hätt|bring|mach|noch|einen|ein|eins|nochmal)\b/.test(t))) {
+          const it = ITEMS[drink];
+          if (drink !== 'water' && DRUNK.level > 0.85) return line('refuse', 'shake_head');
+          if (it && INV.money < it.price) return line('broke', 'shake_head');
+          return line(drink, 'serve_' + drink);
+        }
+        if (words <= 4 && /^(hallo|hi|hey|howdy|servus|moin|tag|guten (tag|abend|morgen)|grüß (dich|gott)|n abend|abend)\b/.test(t)) return line(B.helloKind(), 'nod');
+        if (words <= 4 && /^(danke|vielen dank|dankeschön|danke schön|merci)\b/.test(t)) return line('thanks', 'nod');
+        if (words <= 5 && /\b(tschüss|tschau|ciao|bis dann|bis später|bis bald|auf wiedersehen|mach’s gut|machs gut|ich geh jetzt|ich gehe)\b/.test(t)) return line('bye', 'nod');
+        return null;
+      },
       // for the developer tools: everything he keeps about the player (events: newest last; the last `inPrompt` go into each prompt)
       memory() {
         return { events: B.mem.slice(), inPrompt: 6,
-          facts: [['Getränke eingeschenkt', String(B.served)], ['Einschusslöcher insgesamt', String(B.damage.holes)], ['Zerschossene Flaschen/Gläser', String(B.damage.glass)]] };
+          facts: [['Haltung zu dir', B.att.toFixed(2) + ' (' + B.attWord().split(',')[0] + ')'], ['Getränke eingeschenkt', String(B.served)], ['Einschusslöcher insgesamt', String(B.damage.holes)], ['Zerschossene Flaschen/Gläser', String(B.damage.glass)]] };
       },
       forgetEvent(i) { B.mem.splice(i, 1); },
       act(action) {
@@ -158,8 +208,8 @@ const BARKEEP = {
   serveFromTalk(id) {
     const it = ITEMS[id];
     if (!it) return;
-    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => this.npc.speak('Nein. Für dich gibt’s nur noch Wasser.', undefined, 'disgusted'), 2600); return; }
-    if (INV.money < it.price) { setTimeout(() => this.npc.speak('Das Geld reicht nicht, Freund.', undefined, 'disgusted'), 2600); return; }
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => { const l = this.pick('refuse'); this.npc.speak(l.text, undefined, l.mood, true); }, 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => { const l = this.pick('broke'); this.npc.speak(l.text, undefined, l.mood, true); }, 2600); return; }
     SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
     SHOP.buy(id, true);
   },
@@ -175,7 +225,9 @@ const BARKEEP = {
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'aimed' || kind === 'behind' || kind === 'shot')) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, TALK.barkMood(this.npc, this.MOOD[kind]));
+    if (kind === 'hello') kind = this.helloKind();
+    const l = this.pick(kind); if (!l) return false;
+    this.npc.speak(l.text, undefined, TALK.barkMood(this.npc, l.mood), true);
     return true;
   },
   /* ---- orders: from SHOP ---- */
@@ -183,7 +235,7 @@ const BARKEEP = {
   order(id, to, seat, quiet) {
     if (!this.npc || this.st === 'gone') return false;
     this.orders.push({ id, to: to.clone(), seat });
-    this.served++;
+    this.served++; this.feel(0.04);
     const L = DRUNK.level, it = ITEMS[id];
     if (quiet) return true;
     if (it.kind === 'carry') this.say('bottle');
@@ -201,10 +253,10 @@ const BARKEEP = {
   event(e) {
     if (!this.npc || e.by !== 'player') return;
     const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
-    if (e.type === 'shot' && (inside || near)) { const sc = this.scene(); sc.shots++; if (!inside) sc.outside++; this.duck(); }
+    if (e.type === 'shot' && (inside || near)) { const sc = this.scene(); sc.shots++; if (!inside) sc.outside++; if (sc.shots === 1) this.feel(inside ? -0.35 : -0.1, inside ? 'Er hat in deinem Saloon geschossen.' : 'Er hat vor deinem Saloon geschossen.'); this.duck(); }
     else if (e.type === 'impact' && e.room === 'saloon' && this.sc) { const k = e.part || 'wall'; this.sc[k] = (this.sc[k] || 0) + 1; }
-    else if (e.type === 'glass' && e.room === 'saloon') { const sc = this.scene(); sc.glass[e.kind] = (sc.glass[e.kind] || 0) + 1; }
-    else if (e.type === 'punch' && inside) this.sayOrRemark('punch', 8, 'Der Fremde schlägt mitten in deinem Saloon um sich.', 0.35);
+    else if (e.type === 'glass' && e.room === 'saloon') { const sc = this.scene(); sc.glass[e.kind] = (sc.glass[e.kind] || 0) + 1; this.feel(-0.06); }
+    else if (e.type === 'punch' && inside) this.feel(-0.03), this.sayOrRemark('punch', 8, 'Der Fremde schlägt mitten in deinem Saloon um sich.', 0.35);
     else if (e.type === 'fall' && inside) { setTimeout(() => this.sayOrRemark('fall', 10, 'Der Fremde ist gerade betrunken vor dir hingefallen.', 0.5), 700); if ((this.cool.memFall || -99) < G.time - 60) { this.cool.memFall = G.time; this.remember('Er ist betrunken in deinem Saloon hingefallen.'); } }
     else if (e.type === 'leave' && inside) { this.sayOrRemark('leave', 0, 'Der Fremde torkelt gerade sturzbetrunken zur Tür hinaus.', 0.5); this.remember('Du hast gesehen, wie er sturzbetrunken aus dem Saloon getorkelt ist.'); }
     else if (e.type === 'passout') this.remember('Man erzählt, er hat irgendwo in der Stadt seinen Rausch ausgeschlafen.');
@@ -230,6 +282,7 @@ const BARKEEP = {
     if (!N) return;
     this.t += dt;
     const inside = G.room === this.R;
+    this.att *= 1 - dt * 0.002;   // grudges and good will fade slowly (about a tenth a minute)
     // the player: greet him, look at him, mind him
     if (inside && !this.wasInside) this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
     this.wasInside = inside;
@@ -245,7 +298,22 @@ const BARKEEP = {
     // a gun pointed at him: hands up
     const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
     this.aimedT = aimed ? Math.min(this.aimedT + dt, 3) : Math.max(0, this.aimedT - dt);
-    if (aimed && this.aimedT > 0.25) this.say('aimed', 10);
+    /* a gun on him: at the start of a standoff he says something of his own (Claude, if it has answered here before),
+       if it goes on he gets firmer; a new standoff is one after the gun was down for a few seconds */
+    if (aimed && this.aimedT > 0.25) {
+      if (!this.standoff || G.time - this.standoff.last > 4) {
+        this.standoff = { t0: G.time, last: G.time, n: 0 };
+        this.feel(-0.15, 'Er hat seinen Revolver auf dich gerichtet.');
+        const sit = 'Der Fremde richtet gerade seinen Revolver auf dich, du hebst langsam die Hände. ' + (this.damage.holes ? 'Er hat hier schon herumgeschossen. ' : '') + (this.att < -0.3 ? 'Du traust ihm inzwischen alles zu.' : 'Bisher war er ein ruhiger Gast.');
+        if (!TALK.remark(N, sit, () => this.say('aimed'), 'neutral', 0.8)) this.say('aimed');
+      }
+      this.standoff.last = G.time;
+      if (G.time - this.standoff.t0 > 5 + this.standoff.n * 6 && this.standoff.n < 3) {
+        this.standoff.n++;
+        const sit2 = 'Der Fremde zielt jetzt schon ' + Math.round(G.time - this.standoff.t0) + ' Sekunden mit dem Revolver auf dich und sagt nichts. Deine Hände sind oben.';
+        if (!TALK.remark(N, sit2, () => this.say('aimed2'), 'neutral', 0.5)) this.say('aimed2');
+      }
+    }
     const handsUp = this.aimedT > 0.2;
     N.leanT = 0; N.crouchT = 0;
     if (this.st === 'duck') this.updDuck(dt);
@@ -464,8 +532,9 @@ const BARKEEP = {
   }
 };
 // what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
-SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage }), (d) => {
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3) }), (d) => {
   if (!d) return;
+  BARKEEP.att = clamp(+d.att || 0, -1, 1);
   BARKEEP.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
   BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
   BARKEEP.served = Math.max(0, d.served | 0);

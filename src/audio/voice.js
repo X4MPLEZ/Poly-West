@@ -180,9 +180,10 @@ const VOICE = {
     return 'Browser-Stimme';
   },
   // a person says something: every word is heard
-  line(npc, text, mood) {
+  // keep: a ready-made line, whose sound may be kept in the browser (ElevenLabs is paid for it once)
+  line(npc, text, mood, keep) {
     if (!SETTINGS.v.voice || !text || text === '\u2026') return;
-    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s, mood); }
+    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s, mood, keep); }
     else if (this.st === 'loading' && this.IOS) this.pend = { npc, text, mood, at: performance.now() };   // (iPhone: only the newest line waits, see IOS)
     else this.browser(npc, text);
   },
@@ -253,13 +254,13 @@ const VOICE = {
   // what the voice should not stumble over
   clean(text) { for (const [re, w] of this.WORDS) text = text.replace(re, w); return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
   // a sentence for npc to say: computed now (in order), played when its turn comes
-  push(npc, sentence, mood) {
+  push(npc, sentence, mood, keep) {
     const el = this.eleven();
     // (ElevenLabs reads English words and names by itself; the spelled-out sounds are for Piper and the browser)
     const text = el ? sentence.replace(/[*_#~"„“”«»]/g, '').replace(/\s+/g, ' ').trim() : this.clean(sentence);
     if (!text || !/[\p{L}\d]/u.test(text)) return;
     const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now(), rate: el ? DIRECT.RATE : 0 };
-    const made = el ? DIRECT.tts(npc, text, job.mood) : this.synth(text, npc.voiceProfile, job.mood);
+    const made = el ? DIRECT.tts(npc, text, job.mood, keep) : this.synth(text, npc.voiceProfile, job.mood);
     made.then((p) => { job.pcm = p; this.pump(); }, (e) => { if (el) this.elevenFailed(e, job, sentence); else job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },

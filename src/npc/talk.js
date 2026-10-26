@@ -258,10 +258,15 @@ const TALK = {
     // the answer, as it comes: words into the bubble, finished sentences to the voice
     const F = this.stream(n, seq), feed = F.feed;
     let raw = null;
-    if (this.aiOn()) raw = await this.ask(n, text, (t) => feed(t, false));
+    // plain things (a short order, hello, thanks, goodbye, prices) he answers himself: no AI, and his voice for
+    // such lines is kept, so they cost nothing the second time
+    const quick = SETTINGS.v.aiSave && n.persona.quick ? n.persona.quick(text) : null;
+    if (quick) await new Promise((res) => setTimeout(res, 250 + Math.random() * 350));   // (a breath, as a person would take)
+    else if (this.aiOn()) raw = await this.ask(n, text, (t) => feed(t, false));
     if (seq !== this.seq) { n.thinking = false; return; }   // ended or walked off meanwhile
     let out;
-    if (raw !== null) out = this.parse(raw);
+    if (quick) out = quick;
+    else if (raw !== null) out = this.parse(raw);
     else if (this.aiOn() || this.lastErr) out = { action: 'none', say: this.lastErr ? 'Hm? Sag das nochmal.' : n.persona.offline(text).say };
     else out = n.persona.offline(text);
     n.thinking = false; this.busy = false;
@@ -271,7 +276,7 @@ const TALK = {
     SAY.show(n, say);
     this.felt(n, out.mood);
     if (VOICE.ready() && raw !== null && F.queued() > 0) feed(raw, true);   // the rest of what was already being spoken
-    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
+    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral'), !!quick); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
     else if (MICWIN.connected() || HEAR.active()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
     else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
@@ -338,7 +343,7 @@ const TALK = {
     const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
-    const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
       '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + ang + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
       (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
@@ -348,7 +353,7 @@ const TALK = {
     let failed = false;
     const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown()) fallback(); };
     const timer = setTimeout(() => { if (!F.shown()) { ctl.abort(); fail(); } }, 7000);
-    this.ai(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
+    this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
       const raw = r && r.text;
       if (!raw || !raw.trim() || seq !== this.seq) { fail(); return; }
       const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -364,9 +369,16 @@ const TALK = {
     }).catch(() => fail()).finally(() => { clearTimeout(timer); this.remarking = false; });
     return true;
   },
+  /* the person's unchanging part (who he is, how he talks) goes apart from what changes: with an own key it is sent
+     as the system part (Claude keeps it ready between calls, cheaper and faster); through claude.ai as one text */
+  callAI(sys, prompt, opt) {
+    if (this.via === 'key') return this.ai(prompt, Object.assign({ system: sys }, opt));
+    return this.ai(sys + '\n\n' + prompt, opt);
+  },
   async ask(n, text, onText) {
-    const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
-    const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
+    // (the last 8 lines are enough to keep the thread; what matters for longer is in his memory)
+    const P = n.persona, hist = (n.talkLog || []).slice(-9, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
       'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';
@@ -375,7 +387,7 @@ const TALK = {
       // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)
       const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
       try {
-        const r = await this.ai(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, onText: ({ text: t }) => onText(t) });
+        const r = await this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 120, onText: ({ text: t }) => onText(t) });
         this.aiOk = this.aiEver = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
       } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
     };

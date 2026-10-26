@@ -452,7 +452,7 @@ async def check_manners(g):
     """Hank does not talk over himself: no ready-made line right after his own words (and those keep his mood), nothing
        at all while you are outside; "Stopp" ends an answer; too drunk inside, you are walked to just outside the door"""
     await g.js(RESET)
-    r = await g.js('''async () => { const out = {}, B = BARKEEP, R = B.R, N = B.npc; B.cool = {}; B.st = 'idle'; N.aiAt = -99; N.feel = null;
+    r = await g.js('''async () => { SETTINGS.v.aiSave = false; const out = {}, B = BARKEEP, R = B.R, N = B.npc; B.cool = {}; B.st = 'idle'; N.aiAt = -99; N.feel = null;
       const pin = rwp(R, 0, R.floorY, -2); PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
       // right after an answer of his own: the ready-made line waits
       TALK.felt(N, 'angry'); N.said = ''; out.blocked = !B.say('cheers'); for (let k = 0; k < 60 * 5; k++) G.stepFrame(1/60);
@@ -485,7 +485,7 @@ async def check_manners(g):
       // back in: it does not start again
       PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.noAgain = !DRUNK.leave;
       DRUNK.level = 0; DRUNK.edge = null; DRUNK.leave = null; if (FALL.busy()) FALL.st = null;
-      return out; }''')
+      SETTINGS.v.aiSave = true; return out; }''')
     ok = (r['blocked'] and r['later'] and r['mood'] == 'angry' and r['moodAmused'] == 'angry' and r['outside'] and r['busy'] and r['stopShown'] and r['aborted'] and r['closedBusy'] and r['answered'] and all(v == 1 for v in r['seatTalk'])
           and r['leave'] and r['secs'] < 17 and r['outRoom'] is None and r['local'][1] > 0 and r['local'][1] < 3.5 and abs(r['local'][0]) < 2.5 and r['noAgain'])
     return ok, json.dumps(r, ensure_ascii=False)
@@ -495,7 +495,7 @@ async def check_ownkeys(g):
        Claude is asked directly (streamed, the browser-access header), ElevenLabs speaks with a fitting voice, a refused
        key falls back to the built-in voice; without keys nothing changes"""
     await g.js(RESET)
-    r = await g.js(r'''async () => { const out = {}, calls = [], real = window.fetch;
+    r = await g.js(r'''async () => { SETTINGS.v.aiSave = false; const out = {}, calls = [], real = window.fetch;
       const sse = (t) => new Response(new ReadableStream({ start(c) { const e = new TextEncoder();
         for (const piece of ['[nod, ', 'neutral] Howdy, ', 'Fremder.']) c.enqueue(e.encode('event: content_block_delta\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: piece } }) + '\n\n'));
         c.enqueue(e.encode('data: {"type":"message_stop"}\n\n')); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
@@ -579,7 +579,7 @@ async def check_ownkeys(g):
         window.fetch = real; SETTINGS.set('claudeKey', ''); SETTINGS.set('elevenKey', ''); SETTINGS.set('elevenVoice', ''); VOICE.q = [];
       }
       out.after = [TALK.via || '', VOICE.eleven()];
-      return out; }''')
+      SETTINGS.v.aiSave = true; return out; }''')
     ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['libVoice'] == ['lib9,george', 2400, True] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
@@ -606,7 +606,7 @@ async def check_hear(g):
        shows the words while you speak, a finished sentence goes to Hank, nothing is sent while he speaks; a key
        without the right to listen falls back"""
     await g.js(RESET)
-    r = await g.js(r'''async () => { const out = {}, realFetch = window.fetch, RealWS = window.WebSocket, realGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    r = await g.js(r'''async () => { SETTINGS.v.aiSave = false; const out = {}, realFetch = window.fetch, RealWS = window.WebSocket, realGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
       const sent = [], socks = []; let tokenStatus = 200;
       class FakeWS { constructor(url) { this.url = url; this.readyState = 0; socks.push(this); setTimeout(() => { this.readyState = 1; this.onmessage && this.onmessage({ data: JSON.stringify({ message_type: 'session_started', session_id: 's1' }) }); }, 20); }
         send(d) { sent.push(JSON.parse(d)); } close() { this.readyState = 3; } }
@@ -642,13 +642,43 @@ async def check_hear(g):
         window.fetch = realFetch; window.WebSocket = RealWS; if (realGUM) navigator.mediaDevices.getUserMedia = realGUM; osc.stop(); ac.close();
         TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1]; SETTINGS.set('elevenKey', ''); HEAR.dead = false; HEAR.stop(); SETTINGS.v.voice = keepVoice;
       }
-      return out; }''')
+      SETTINGS.v.aiSave = true; return out; }''')
     ok = (r['wanted'] and r['url'] and r['state'] == 'open' and r['chunks'] > 0 and r['chunk'] == ['input_audio_chunk', 16000, True] and 'Gib mir einen' in r['partial']
           and r['sentToHank'] and r['mutedWhileSpeaking'] and r['resumed'] and r['released'] and r['retaken'] and r['idleOff'] and r['closed'] and r['dead'])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_quick(g):
+    """Hank answers plain things himself (no AI): a short order is served, hello/thanks/goodbye/prices from his own
+       lines, which do not repeat right away; a real question still goes to the AI; what you do changes how he
+       stands to you, and the AI is told that and what just happened"""
+    await g.js(RESET)
+    r = await g.js(r'''async () => { const out = {}, B = BARKEEP, R = B.R, N = B.npc; let asked = 0, lastPrompt = '', lastSys = '';
+      const keep = [TALK.ai, SETTINGS.v.aiTalk, SETTINGS.v.aiSave, TALK.via];
+      TALK.ai = async (p, o) => { asked++; lastPrompt = p; lastSys = (o && o.system) || ''; o.onText({ text: '[none, neutral] Hm.' }); return { text: '[none, neutral] Hm.' }; };
+      SETTINGS.v.aiTalk = true; SETTINGS.v.aiSave = true; INV.money = 1000; B.forget(); GLASS.clear();
+      const bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      TALK.start(false);
+      await TALK.send('Einen Whiskey bitte!'); out.order = [asked, B.orders.length + (B.cur ? 1 : 0) > 0, B.LINES.whiskey.flat().includes(N.talkLog.slice(-1)[0].text)];
+      await TALK.send('Danke'); await TALK.send('Was kostet ein Bier?'); out.plain = asked;
+      await TALK.send('Was hältst du eigentlich von dem Sheriff?'); out.question = asked;
+      const seen = []; for (let i = 0; i < 6; i++) seen.push(B.pick('shot').text); out.noRepeat = new Set(seen).size === 6;
+      // a shot in his saloon: he likes you less, and the AI hears about it (with the person apart as the system part)
+      const a0 = B.att; worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' }); out.att = [+a0.toFixed(2), +B.att.toFixed(2)];
+      TALK.via = 'key'; await TALK.send('Was ist los mit dir?'); out.ctx = /Haltung zu ihm: misstrauisch/.test(lastPrompt) && /geschossen/.test(lastPrompt) && /Du bist Hank/.test(lastSys) && !/Du bist Hank/.test(lastPrompt);
+      TALK.close(); TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1]; SETTINGS.v.aiSave = keep[2]; TALK.via = keep[3]; B.forget();
+      for (let k = 0; k < 60 * 6 && B.st === 'duck'; k++) G.stepFrame(1/60);
+      // a gun on him: first his own reaction (asked from the AI), and if it goes on, a firmer one
+      const sits = [], rk = TALK.remark, am = B.aimedAtMe; TALK.remark = (n, sit) => { sits.push(sit); return false; }; B.aimedAtMe = () => true; B.standoff = null;
+      GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true);
+      for (let k = 0; k < 60 * 7; k++) G.stepFrame(1/60);
+      GUN.setAim(false); TALK.remark = rk; B.aimedAtMe = am; if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; }
+      out.standoff = [sits.length, /Revolver auf dich/.test(sits[0] || ''), /Sekunden/.test(sits[1] || '')]; B.forget();
+      return out; }''')
+    ok = r['order'] == [0, True, True] and r['plain'] == 0 and r['question'] == 1 and r['noRepeat'] and r['att'][1] < r['att'][0] and r['ctx'] and r['standoff'] == [2, True, True]
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

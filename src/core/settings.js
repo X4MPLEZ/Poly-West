@@ -17,6 +17,7 @@ const SETTINGS = {
     { key: 'showFps', label: 'Bildrate anzeigen', type: 'toggle', def: true },
     { group: 'Gespräche' },
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
+    { key: 'aiSave', label: 'KI sparen (Bestellen, Grüßen, Danke ohne KI)', type: 'toggle', def: true },
     { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
     { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
     { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },

@@ -65,7 +65,8 @@ const DIRECT = {
       r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST', signal: opt.signal,
         headers: { 'content-type': 'application/json', 'x-api-key': SETTINGS.v.claudeKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model, max_tokens: opt.maxTokens || 220, stream: true, messages: [{ role: 'user', content: prompt }] })
+        body: JSON.stringify(Object.assign({ model, max_tokens: opt.maxTokens || 160, stream: true, messages: [{ role: 'user', content: prompt }] },
+          opt.system ? { system: [{ type: 'text', text: opt.system, cache_control: { type: 'ephemeral' } }] } : {}))
       });
     } catch (e) {
       if (e && e.name === 'AbortError') throw this.fail('cancelled');
@@ -104,7 +105,8 @@ const DIRECT = {
   },
   // Groq and OpenAI: /chat/completions, streamed; the text comes in choices[0].delta.content
   async openaiStyle(P, prompt, opt, retried) {
-    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 220, messages: [{ role: 'user', content: prompt }] };
+    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 160,
+      messages: (opt.system ? [{ role: 'system', content: opt.system }] : []).concat([{ role: 'user', content: prompt }]) };
     if (/gpt-oss/.test(model)) { body.reasoning_effort = 'low'; body.include_reasoning = false; body.max_tokens = 600; }   // (thinking models: think briefly, say it short)
     let r;
     try {
@@ -183,7 +185,33 @@ const DIRECT = {
   /* one sentence -> Float32Array at RATE; throws with a code on failure. The free plan allows only a few requests at
      the same time: they wait in line (two at a time), and "too many" is tried again a moment later */
   busy: 0, line: [],
-  async tts(npc, text, mood) {
+  async tts(npc, text, mood, keep) {
+    // a ready-made line said before (any day): from the browser's storage, no request at all
+    let key = null;
+    if (keep) {
+      key = (await this.voiceFor(npc)) + '|' + (this.v3() ? 'v3' : 'f') + '|' + mood + '|' + text;
+      if (this.ttsCache.has(key)) return this.ttsCache.get(key);
+      const got = await this.keptGet(key);
+      if (got) { this.ttsCache.set(key, got); return got; }
+    }
+    const pcm = await this.ttsQueued(npc, text, mood);
+    if (keep && pcm) this.keptPut(key, pcm);
+    return pcm;
+  },
+  KEEP: 'poly-west-tts-1',
+  keyUrl(k) { let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0; return 'https://tts.poly-west.local/' + (h >>> 0).toString(36) + '/' + encodeURIComponent(k.slice(-80)); },
+  async keptGet(k) {
+    try { const c = await caches.open(this.KEEP), r = await c.match(this.keyUrl(k)); if (!r) return null;
+      const i16 = new Int16Array(await r.arrayBuffer()), f = new Float32Array(i16.length); for (let i = 0; i < i16.length; i++) f[i] = i16[i] / 32768; return f;
+    } catch (e) { return null; }
+  },
+  keptPut(k, pcm) {
+    try {
+      const i16 = new Int16Array(pcm.length); for (let i = 0; i < pcm.length; i++) i16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32768));
+      caches.open(this.KEEP).then((c) => c.put(this.keyUrl(k), new Response(i16.buffer))).catch(() => {});
+    } catch (e) { /* no storage here */ }
+  },
+  async ttsQueued(npc, text, mood) {
     if (this.busy >= 2) await new Promise((res) => this.line.push(res));
     this.busy++;
     try {
