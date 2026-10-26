@@ -349,10 +349,13 @@ async def check_npc(g):
         TALK.start(); B.npc.talkT = 0; try { speechSynthesis.cancel(); } catch (e) {} const n0 = (B.npc.talkLog || []).length;
         VOICE.q = []; VOICE.playing = null; B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', false); B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', true);
         return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.talkLog[B.npc.talkLog.length - 1].text;
-          TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null; return out; }); }); }''')
+          TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null;
+          // the reset button: asks once, then everyone has forgotten
+          B.remember('Test-Erinnerung.'); out.ask = TALK.resetMemories(); out.done = TALK.resetMemories();
+          out.forgot = (B.npc.talkLog || []).length === 0 && B.mem.length === 0 && B.served === 0; return out; }); }); }''')
     ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.7 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
           and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5
-          and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'] and r['remote'] == 2 and 'Hank' in r['remoteSaid'])
+          and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'] and r['remote'] == 2 and 'Hank' in r['remoteSaid'] and r['ask'].startswith('Wirklich') and r['forgot'])
     return ok, json.dumps(r)
 
 async def check_voice(g):

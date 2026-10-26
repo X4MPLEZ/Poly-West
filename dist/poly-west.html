@@ -665,6 +665,7 @@ const SETTINGS = {
     { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
     { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
+    { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],
@@ -7264,6 +7265,8 @@ const BARKEEP = {
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
+  // the settings button: he has never seen you before
+  forget() { this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; },
   persona() {
     const B = this;
     return {
@@ -7304,6 +7307,7 @@ const BARKEEP = {
         if (/raus|ausgang|tür/.test(t)) return { say: 'Da vorne ist die Tür.', action: 'point_door' };
         return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
       },
+      forget() { B.forget(); },
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
         if (m) { B.serveFromTalk(m[1]); return; }
@@ -7602,6 +7606,12 @@ const BARKEEP = {
     });
   }
 };
+// what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served }), (d) => {
+  if (!d) return;
+  BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
+  BARKEEP.served = Math.max(0, d.served | 0);
+});
 
 // ==== npc/talk.js ====
 /* ---------- talking to people ----------
@@ -7857,6 +7867,17 @@ const TALK = {
     }
     return null;
   }
+};
+/* the settings button "Erinnerungen zurücksetzen": every person who can talk forgets everything about you
+   (conversations and what they remember), as if you had never met; asks once more before it does it */
+TALK.resetMemories = function () {
+  const now = performance.now();
+  if (!this.resetAsk || now - this.resetAsk > 5000) { this.resetAsk = now; return 'Wirklich? Zum Bestätigen innerhalb von 5 Sekunden nochmal drücken.'; }
+  this.resetAsk = 0;
+  if (this.open) this.close();
+  for (const n of NPCS.list) { n.talkLog = []; if (n.persona && n.persona.forget) n.persona.forget(); }
+  SAVE.write();
+  return 'Erledigt. Alle haben dich vergessen.';
 };
 SAVE.part('talk', () => {
   const o = {};

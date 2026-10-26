@@ -21,6 +21,7 @@ const SETTINGS = {
     { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
     { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
+    { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],

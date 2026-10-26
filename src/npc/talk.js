@@ -252,6 +252,17 @@ const TALK = {
     return null;
   }
 };
+/* the settings button "Erinnerungen zurücksetzen": every person who can talk forgets everything about you
+   (conversations and what they remember), as if you had never met; asks once more before it does it */
+TALK.resetMemories = function () {
+  const now = performance.now();
+  if (!this.resetAsk || now - this.resetAsk > 5000) { this.resetAsk = now; return 'Wirklich? Zum Bestätigen innerhalb von 5 Sekunden nochmal drücken.'; }
+  this.resetAsk = 0;
+  if (this.open) this.close();
+  for (const n of NPCS.list) { n.talkLog = []; if (n.persona && n.persona.forget) n.persona.forget(); }
+  SAVE.write();
+  return 'Erledigt. Alle haben dich vergessen.';
+};
 SAVE.part('talk', () => {
   const o = {};
   for (const n of NPCS.list) if (n.talkLog && n.talkLog.length) o[n.id] = n.talkLog.slice(-10);

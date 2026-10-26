@@ -55,6 +55,8 @@ const BARKEEP = {
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
+  // the settings button: he has never seen you before
+  forget() { this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; },
   persona() {
     const B = this;
     return {
@@ -95,6 +97,7 @@ const BARKEEP = {
         if (/raus|ausgang|tür/.test(t)) return { say: 'Da vorne ist die Tür.', action: 'point_door' };
         return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
       },
+      forget() { B.forget(); },
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
         if (m) { B.serveFromTalk(m[1]); return; }
@@ -393,3 +396,9 @@ const BARKEEP = {
     });
   }
 };
+// what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served }), (d) => {
+  if (!d) return;
+  BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
+  BARKEEP.served = Math.max(0, d.served | 0);
+});
