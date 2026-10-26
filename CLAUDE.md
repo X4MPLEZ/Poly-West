@@ -8,7 +8,7 @@ Die erste Stadt heißt **Dust Creek**. Das Spiel wird als **eine einzige HTML-Da
 - **Zielgeräte:** PC zuerst. Am Handy muss es im **Querformat** spielbar sein (Touch-Steuerung in `play/input.js` und `ui/hud.js`).
 - **Stil:** Low Poly mit flachen Flächen und Vertexfarben. Animationen sind das Wichtigste, weil der Look einfach ist.
 - **Ton:** Umgebung und Schritte werden leise synthetisch erzeugt. Für Schuss und Schläge werden echte Aufnahmen verwendet (`audio/samples.js`, Lizenzen im Kopf der Datei und auf dem Startbildschirm).
-- Noch **keine sichtbaren Tiere oder Menschen** in der Stadt (NPCs folgen später, siehe `docs/npc-konzept.md`).
+- **Menschen:** bisher ein NPC, Hank, der Barkeeper im Saloon (`npc/`). Weitere NPCs nach `docs/npc-konzept.md`. Noch keine Tiere.
 - Nach jeder Änderung: bauen, testen, Bilder ansehen, committen, veröffentlichen (siehe unten).
 
 ## Befehle
@@ -23,7 +23,7 @@ python3 tests/run.py --golden     # gewollte Änderung an der Welt als neue Refe
 - **fingerprint** prüft, ob die gebaute Welt exakt gleich geblieben ist: Meshes, Kollisionen, Plattformen, Sitzplätze, Türen. Nach reinen Umbauten muss das Ergebnis „identical“ sein. Nach gewollten Änderungen `--golden` ausführen.
 - **budget**: Zeichenaufrufe und Dreiecke in festen Ansichten. Liegt ein Wert über der Grenze, gilt die Prüfung als nicht bestanden.
 - Bilder zum Ansehen landen in `tests/out/`; der Ordner ist nicht im Repo.
-- Veröffentlichen: Artefakt-Tool mit `dist/poly-west.html` (immer derselbe Pfad, damit der Link bleibt).
+- Veröffentlichen: Artefakt-Tool mit `dist/poly-west.html` (immer derselbe Pfad, damit der Link bleibt). Das Artefakt deklariert `capabilities: {sample: {}}` (KI-Gespräche); beim erneuten Veröffentlichen `capabilities` weglassen, dann bleibt die Deklaration.
 
 ## Aufbau
 Alle Skripte teilen sich **einen gemeinsamen Gültigkeitsbereich**: Es gibt keine Module und keine Imports, nur Globale. Die Reihenfolge steht in `src/manifest.txt`.
@@ -68,6 +68,9 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `gfx/post.js` | `POST`: Unschärfe, Doppeltsehen, Wabern, warme Farbe, Abdunkeln bis Schwarz, Blinzeln beim Aufwachen; nur wenn betrunken (sonst direkt auf den Bildschirm) |
 | `ui/wheel.js` | `WHEEL`: Schnellrad für die Tasche (Tab halten / Taschen-Knopf / Steuerkreuz hoch), Zeit läuft langsamer |
 | `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
+| `npc/npc.js` | `NPC`: Körper aus dem Rig (`buildCharacter(farben, {hat, gun, apron, bowtie, garter, hair})`), Gehen zu einem Ziel (`goTo`), Blick (`lookAt`), Hände per Arm-IK (`reach`), Ducken/Lehnen, Gesten (`gesture`); `SAY` Sprechblasen; `NPCS.bodies` Kollision mit dem Spieler |
+| `npc/barkeep.js` | `BARKEEP`: Hank. Arbeitet hinter der Theke (polieren, wischen, umsehen), kommt zum Gast, bedient von Hand (`order` ← `SHOP.buy`), duckt sich bei Schüssen, Hände hoch beim Zielen, Sprüche (`LINES`), Gedächtnis (`mem`), `persona` für Gespräche |
+| `npc/talk.js` | `TALK`: Gespräche. V halten / „Reden“ → Spracherkennung (de-DE) oder Textfeld → Claude über die `sample`-Capability (`json`, Antwort `{say, action}`) → Sprechblase, Verlauf, Vorlesen (speechSynthesis). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
 | `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |
@@ -88,6 +91,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - **Theken:** `counterHere(mb, x0, x1, z, topY)` beim Bauen eines Tresens (Kunden auf der −z-Seite).
 - **Arm-Animationen mit Gegenstand:** wie `DRINK.pose` – nach dem Körper `torsoInverse(P)`, Ziel im Charakterraum, `armIK`, in `P.armOv[i]` mischen; der Gegenstand folgt in einer `late()`-Funktion der Hand.
 - **Was andere mitbekommen sollen** (Schuss, Schlag, Hinsetzen …): `worldEvent(type, x, y, z, {by, …})`.
+- **Neue NPCs:** `new NPC({...})` + eigenes Verhalten-Objekt (Vorbild `BARKEEP`); sprechen können sie mit `npc.persona = { rules, context(), offline(text), act(action) }`. Regel: Die KI redet nur, was passiert entscheidet `act` mit Prüfung (Geld, Zustand …).
 - **Neue Einstellung:** eine Zeile in `SETTINGS.SPEC`, dann `SETTINGS.on('key', fn)` im System; das Menü baut den Regler selbst.
 - **Neues Entwickler-Werkzeug:** Knopf in `#dev` (page.html) + Funktion in `DEV`. Bei Fehlermeldungen von Merkel nach „Position kopieren“ fragen.
 - **Was gespeichert werden soll:** `SAVE.part(name, collect, apply)`. Ändert sich das Format, wird `SAVE.V` erhöht und `migrate` ergänzt.
@@ -95,6 +99,6 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - Three.js **r159** (letzte Version mit `three.min.js`). Kein Modul-Build.
 
 ## Stand und Plan
-- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit (Schwanken, Stolpern, Hinfallen, Doppeltsehen, ungenaue Schläge) mit Filmriss, Schnellrad für die Tasche.
-- **Als Nächstes:** Tag/Nacht mit Schlafen, dann der erste NPC (Barkeeper bietet sich an), Pferd, Soziales/Duell und Wildnis.
+- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit (Schwanken, Stolpern, Hinfallen, Krabbeln, Doppeltsehen, ungenaue Schläge) mit Filmriss, Schnellrad für die Tasche, erster NPC (Hank, Barkeeper) mit KI-Gesprächen per Sprache oder Text.
+- **Als Nächstes:** Tag/Nacht mit Schlafen, weitere NPCs mit Alltag (siehe Konzept), Pferd, Soziales/Duell und Wildnis.
 - Das NPC-Konzept steht in `docs/npc-konzept.md`. Spielidee (Leben im Westen, Ruf, Beziehungen, Überraschungen) und Sprachsteuerung per Mikrofon: `docs/spielidee.md`.

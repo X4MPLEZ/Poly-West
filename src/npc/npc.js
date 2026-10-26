@@ -6,9 +6,10 @@
    SAY: speech bubbles over the head. NPCS.bodies: circles the player bumps into (see collide()). */
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
-  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); },
+  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); TALK.init(); },
   update(dt) {
     BARKEEP.update(dt);
+    TALK.update(dt);
     for (const n of this.list) n.update(dt);
     SAY.update(dt);
   },
@@ -46,6 +47,8 @@ class NPC {
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
+  // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
+  gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
   reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
   free(i) { this.hand[i].tw = 0; }
@@ -87,6 +90,7 @@ class NPC {
     this.lookW += (this.lookTW - this.lookW) * e;
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
+    if (this.gest) { this.gestT += dt; if (this.gestT > (this.gest === 'point_door' ? 1.8 : 1.2)) this.gest = null; }
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
     this.pose(dt);
   }
@@ -128,6 +132,12 @@ class NPC {
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
     P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
+    if (this.gest) {
+      const g = this.gestT, f = Math.sin(Math.PI * Math.min(1, g / 1.2));
+      if (this.gest === 'nod') P.hdPitch += Math.max(0, Math.sin(g * 9)) * 0.22 * f;
+      else if (this.gest === 'shake_head') P.hdYaw += Math.sin(g * 11) * 0.32 * f;
+      else if (this.gest === 'laugh') { P.hdPitch -= 0.28 * f; P.spPitch -= 0.1 * f; P.pel.y += Math.abs(Math.sin(g * 15)) * 0.012 * f; }
+    }
     P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;
     // hands put somewhere: arm IK on top of the swing
     let inv = false;
@@ -168,6 +178,7 @@ const SAY = {
       if (!n.sayEl || n.sayEl.hidden) continue;
       n.sayT -= dt;
       if (n.sayT <= 0) { n.sayEl.hidden = true; continue; }
+      if (TALK.open && TALK.npc === n && n.said !== '…') { n.sayEl.style.visibility = 'hidden'; continue; }   // the panel shows it
       const v = this._v.set(n.pos.x, n.pos.y + 2.1 - n.crouch * 0.45, n.pos.z).project(cam);
       const far = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z) > 16;
       const seen = v.z < 1 && Math.abs(v.x) < 1.1 && v.y < 1.1 && !far && n.ch.root.visible;

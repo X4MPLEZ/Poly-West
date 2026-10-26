@@ -59,6 +59,7 @@ function initInput(app, canvas, onAction) {
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (TALK.open) { if (TALK.key(e, k)) e.preventDefault(); return; }
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (DRUNK.blocked() && k !== 'F2') return;
@@ -67,6 +68,7 @@ function initInput(app, canvas, onAction) {
     if (k === 'Tab') { e.preventDefault(); if (!e.repeat) WHEEL.show(); return; }
     if (WHEEL.open) { const n = parseInt(k, 10); if (n >= 1 && n <= WHEEL.N) { WHEEL.sel = n - 1; WHEEL.use(); } if (k === 'Escape') WHEEL.close(); return; }
     if (DEV.fly && (k === 'q' || k === 'r' || k === 'f' || k === 'e')) return;
+    if (k === 'v' && !e.repeat && TALK.target()) { TALK.start(true); TALK.holdV = true; return; }
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
@@ -86,7 +88,7 @@ function initInput(app, canvas, onAction) {
       if (k.startsWith('Arrow')) e.preventDefault();
     }
   });
-  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k);
+  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k); TALK.keyUp(k);
     if (k === 'Tab' && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); } if (k === 'f') FIST.up(); if (k === 'Shift') INPUT.keys.delete('Shift'); });
   window.addEventListener('blur', () => { INPUT.keys.clear(); });
 }

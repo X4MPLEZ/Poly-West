@@ -38,6 +38,7 @@ interact/sit.js
 interact/drink.js
 npc/npc.js
 npc/barkeep.js
+npc/talk.js
 audio/ambient.js
 ui/hud.js
 ui/menu.js

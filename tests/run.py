@@ -336,9 +336,18 @@ async def check_npc(g):
       GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true); let up = 0;
       for (let k = 0; k < 90; k++) { const h = B.npc.pos; const yaw = Math.atan2(h.x - PLAY.pos.x, h.z - PLAY.pos.z); PLAY.camYaw = yaw + Math.PI; PLAY.aimPitch = 0.05; G.stepFrame(1/60); up = Math.max(up, B.aimedT); }
       GUN.setAim(false); out.handsUp = +up.toFixed(2);
-      return out; }''')
+      if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; }
+      // talking (here without Claude: the phrase book answers); an order made in words is served and paid
+      for (let k = 0; k < 60 * 6; k++) G.stepFrame(1/60);
+      GLASS.clear(); out.canTalk = TALK.target() === B.npc; TALK.start(false); out.panel = !document.getElementById('talk').hidden;
+      const m0 = INV.money; return TALK.send('Hallo Hank, ein Bier bitte!').then(() => {
+        out.reply = B.npc.said; out.log = (B.npc.talkLog || []).length;
+        for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) G.stepFrame(1/60);
+        out.beer = GLASS.ready() && GLASS.obj.it.name; out.paid = m0 - INV.money; TALK.close(); out.closed = !TALK.open;
+        return out; }); }''')
     ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.6 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
-          and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5)
+          and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5
+          and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'])
     return ok, json.dumps(r)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),

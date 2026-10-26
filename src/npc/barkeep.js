@@ -10,7 +10,7 @@ const BARKEEP = {
   npc: null, R: null, C: null, st: 'idle', t: 0, act: null, actT: 0, orders: [], cur: null,
   X: { stand: 4.8, pour: 4.42, back: 5.2, pourSpot: 3.82 }, Z0: -9.7, Z1: -3.3,
   props: {}, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _m: new THREE.Matrix4(), _q: new THREE.Matrix4(),
-  cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0,
+  cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0,
   LINES: {
     hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
@@ -49,6 +49,66 @@ const BARKEEP = {
     this.props.rag = mk(rag.build());
     this.pickIdle();
     onWorldEvent((e) => this.event(e));
+    this.npc.persona = this.persona();
+    this.npc.voicePitch = 0.72; this.npc.voiceRate = 0.98;
+  },
+  // what he remembers (for conversations): a few notable things, newest last
+  remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
+  persona() {
+    const B = this;
+    return {
+      rules: [
+        'Du bist Hank, der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
+        'Wer du bist: Mitte fünfzig, Schnurrbart, weiße Schürze. Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen. Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.',
+        'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
+        'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
+        'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
+        'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
+        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt; das Spiel kassiert selbst und prüft, ob sein Geld reicht. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
+      ].join('\n'),
+      context() {
+        const L = DRUNK.level, lines = [];
+        lines.push('Der Fremde ist ' + (L < 0.12 ? 'nüchtern' : L < 0.35 ? 'leicht angetrunken' : L < 0.65 ? 'betrunken' : 'sehr betrunken, er lallt und schwankt') + '.');
+        lines.push('Er hat ' + money(INV.money) + ' bei sich' + (INV.has('bottle') ? ' und eine Flasche Whiskey in der Tasche' : '') + '.');
+        if (SIT.state === 'sit' && SIT.seat && SIT.seat.bar) lines.push('Er sitzt an deinem Tresen.');
+        else if (B.playerAtBar()) lines.push('Er steht an deinem Tresen.'); else lines.push('Er steht im Saloon, ein Stück vom Tresen weg.');
+        if (GLASS.obj && GLASS.obj.left > 0) lines.push('Vor ihm steht ein ' + GLASS.obj.it.name + ', noch nicht ausgetrunken.');
+        if (GUN.state !== 'holster') lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
+        if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
+        if (B.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + B.mem.slice(-6).join(' '));
+        return lines.join('\n');
+      },
+      offline(text) {
+        const t = text.toLowerCase(), r = (a) => a[Math.floor(Math.random() * a.length)];
+        if (/whisk|schnaps|was starkes|was hartes/.test(t)) return { say: r(['Whiskey. Kommt.', 'Einer vom Guten.']), action: 'serve_whiskey' };
+        if (/flasche/.test(t)) return { say: 'Die ganze Flasche? Na schön.', action: 'serve_bottle' };
+        if (/bier/.test(t)) return { say: r(['Ein Bier, kommt.', 'Bier. Gute Wahl.']), action: 'serve_beer' };
+        if (/wasser/.test(t)) return { say: 'Wasser. Wie du meinst.', action: 'serve_water' };
+        if (/\b(hallo|howdy|hi|hey|servus|moin|guten (tag|abend|morgen))\b/.test(t)) return { say: r(['Howdy.', 'Tag auch.']), action: 'nod' };
+        if (/name|wer bist/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
+        if (/sheriff/.test(t)) return { say: 'Der Sheriff? Sitzt in seinem Büro und wartet auf Ärger.', action: 'none' };
+        if (/stadt|dust creek|hier los/.test(t)) return { say: 'Dust Creek. Staub, Sonne und mein Whiskey.', action: 'none' };
+        if (/danke/.test(t)) return { say: 'Schon gut.', action: 'nod' };
+        if (/tschüss|bis dann|auf wieder|ciao|ich geh/.test(t)) return { say: 'Komm wieder.', action: 'nod' };
+        if (/witz|lustig|lach/.test(t)) return { say: 'Ein Cowboy kommt in eine Bar. Mehr passiert hier selten.', action: 'laugh' };
+        if (/raus|ausgang|tür/.test(t)) return { say: 'Da vorne ist die Tür.', action: 'point_door' };
+        return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
+      },
+      act(action) {
+        const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
+        if (m) { B.serveFromTalk(m[1]); return; }
+        if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) B.npc.gesture(action);
+      }
+    };
+  },
+  // an order made in conversation: the game checks it like one from the list
+  serveFromTalk(id) {
+    const it = ITEMS[id];
+    if (!it) return;
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => SAY.show(this.npc, 'Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => SAY.show(this.npc, 'Das Geld reicht nicht, Freund.'), 2600); return; }
+    SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
+    SHOP.buy(id, true);
   },
   // a point in the saloon's frame (x across, z along the bar), at floor height, into out
   roomPt(x, z, out) { const w = rwp(this.R, x, this.R.floorY, z); return out.set(w.x, w.y, w.z); },
@@ -64,10 +124,12 @@ const BARKEEP = {
   },
   /* ---- orders: from SHOP ---- */
   // returns false when he cannot serve (then the drink comes the old way)
-  order(id, to, seat) {
+  order(id, to, seat, quiet) {
     if (!this.npc || this.st === 'gone') return false;
     this.orders.push({ id, to: to.clone(), seat });
+    this.served++;
     const L = DRUNK.level, it = ITEMS[id];
+    if (quiet) return true;
     if (it.kind === 'carry') this.say('bottle');
     else if (L > 0.75) this.say('drunk');
     else if (L > 0.45 && Math.random() < 0.6) this.say('tipsy');
@@ -83,10 +145,11 @@ const BARKEEP = {
   event(e) {
     if (!this.npc || e.by !== 'player') return;
     const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
-    if (e.type === 'shot' && (inside || near)) { this.duck(); }
+    if (e.type === 'shot' && (inside || near)) { if (this.st !== 'duck') this.remember('Er hat in deinem Saloon geschossen.'); this.duck(); }
     else if (e.type === 'punch' && inside) this.say('punch', 8);
-    else if (e.type === 'fall' && inside) setTimeout(() => this.say('fall', 10), 700);
-    else if (e.type === 'leave' && inside) this.say('leave');
+    else if (e.type === 'fall' && inside) { setTimeout(() => this.say('fall', 10), 700); if ((this.cool.memFall || -99) < G.time - 60) { this.cool.memFall = G.time; this.remember('Er ist betrunken in deinem Saloon hingefallen.'); } }
+    else if (e.type === 'leave' && inside) { this.say('leave'); this.remember('Du hast gesehen, wie er sturzbetrunken aus dem Saloon getorkelt ist.'); }
+    else if (e.type === 'passout') this.remember('Man erzählt, er hat irgendwo in der Stadt seinen Rausch ausgeschlafen.');
     else if (e.type === 'drink' && inside && Math.random() < 0.25) this.say('cheers', 30);
   },
   duck() {
@@ -145,6 +208,16 @@ const BARKEEP = {
   /* ---- idle: the bar's own small work ---- */
   updIdle(dt, inside) {
     const N = this.npc, t = G.time, atBar = this.playerAtBar();
+    // in a conversation: work stops, he faces the stranger; thinking: a hand to the chin
+    if (N.talking || N.thinking || N.gest === 'point_door') {
+      if (atBar && Math.abs(this.myZ() - this.along(PLAY.pos)) > 0.6) { const p = this.roomPt(this.X.pour + 0.08, this.along(PLAY.pos), this._v); N.goTo(p.x, p.z, this.faceYaw); }
+      this.props.rag.visible = false; this.props.glass.visible = false;
+      if (N.gest === 'point_door') { const d = rwp(this.R, 0, this.R.floorY + 1.4, 0.5), l = N.toLocal(this._v.set(d.x, d.y, d.z), this._w).normalize(); N.reach(1, l.x * 0.55, 1.45, Math.max(0.2, l.z * 0.55)); N.free(0); }
+      else if (N.thinking) { N.reach(1, -0.04, 1.47, 0.2); N.reach(0, 0.12, 1.2, 0.18, 0.6); }
+      else if (atBar && N.arrived()) { N.leanT = 0.4; N.reach(0, 0.3, 1.16, 0.5); N.reach(1, -0.3, 1.16, 0.5); }
+      else { N.free(0); N.free(1); }
+      return;
+    }
     this.atBarT = atBar ? this.atBarT + dt : 0;
     // someone at the bar: go over, lean on the counter, ask
     if (atBar && this.atBarT > 0.8) {

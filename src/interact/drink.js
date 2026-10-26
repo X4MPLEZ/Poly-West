@@ -295,14 +295,15 @@ const SHOP = {
     if (n >= 1 && n <= MENU_BAR.length) { this.buy(MENU_BAR[n - 1]); return true; }
     return false;
   },
-  buy(id) {
+  // quiet: ordered in conversation (the barkeeper has already answered)
+  buy(id, quiet) {
     const it = ITEMS[id];
     if (!INV.pay(it.price)) { TOAST.show('Nicht genug Geld.'); return; }
     this.close();
     worldEvent('buy', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: id, price: it.price });
     const C = this.counter, to = this.seat ? this.seatSpot(this.seat) : C.spot(PLAY.pos);
     // the barkeeper serves it by hand; without him it comes sliding the old way
-    if (typeof BARKEEP !== 'undefined' && BARKEEP.C === C && BARKEEP.order(id, to, this.seat)) return;
+    if (typeof BARKEEP !== 'undefined' && BARKEEP.C === C && BARKEEP.order(id, to, this.seat, quiet)) return;
     if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
     GLASS.serve(id, C, to);
   },

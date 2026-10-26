@@ -132,6 +132,42 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
 .touch #toasts { top: 58px; }
 
+/* speech bubbles over people */
+#says { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.say { position: absolute; left: 0; top: 0; max-width: min(300px, 46vw); background: var(--bone); color: var(--ink); border-radius: 12px; padding: 6px 11px 7px;
+  font-size: 14.5px; font-weight: 600; line-height: 1.25; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3); margin-top: -12px; transition: opacity 0.4s ease; animation: sayIn 0.2s ease; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: var(--bone); }
+.say b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 11px; color: #8a5a2b; letter-spacing: 0.03em; margin-bottom: 1px; }
+.say.out { opacity: 0; }
+@keyframes sayIn { from { opacity: 0; } }
+
+/* talking */
+.talking #prompt, .talking #hint, .talking #bUse, .talking #bUse2 { display: none !important; }
+#prompt3 { position: absolute; left: 50%; bottom: calc(18% + 40px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
+#prompt3 kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.touch #prompt3 { display: none; }
+#bTalk { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(132px + env(safe-area-inset-bottom, 0px)); font-size: 11px; border-color: rgba(231, 166, 64, 0.8); }
+#bTalk[hidden] { display: none; }
+#talk { position: absolute; left: 50%; bottom: calc(12% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(420px, calc(100% - 32px)); pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 10px 12px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+#talk[hidden] { display: none; }
+#talk header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+#talk header b { font-family: var(--f-display); font-weight: 400; font-size: 20px; color: var(--brass); }
+#talkState { flex: 1; font-size: 13px; color: var(--dust); }
+#talkClose { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; color: var(--bone); font-size: 18px; line-height: 1; }
+#talkLog { max-height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 14.5px; line-height: 1.3; }
+#talkLog p { margin: 0; }
+#talkLog b { font-weight: 700; margin-right: 6px; color: var(--dust); }
+#talkLog p.them b { color: var(--brass); }
+#talkLog p.live { color: var(--dust); font-style: italic; }
+#talkRow { display: flex; gap: 6px; }
+#talkRow input { flex: 1; min-width: 0; height: 40px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 15px var(--f-ui); -webkit-user-select: text; user-select: text; }
+#talkRow button { height: 40px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font: 700 14px var(--f-ui); padding: 0 12px; }
+#talkMic { width: 44px; padding: 0 !important; display: grid; place-items: center; }
+#talkMic svg { width: 20px; height: 20px; }
+#talkMic[aria-pressed="true"] { background: var(--bad); border-color: var(--bad); color: var(--ink); animation: micPulse 1s ease-in-out infinite; }
+@keyframes micPulse { 50% { opacity: 0.7; } }
+
 /* the order list at the bar */
 #shop { position: absolute; left: 50%; bottom: calc(14% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(320px, calc(100% - 32px)); pointer-events: auto;
   background: rgba(28, 19, 13, 0.95); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 12px 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45); z-index: 3; }
@@ -238,6 +274,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 <div id="app">
   <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
   <div id="drunkFx" aria-hidden="true"></div>
+  <div id="says" aria-live="polite"></div>
   <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
@@ -258,6 +295,16 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <div id="hint"></div>
     <div id="stam" aria-hidden="true"><i></i></div>
     <div id="prompt" hidden role="status"><span class="pa" id="prompt1"><kbd>E</kbd><span id="promptTxt"></span></span><span class="pa" id="prompt2" hidden><kbd>R</kbd><span id="promptTxt2"></span></span></div>
+    <div id="prompt3" class="pa" hidden><kbd>V</kbd><span>Reden (halten und sprechen)</span></div>
+    <section id="talk" hidden aria-label="Gespräch">
+      <header><b id="talkName">Hank</b><span id="talkState"></span><button id="talkClose" type="button" aria-label="Gespräch beenden">×</button></header>
+      <div id="talkLog" aria-live="polite"></div>
+      <div id="talkRow">
+        <button id="talkMic" type="button" aria-pressed="false" aria-label="Sprechen" title="Sprechen (V halten)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
+        <input id="talkIn" type="text" maxlength="240" placeholder="Sag etwas …" autocomplete="off" enterkeyhint="send" aria-label="Was du sagst">
+        <button id="talkSend" type="button">Sagen</button>
+      </div>
+    </section>
     <div id="toasts" aria-live="polite"></div>
     <section id="shop" hidden aria-labelledby="shopTitle">
       <header><b id="shopTitle">Theke</b><span id="shopMoney"></span><button id="shopClose" type="button" aria-label="Schließen">×</button></header>
@@ -279,6 +326,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bUse" class="pb" type="button" hidden></button>
       <button id="bUse2" class="pb" type="button" hidden></button>
       <button id="bBag" class="pb" type="button" aria-label="Tasche">Tasche</button>
+      <button id="bTalk" class="pb" type="button" hidden>Reden</button>
     </div>
     <section id="dev" hidden aria-label="Entwickler-Werkzeuge">
       <header><b>Entwickler</b><button id="devClose" type="button" aria-label="Werkzeuge schließen">×</button></header>
@@ -604,6 +652,9 @@ const SETTINGS = {
     { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
     { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },
     { key: 'showFps', label: 'Bildrate anzeigen', type: 'toggle', def: true },
+    { group: 'Gespräche' },
+    { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
+    { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],
@@ -2790,7 +2841,9 @@ const RIG = {
   waistY: 0.14, neckY: 0.47, shoulderX: 0.305, shoulderY: 0.41, upper: 0.29, headTop: 0.31
 };
 
-function buildCharacter(over) {
+/* over: colours. opt (for NPCs): hat 'cowboy' | 'none' (then hair), gun (default true), apron, bowtie, garter colours */
+function buildCharacter(over, opt) {
+  const O = Object.assign({ hat: 'cowboy', gun: true }, opt || {});
   const C = Object.assign({
     hat: rgb(0x5b3b26), band: rgb(0x2a1d15), skin: rgb(0xd99f78), skinD: rgb(0xc4876a), shirt: rgb(0xe3d3b3), vest: rgb(0x4a352a),
     jeans: rgb(0x3f5878), jeansD: rgb(0x34496a), belt: rgb(0x2a1d15), buckle: rgb(0xd9b04c), boot: rgb(0x6a4029), sole: rgb(0x2e1f17),
@@ -2808,7 +2861,8 @@ function buildCharacter(over) {
   mb.box(0, -0.1, 0, 0.44, 0.27, 0.26, C.jeans, 9, { bottom: true });
   mb.box(0, 0.1, 0, 0.47, 0.09, 0.28, C.belt, 0);
   mb.box(0, 0.11, 0.142, 0.1, 0.07, 0.02, C.buckle, 0);
-  mb.box(-0.265, -0.22, 0.02, 0.08, 0.3, 0.15, C.belt, 0, { bottom: true });
+  if (O.gun) mb.box(-0.265, -0.22, 0.02, 0.08, 0.3, 0.15, C.belt, 0, { bottom: true });
+  if (O.apron) { mb.box(0, -0.46, 0.142, 0.42, 0.6, 0.02, O.apron, 9); mb.box(0, 0.1, 0.152, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
   add('pelvis', mb);
   // torso: origin at the waist
   mb = new MB();
@@ -2827,18 +2881,29 @@ function buildCharacter(over) {
   mb.box(0, 0.11, 0.13, 0.05, 0.06, 0.05, C.skinD, 0);
   mb.box(0, 0.085, 0.132, 0.15, 0.035, 0.016, C.stache, 0);
   for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, C.skinD, 0);
+  if (O.hat === 'none') {
+    // hair, parted in the middle and slicked down
+    const hc = O.hair || rgb(0x2e2018);
+    for (const s of [-1, 1]) mb.box(s * 0.07, 0.3, -0.005, 0.135, 0.04, 0.275, hc, 0);
+    mb.box(0, 0.12, -0.138, 0.275, 0.2, 0.02, hc, 0);
+    for (const s of [-1, 1]) mb.box(s * 0.138, 0.2, -0.04, 0.02, 0.11, 0.18, hc, 0);
+  }
+  if (O.bowtie) { mb.box(0, -0.115, 0.152, 0.13, 0.05, 0.025, O.bowtie, 0); mb.box(0, -0.115, 0.16, 0.035, 0.035, 0.02, mulc(O.bowtie, 0.7), 0); }
   add('head', mb);
   // hat: origin on top of the head
-  mb = new MB();
-  mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, C.hat, 0, { bottom: true });
-  mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, C.band, 0, { noTop: true });
-  mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, C.hat, 0);
-  mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(C.hat, 0.8), 0);
-  add('hat', mb);
+  if (O.hat !== 'none') {
+    mb = new MB();
+    mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, C.hat, 0, { bottom: true });
+    mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, C.band, 0, { noTop: true });
+    mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, C.hat, 0);
+    mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(C.hat, 0.8), 0);
+    add('hat', mb);
+  }
   // arms: upper arm from the shoulder, forearm + hand from the elbow, both hang along -y
   for (const side of ['L', 'R']) {
     mb = new MB();
     mb.box(0, -RIG.upper - 0.02, 0, 0.13, RIG.upper + 0.06, 0.14, C.shirt, 9, { bottom: true });
+    if (O.garter) mb.box(0, -0.13, 0, 0.14, 0.035, 0.15, O.garter, 0);
     add('uArm' + side, mb);
     mb = new MB();
     mb.box(0, -0.2, 0, 0.12, 0.22, 0.13, C.shirt, 9, { bottom: true });
@@ -2861,7 +2926,7 @@ function buildCharacter(over) {
     mb.box(0, -RIG.ankleH, -RIG.heelB + 0.025, 0.18, 0.045, 0.06, C.sole, 0, { bottom: true });
     add('foot' + side, mb);
   }
-  add('gun', buildGunGeo());
+  if (O.gun) add('gun', buildGunGeo());
   const ch = { root, p, parts: Object.values(p), pose: makePose() };
   applyPose(ch);
   return ch;
@@ -2904,7 +2969,7 @@ function applyPose(ch) {
   p.torso.matrix.copy(RM.tor);
   RM.head.multiplyMatrices(RM.tor, rotTo(RM.tmp, 0, RIG.neckY, 0, P.hdPitch, P.hdYaw, P.hdRoll || 0));
   p.head.matrix.copy(RM.head);
-  p.hat.matrix.multiplyMatrices(RM.head, rotTo(RM.tmp, 0, RIG.headTop + P.hatDy, 0, P.hatTilt, 0, 0));
+  if (p.hat) p.hat.matrix.multiplyMatrices(RM.head, rotTo(RM.tmp, 0, RIG.headTop + P.hatDy, 0, P.hatTilt, 0, 0));
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1, a = P.arm[i], side = i === 0 ? 'L' : 'R';
     const ua = p['uArm' + side], fa = p['fArm' + side];
@@ -3721,6 +3786,11 @@ function collide(px, pz, py) {
       px = c.cx + lx * ca + lz * sa; pz = c.cz - lx * sa + lz * ca;
     }
   }
+  // people
+  for (const b of NPCS.bodies) {
+    const dx = px - b.cx, dz = pz - b.cz, rr = b.r + r, d2 = dx * dx + dz * dz;
+    if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2); px = b.cx + (dx / d) * rr; pz = b.cz + (dz / d) * rr; }
+  }
   const d = Math.hypot(px - TOWN.cx, pz - TOWN.cz);
   if (d > 150) { px = TOWN.cx + ((px - TOWN.cx) * 150) / d; pz = TOWN.cz + ((pz - TOWN.cz) * 150) / d; }
   return [px, pz];
@@ -3924,6 +3994,7 @@ function initInput(app, canvas, onAction) {
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (TALK.open) { if (TALK.key(e, k)) e.preventDefault(); return; }
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (DRUNK.blocked() && k !== 'F2') return;
@@ -3932,6 +4003,7 @@ function initInput(app, canvas, onAction) {
     if (k === 'Tab') { e.preventDefault(); if (!e.repeat) WHEEL.show(); return; }
     if (WHEEL.open) { const n = parseInt(k, 10); if (n >= 1 && n <= WHEEL.N) { WHEEL.sel = n - 1; WHEEL.use(); } if (k === 'Escape') WHEEL.close(); return; }
     if (DEV.fly && (k === 'q' || k === 'r' || k === 'f' || k === 'e')) return;
+    if (k === 'v' && !e.repeat && TALK.target()) { TALK.start(true); TALK.holdV = true; return; }
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
@@ -3951,7 +4023,7 @@ function initInput(app, canvas, onAction) {
       if (k.startsWith('Arrow')) e.preventDefault();
     }
   });
-  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k);
+  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k); TALK.keyUp(k);
     if (k === 'Tab' && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); } if (k === 'f') FIST.up(); if (k === 'Shift') INPUT.keys.delete('Shift'); });
   window.addEventListener('blur', () => { INPUT.keys.clear(); });
 }
@@ -4256,6 +4328,7 @@ const DRUNK = {
     DRINK.cancel(); SHOP.open && SHOP.close();
     if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
     TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
+    worldEvent('leave', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   autoDir() {
     const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;
@@ -6389,13 +6462,14 @@ const GLASS = {
     this.bottle = mk(VESSEL.geo.bottletrue);   // a bottle from the bag, only while drinking from it
   },
   // a fresh drink slides along the counter from its far end to `to`
-  serve(id, counter, to) {
+  // from: where it starts (the barkeeper's hand); default the far end of the counter
+  serve(id, counter, to, from0) {
     const it = ITEMS[id], ax = counter.ax, az = counter.az, bx = counter.bx, bz = counter.bz;
     const da = Math.hypot(to.x - ax, to.z - az), db = Math.hypot(to.x - bx, to.z - bz);
     const [sx, sz] = da > db ? [ax, az] : [bx, bz], L = Math.max(da, db) || 1;
     const fx = Math.sin(counter.yaw), fz = Math.cos(counter.yaw);
-    const from = new THREE.Vector3(sx + ((to.x - sx) / L) * 0.3 + fx * 0.1, to.y, sz + ((to.z - sz) / L) * 0.3 + fz * 0.1);
-    this.obj = { id, it, left: it.sips, from, pos: from.clone(), to: to.clone(), slideT: 0, slideDur: 0.4 + from.distanceTo(to) / 3.2, held: false, tilt: 0, yaw: counter.yaw + Math.PI, room: counter.room };
+    const from = from0 ? new THREE.Vector3(from0.x, to.y, from0.z) : new THREE.Vector3(sx + ((to.x - sx) / L) * 0.3 + fx * 0.1, to.y, sz + ((to.z - sz) / L) * 0.3 + fz * 0.1);
+    this.obj = { id, it, left: it.sips, from, pos: from.clone(), to: to.clone(), slideT: 0, slideDur: 0.25 + from.distanceTo(to) / 3.2, held: false, tilt: 0, yaw: counter.yaw + Math.PI, room: counter.room };
     this.mesh.geometry = VESSEL.geo[it.vessel + 'true'];
     this.mesh.visible = true; this.farT = 0;
     this.slideSound(this.obj.slideDur);
@@ -6641,18 +6715,817 @@ const SHOP = {
     if (n >= 1 && n <= MENU_BAR.length) { this.buy(MENU_BAR[n - 1]); return true; }
     return false;
   },
-  buy(id) {
+  // quiet: ordered in conversation (the barkeeper has already answered)
+  buy(id, quiet) {
     const it = ITEMS[id];
     if (!INV.pay(it.price)) { TOAST.show('Nicht genug Geld.'); return; }
     this.close();
     worldEvent('buy', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: id, price: it.price });
-    if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
     const C = this.counter, to = this.seat ? this.seatSpot(this.seat) : C.spot(PLAY.pos);
+    // the barkeeper serves it by hand; without him it comes sliding the old way
+    if (typeof BARKEEP !== 'undefined' && BARKEEP.C === C && BARKEEP.order(id, to, this.seat, quiet)) return;
+    if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
     GLASS.serve(id, C, to);
   },
   // the glass for someone on a bar stool: a hand's width right of the middle, on the counter
   seatSpot(seat) { const v = new THREE.Vector3(); SIT.seatW(-0.17, seat.bar.y, seat.bar.z + 0.02, v); return v; }
 };
+
+// ==== npc/npc.js ====
+/* ---------- people ----------
+   NPC: a body built from the same rig as the cowboy, with its own small locomotion (walks to a goal, faces a
+   direction, steps with a simple cycle), a head that follows what it looks at, two hands that can be put
+   anywhere with arm IK (to hold, pour, wipe), crouching and leaning. What the person DOES is decided by its
+   behaviour (npc/barkeep.js …); the body only carries it out.
+   SAY: speech bubbles over the head. NPCS.bodies: circles the player bumps into (see collide()). */
+const NPCS = {
+  list: [], bodies: [], _v: new THREE.Vector3(),
+  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); TALK.init(); },
+  update(dt) {
+    BARKEEP.update(dt);
+    TALK.update(dt);
+    for (const n of this.list) n.update(dt);
+    SAY.update(dt);
+  },
+  // the player's position seen from a room: is he in it?
+  playerIn(R) { return G.room === R; }
+};
+
+class NPC {
+  constructor(o) {
+    this.id = o.id; this.name = o.name; this.room = o.room || null;
+    this.ch = buildCharacter(o.colors, o.look);
+    this.ch.pose.armOv = [null, null];
+    this.mat = null;
+    o.scene.add(this.ch.root);
+    this.pos = o.pos.clone(); this.yaw = o.yaw || 0;
+    this.goal = null; this.faceYaw = null; this.vx = 0; this.vz = 0; this.speed = 0; this.ph = 0; this.stepN = 0;
+    this.walkSpeed = o.walkSpeed || 1.15;
+    this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
+    // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
+    this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
+    this.lean = 0; this.leanT = 0; this.crouch = 0; this.crouchT = 0; this.talkT = 0; this.nod = 0;
+    this.body = { cx: this.pos.x, cz: this.pos.z, r: 0.32, npc: this };
+    NPCS.bodies.push(this.body);
+    const self = this;
+    ACTORS.add({ id: this.id, kind: 'npc', pos: this.pos, get yaw() { return self.yaw; }, get room() { return self.room; } });
+    NPCS.list.push(this);
+    this.update(0);
+  }
+  goTo(x, z, faceYaw) {
+    this.faceYaw = faceYaw === undefined ? null : faceYaw;
+    if (Math.hypot(x - this.pos.x, z - this.pos.z) < 0.05) { this.goal = null; return; }   // already there
+    this.goal = (this.goal || new THREE.Vector3()).set(x, this.pos.y, z);
+  }
+  stop(faceYaw) { this.goal = null; if (faceYaw !== undefined) this.faceYaw = faceYaw; }
+  arrived() { return !this.goal && this.speed < 0.15; }
+  facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
+  lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
+  // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
+  gesture(name) { this.gest = name; this.gestT = 0; }
+  // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
+  reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
+  free(i) { this.hand[i].tw = 0; }
+  // where hand i is in the world (the fist), into out
+  handWorld(i, out) {
+    out.set(0, -0.3, 0.01).applyMatrix4(this.ch.p[i ? 'fArmR' : 'fArmL'].matrix).applyMatrix4(this.ch.root.matrixWorld);
+    return out;
+  }
+  // a point in the world, given in this body's character space
+  toWorld(x, y, z, out) {
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    return out.set(this.pos.x + x * c + z * s, this.pos.y + y, this.pos.z - x * s + z * c);
+  }
+  toLocal(v, out) {
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw), dx = v.x - this.pos.x, dz = v.z - this.pos.z;
+    return out.set(dx * c - dz * s, v.y - this.pos.y, dx * s + dz * c);
+  }
+  update(dt) {
+    // walking: towards the goal, slowing down on arrival
+    let tx = 0, tz = 0;
+    if (this.goal) {
+      const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
+      if (d < 0.04) this.goal = null;
+      else { const v = Math.min(this.walkSpeed, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
+    }
+    const a = 1 - Math.exp(-dt * 7);
+    this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
+    this.pos.x += this.vx * dt; this.pos.z += this.vz * dt;
+    this.speed = Math.hypot(this.vx, this.vz);
+    // facing: where it was told to face, else where it walks
+    const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
+    this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
+    this.ph += (this.speed * dt * TAU) / 1.15;
+    const n = Math.floor(this.ph / Math.PI);
+    if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
+    // the behaviour's wishes, eased
+    const e = 1 - Math.exp(-dt * 6);
+    this.lean += (this.leanT - this.lean) * e; this.crouch += (this.crouchT - this.crouch) * (1 - Math.exp(-dt * 9));
+    this.lookW += (this.lookTW - this.lookW) * e;
+    for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
+    this.talkT = Math.max(0, this.talkT - dt);
+    if (this.gest) { this.gestT += dt; if (this.gestT > (this.gest === 'point_door' ? 1.8 : 1.2)) this.gest = null; }
+    this.body.cx = this.pos.x; this.body.cz = this.pos.z;
+    this.pose(dt);
+  }
+  footstep() {
+    if (Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) > 18) return;
+    GSFX.run(() => {
+      const { g, t } = GSFX.out(0.28, this.pos), p = 0.9 + Math.random() * 0.2;
+      SFX.thump(t, g, 170 * p, 95 * p, 0.4, 0.09);
+      SFX.noiseHit(t, g, { freq: 430 * p, q: 4, gain: 0.3, decay: 0.1 });
+      SFX.noiseHit(t, g, { type: 'highpass', freq: 2600 * p, q: 0.7, gain: 0.12, decay: 0.015 });
+    });
+  }
+  pose(dt) {
+    const P = this.ch.pose, t = G.time, m = Math.min(1, this.speed / 0.5);
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    // the way it walks, in its own frame (+x left, +z ahead)
+    const lx = this.speed > 0.05 ? (this.vx * c - this.vz * s) / this.speed : 0, lz = this.speed > 0.05 ? (this.vx * s + this.vz * c) / this.speed : 0;
+    const cr = this.crouch, ln = this.lean;
+    P.pel.set(0, RIG.hipY - 0.02 - 0.025 * Math.abs(Math.sin(this.ph)) * m - cr * 0.42, -cr * 0.12 - ln * 0.05);
+    P.pelYaw = 0; P.pelPitch = cr * 0.25; P.pelRoll = Math.sin(this.ph) * 0.03 * m;
+    P.spPitch = 0.02 + Math.sin(t * 1.7) * 0.012 + ln * 0.38 + cr * 0.35; P.spRoll = 0;
+    for (let i = 0; i < 2; i++) {
+      const sd = i === 0 ? 1 : -1, ph = this.ph + i * Math.PI;
+      P.ank[i].set(sd * (0.12 + cr * 0.06) + lx * 0.2 * Math.sin(ph) * m, RIG.ankleH + 0.07 * Math.max(0, Math.cos(ph)) * m, lz * 0.2 * Math.sin(ph) * m + (cr ? -cr * 0.05 * sd : 0));
+      P.ftYaw[i] = 0; P.ftPitch[i] = 0;
+      const a = P.arm[i]; a.sw = -Math.sin(ph) * 0.3 * m * lz; a.out = 0.08 + 0.05 * m; a.el = 0.15 + 0.15 * m;
+    }
+    // the head (and a little of the chest) turns to what it looks at
+    let ty = 0, tp = 0;
+    if (this.lookW > 0.01) {
+      const hx = this.pos.x, hy = this.pos.y + 1.62 - cr * 0.42, hz = this.pos.z;
+      const dx = this.look.x - hx, dy = this.look.y - hy, dz = this.look.z - hz;
+      const qx = dx * c - dz * s, qz = dx * s + dz * c;
+      ty = clamp(Math.atan2(qx, qz), -1.5, 1.5) * this.lookW; tp = clamp(-Math.atan2(dy, Math.hypot(qx, qz)), -0.5, 0.6) * this.lookW;
+    }
+    const k = 1 - Math.exp(-dt * 5);
+    this.spYawL += (ty * 0.3 - this.spYawL) * k; this.hdYaw += (clamp(ty - ty * 0.3, -1, 1) - this.hdYaw) * k; this.hdPitch += (tp - this.hdPitch) * k;
+    P.spYaw = this.spYawL;
+    // talking: small nods
+    const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
+    P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
+    if (this.gest) {
+      const g = this.gestT, f = Math.sin(Math.PI * Math.min(1, g / 1.2));
+      if (this.gest === 'nod') P.hdPitch += Math.max(0, Math.sin(g * 9)) * 0.22 * f;
+      else if (this.gest === 'shake_head') P.hdYaw += Math.sin(g * 11) * 0.32 * f;
+      else if (this.gest === 'laugh') { P.hdPitch -= 0.28 * f; P.spPitch -= 0.1 * f; P.pel.y += Math.abs(Math.sin(g * 15)) * 0.012 * f; }
+    }
+    P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;
+    // hands put somewhere: arm IK on top of the swing
+    let inv = false;
+    for (let i = 0; i < 2; i++) {
+      const h = this.hand[i];
+      if (h.w < 0.002) { P.armOv[i] = null; continue; }
+      if (!inv) { torsoInverse(P); inv = true; }
+      const r = armIK(i, h.p, h.pole), o = h.ov;
+      o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
+    }
+    applyPose(this.ch);
+    const root = this.ch.root;
+    root.position.copy(this.pos); root.rotation.y = this.yaw;
+    root.visible = !this.room || this.room.mesh.visible;
+    const mat = this.room ? this.room.figMat : G.litMat;
+    if (mat !== this.mat) { this.mat = mat; for (const p of this.ch.parts) p.material = mat; }
+    root.updateMatrixWorld(true);
+  }
+}
+
+/* ---- speech bubbles ---- */
+const SAY = {
+  el: null, _v: new THREE.Vector3(),
+  init() { this.el = document.getElementById('says'); },
+  // npc says text; the bubble stays a time that fits its length
+  show(npc, text, dur) {
+    if (!npc.sayEl) { npc.sayEl = document.createElement('div'); npc.sayEl.className = 'say'; npc.sayEl.innerHTML = '<b></b><span></span>'; this.el.appendChild(npc.sayEl); }
+    npc.sayEl.querySelector('b').textContent = npc.name;
+    npc.sayEl.querySelector('span').textContent = text;
+    npc.sayT = dur || clamp(1.8 + text.length * 0.055, 2.2, 9);
+    npc.talkT = clamp(0.6 + text.length * 0.035, 0.6, 5);
+    npc.sayEl.classList.remove('out'); npc.sayEl.hidden = false;
+    npc.said = text;
+  },
+  update(dt) {
+    const cam = G.cam, W0 = G.renderer.domElement.clientWidth, H0 = G.renderer.domElement.clientHeight;
+    for (const n of NPCS.list) {
+      if (!n.sayEl || n.sayEl.hidden) continue;
+      n.sayT -= dt;
+      if (n.sayT <= 0) { n.sayEl.hidden = true; continue; }
+      if (TALK.open && TALK.npc === n && n.said !== '…') { n.sayEl.style.visibility = 'hidden'; continue; }   // the panel shows it
+      const v = this._v.set(n.pos.x, n.pos.y + 2.1 - n.crouch * 0.45, n.pos.z).project(cam);
+      const far = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z) > 16;
+      const seen = v.z < 1 && Math.abs(v.x) < 1.1 && v.y < 1.1 && !far && n.ch.root.visible;
+      n.sayEl.style.visibility = seen ? 'visible' : 'hidden';
+      n.sayEl.style.transform = `translate(${((v.x + 1) / 2 * W0).toFixed(1)}px, ${((1 - v.y) / 2 * H0).toFixed(1)}px) translate(-50%, -100%)`;
+      n.sayEl.classList.toggle('out', n.sayT < 0.4);
+    }
+  }
+};
+
+// ==== npc/barkeep.js ====
+/* ---------- Hank, the barkeeper of the saloon ----------
+   Lives in the aisle behind the bar. When nobody wants anything he polishes glasses, wipes the counter, leans on
+   it and looks about; when the player comes to the bar he comes over. An order (SHOP.buy -> BARKEEP.order) is
+   served by hand: he turns to the back bar, takes a bottle, sets a glass on the counter, pours, and pushes it
+   across — or, now and then, sends it sliding down the bar. He ducks when shots are fired, raises his hands when
+   a gun points at him, and has a word for most things (barks; real conversation comes later).
+   Positions are in the saloon's room frame (rwp/rLocal): the bar's front edge is at x 3.1, the aisle behind it
+   runs from x 4.05 to 5.7, the back bar with the bottles stands at x 5.7–6.3; along the bar z goes -9.8 … -3.2. */
+const BARKEEP = {
+  npc: null, R: null, C: null, st: 'idle', t: 0, act: null, actT: 0, orders: [], cur: null,
+  X: { stand: 4.8, pour: 4.42, back: 5.2, pourSpot: 3.82 }, Z0: -9.7, Z1: -3.3,
+  props: {}, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _m: new THREE.Matrix4(), _q: new THREE.Matrix4(),
+  cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0,
+  LINES: {
+    hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
+    what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
+    whiskey: ['Ein Whiskey. Kommt sofort.', 'Whiskey, sauber.', 'Einer vom Guten.'],
+    beer: ['Ein kühles Bier.', 'Bier kommt.', 'Frisch vom Fass. Fast.'],
+    water: ['Wasser? Na gut.', 'Wasser… wie du meinst.', 'Ein Wasser für den Herrn.'],
+    bottle: ['Die ganze Flasche? Respekt.', 'Teil sie dir ein.', 'Für die lange Nacht, was?'],
+    tipsy: ['Langsam, Freund.', 'Du schwankst ja schon.', 'Noch einen? Na schön.'],
+    drunk: ['Ich glaub, du hast genug.', 'Der Boden bewegt sich nicht. Das bist du.', 'Letzter, dann ist Schluss.'],
+    leave: ['Geh schlafen, Cowboy.', 'Komm gut heim!', 'Pass auf die Stufe auf.'],
+    shot: ['Nicht in meinem Saloon!', 'Steck das Ding weg!', 'Bist du verrückt geworden?!'],
+    aimed: ['Ganz ruhig, Mister…', 'Nimm das Ding runter.', 'Die Kasse ist leer, ehrlich.'],
+    punch: ['Keine Prügelei hier drin!', 'Raus damit auf die Straße!'],
+    fall: ['Hoppla! Alles noch dran?', 'Steh auf, der Boden ist dreckig.'],
+    behind: ['He! Hinter die Theke gehört nur einer.', 'Raus aus meinem Revier.'],
+    broke: ['Erst Geld, dann Whiskey.', 'Anschreiben gibt’s nicht.'],
+    cheers: ['Prost.', 'Wohl bekomm’s.']
+  },
+  init(scene) {
+    const R = this.R = ROOMS.find((r) => r.type === 'saloon');
+    if (!R) return;
+    this.C = COUNTERS.find((c) => c.room === R) || null;
+    const F = R.floorY, p = this.roomPt(this.X.stand, -6.4, this._v);
+    this.faceYaw = this.yawFor(-1); this.backYaw = this.yawFor(1);
+    this.npc = new NPC({
+      id: 'barkeep', name: 'Hank', room: R, scene, pos: p, yaw: this.faceYaw,
+      colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
+      look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) }
+    });
+    void F;
+    // what he handles: a glass, a bottle, a rag
+    const mk = (geo) => { const m = new THREE.Mesh(geo, G.litMat); m.matrixAutoUpdate = false; m.visible = false; m.frustumCulled = false; scene.add(m); return m; };
+    this.props.glass = mk(VESSEL.geo.glassfalse);
+    this.props.bottle = mk(VESSEL.geo.bottletrue);
+    const rag = new MB(); rag.box(0, 0, 0, 0.13, 0.03, 0.1, rgb(0xd8cfb8), 9); rag.box(0.02, -0.04, 0.02, 0.06, 0.06, 0.04, rgb(0xc9bfa6), 9);
+    this.props.rag = mk(rag.build());
+    this.pickIdle();
+    onWorldEvent((e) => this.event(e));
+    this.npc.persona = this.persona();
+    this.npc.voicePitch = 0.72; this.npc.voiceRate = 0.98;
+  },
+  // what he remembers (for conversations): a few notable things, newest last
+  remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
+  persona() {
+    const B = this;
+    return {
+      rules: [
+        'Du bist Hank, der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
+        'Wer du bist: Mitte fünfzig, Schnurrbart, weiße Schürze. Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen. Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.',
+        'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
+        'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
+        'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
+        'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
+        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt; das Spiel kassiert selbst und prüft, ob sein Geld reicht. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
+      ].join('\n'),
+      context() {
+        const L = DRUNK.level, lines = [];
+        lines.push('Der Fremde ist ' + (L < 0.12 ? 'nüchtern' : L < 0.35 ? 'leicht angetrunken' : L < 0.65 ? 'betrunken' : 'sehr betrunken, er lallt und schwankt') + '.');
+        lines.push('Er hat ' + money(INV.money) + ' bei sich' + (INV.has('bottle') ? ' und eine Flasche Whiskey in der Tasche' : '') + '.');
+        if (SIT.state === 'sit' && SIT.seat && SIT.seat.bar) lines.push('Er sitzt an deinem Tresen.');
+        else if (B.playerAtBar()) lines.push('Er steht an deinem Tresen.'); else lines.push('Er steht im Saloon, ein Stück vom Tresen weg.');
+        if (GLASS.obj && GLASS.obj.left > 0) lines.push('Vor ihm steht ein ' + GLASS.obj.it.name + ', noch nicht ausgetrunken.');
+        if (GUN.state !== 'holster') lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
+        if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
+        if (B.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + B.mem.slice(-6).join(' '));
+        return lines.join('\n');
+      },
+      offline(text) {
+        const t = text.toLowerCase(), r = (a) => a[Math.floor(Math.random() * a.length)];
+        if (/whisk|schnaps|was starkes|was hartes/.test(t)) return { say: r(['Whiskey. Kommt.', 'Einer vom Guten.']), action: 'serve_whiskey' };
+        if (/flasche/.test(t)) return { say: 'Die ganze Flasche? Na schön.', action: 'serve_bottle' };
+        if (/bier/.test(t)) return { say: r(['Ein Bier, kommt.', 'Bier. Gute Wahl.']), action: 'serve_beer' };
+        if (/wasser/.test(t)) return { say: 'Wasser. Wie du meinst.', action: 'serve_water' };
+        if (/\b(hallo|howdy|hi|hey|servus|moin|guten (tag|abend|morgen))\b/.test(t)) return { say: r(['Howdy.', 'Tag auch.']), action: 'nod' };
+        if (/name|wer bist/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
+        if (/sheriff/.test(t)) return { say: 'Der Sheriff? Sitzt in seinem Büro und wartet auf Ärger.', action: 'none' };
+        if (/stadt|dust creek|hier los/.test(t)) return { say: 'Dust Creek. Staub, Sonne und mein Whiskey.', action: 'none' };
+        if (/danke/.test(t)) return { say: 'Schon gut.', action: 'nod' };
+        if (/tschüss|bis dann|auf wieder|ciao|ich geh/.test(t)) return { say: 'Komm wieder.', action: 'nod' };
+        if (/witz|lustig|lach/.test(t)) return { say: 'Ein Cowboy kommt in eine Bar. Mehr passiert hier selten.', action: 'laugh' };
+        if (/raus|ausgang|tür/.test(t)) return { say: 'Da vorne ist die Tür.', action: 'point_door' };
+        return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
+      },
+      act(action) {
+        const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
+        if (m) { B.serveFromTalk(m[1]); return; }
+        if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) B.npc.gesture(action);
+      }
+    };
+  },
+  // an order made in conversation: the game checks it like one from the list
+  serveFromTalk(id) {
+    const it = ITEMS[id];
+    if (!it) return;
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => SAY.show(this.npc, 'Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => SAY.show(this.npc, 'Das Geld reicht nicht, Freund.'), 2600); return; }
+    SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
+    SHOP.buy(id, true);
+  },
+  // a point in the saloon's frame (x across, z along the bar), at floor height, into out
+  roomPt(x, z, out) { const w = rwp(this.R, x, this.R.floorY, z); return out.set(w.x, w.y, w.z); },
+  yawFor(dir) { const a = rwp(this.R, 4, 0, -6), b = rwp(this.R, 4 + dir, 0, -6); return Math.atan2(b.x - a.x, b.z - a.z); },
+  along(p) { return clamp(rLocal(this.R, p.x, p.z)[1], this.Z0, this.Z1); },
+  myZ() { return rLocal(this.R, this.npc.pos.x, this.npc.pos.z)[1]; },
+  say(kind, cool) {
+    const now = G.time;
+    if (cool && (this.cool[kind] || -99) > now - cool) return false;
+    this.cool[kind] = now;
+    const L = this.LINES[kind]; SAY.show(this.npc, L[Math.floor(Math.random() * L.length)]);
+    return true;
+  },
+  /* ---- orders: from SHOP ---- */
+  // returns false when he cannot serve (then the drink comes the old way)
+  order(id, to, seat, quiet) {
+    if (!this.npc || this.st === 'gone') return false;
+    this.orders.push({ id, to: to.clone(), seat });
+    this.served++;
+    const L = DRUNK.level, it = ITEMS[id];
+    if (quiet) return true;
+    if (it.kind === 'carry') this.say('bottle');
+    else if (L > 0.75) this.say('drunk');
+    else if (L > 0.45 && Math.random() < 0.6) this.say('tipsy');
+    else this.say(id === 'beer' ? 'beer' : id === 'water' ? 'water' : 'whiskey');
+    return true;
+  },
+  playerAtBar() {
+    if (G.room !== this.R || !this.C) return false;
+    if (SIT.seat && SIT.seat.bar && SIT.state === 'sit') return true;
+    const n = this.C.near(PLAY.pos); return n.side >= 0 && n.d < 1.4;
+  },
+  playerBehind() { if (G.room !== this.R) return false; const [x, z] = rLocal(this.R, PLAY.pos.x, PLAY.pos.z); return x > 4.0 && z > -10.4 && z < -2.6; },
+  event(e) {
+    if (!this.npc || e.by !== 'player') return;
+    const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
+    if (e.type === 'shot' && (inside || near)) { if (this.st !== 'duck') this.remember('Er hat in deinem Saloon geschossen.'); this.duck(); }
+    else if (e.type === 'punch' && inside) this.say('punch', 8);
+    else if (e.type === 'fall' && inside) { setTimeout(() => this.say('fall', 10), 700); if ((this.cool.memFall || -99) < G.time - 60) { this.cool.memFall = G.time; this.remember('Er ist betrunken in deinem Saloon hingefallen.'); } }
+    else if (e.type === 'leave' && inside) { this.say('leave'); this.remember('Du hast gesehen, wie er sturzbetrunken aus dem Saloon getorkelt ist.'); }
+    else if (e.type === 'passout') this.remember('Man erzählt, er hat irgendwo in der Stadt seinen Rausch ausgeschlafen.');
+    else if (e.type === 'drink' && inside && Math.random() < 0.25) this.say('cheers', 30);
+  },
+  duck() {
+    if (this.st === 'duck') { this.duckT = Math.max(this.duckT, 2.5); return; }
+    this.abortServe();
+    this.st = 'duck'; this.duckT = 3 + Math.random() * 1.5; this.t = 0;
+  },
+  abortServe() {
+    if (this.cur) { this.orders.unshift(this.cur.o); this.cur = null; }
+    this.props.glass.visible = false; this.props.bottle.visible = false;
+  },
+  pickIdle() {
+    const r = Math.random();
+    this.act = r < 0.45 ? 'polish' : r < 0.7 ? 'wipe' : r < 0.85 ? 'stand' : 'stroll';
+    this.actT = this.act === 'stroll' ? 0 : 6 + Math.random() * 8;
+    if (this.act === 'stroll') { const z = this.Z0 + 0.4 + Math.random() * (this.Z1 - this.Z0 - 0.8), p = this.roomPt(this.X.stand, z, this._v); this.npc.goTo(p.x, p.z, this.faceYaw); }
+  },
+  update(dt) {
+    const N = this.npc;
+    if (!N) return;
+    this.t += dt;
+    const inside = G.room === this.R;
+    // the player: greet him, look at him, mind him
+    if (inside && !this.wasInside) this.say('hello', 60);
+    this.wasInside = inside;
+    const head = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55 - 0.45 * (FALL.down || 0), PLAY.pos.z);
+    const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    if (inside && dP < 9) N.lookAt(head, 1); else N.lookTW = 0;
+    if (this.playerBehind()) this.say('behind', 12);
+    // a gun pointed at him: hands up
+    const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
+    this.aimedT = aimed ? Math.min(this.aimedT + dt, 3) : Math.max(0, this.aimedT - dt);
+    if (aimed && this.aimedT > 0.25) this.say('aimed', 10);
+    const handsUp = this.aimedT > 0.2;
+    N.leanT = 0; N.crouchT = 0;
+    if (this.st === 'duck') this.updDuck(dt);
+    else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }
+    else if (this.cur || this.orders.length) this.updServe(dt);
+    else this.updIdle(dt, inside);
+    this.placeProps();
+  },
+  aimedAtMe() {
+    const cam = G.cam, d = this._v.set(this.npc.pos.x, this.npc.pos.y + 1.4, this.npc.pos.z).sub(cam.position);
+    const L = d.length(); if (L > 18) return false;
+    d.divideScalar(L);
+    const f = cam.getWorldDirection(this._f || (this._f = new THREE.Vector3()));
+    return f.dot(d) > Math.cos(0.12 + 0.5 / L);
+  },
+  updDuck(dt) {
+    const N = this.npc;
+    N.stop(); N.crouchT = 1; N.reach(0, 0.18, 1.62, 0.22); N.reach(1, -0.18, 1.62, 0.22); N.lookTW = 0;
+    this.props.rag.visible = false;
+    this.duckT -= dt;
+    if (this.duckT <= 0) { this.st = 'idle'; this.say('shot'); this.pickIdle(); }
+  },
+  /* ---- idle: the bar's own small work ---- */
+  updIdle(dt, inside) {
+    const N = this.npc, t = G.time, atBar = this.playerAtBar();
+    // in a conversation: work stops, he faces the stranger; thinking: a hand to the chin
+    if (N.talking || N.thinking || N.gest === 'point_door') {
+      if (atBar && Math.abs(this.myZ() - this.along(PLAY.pos)) > 0.6) { const p = this.roomPt(this.X.pour + 0.08, this.along(PLAY.pos), this._v); N.goTo(p.x, p.z, this.faceYaw); }
+      this.props.rag.visible = false; this.props.glass.visible = false;
+      if (N.gest === 'point_door') { const d = rwp(this.R, 0, this.R.floorY + 1.4, 0.5), l = N.toLocal(this._v.set(d.x, d.y, d.z), this._w).normalize(); N.reach(1, l.x * 0.55, 1.45, Math.max(0.2, l.z * 0.55)); N.free(0); }
+      else if (N.thinking) { N.reach(1, -0.04, 1.47, 0.2); N.reach(0, 0.12, 1.2, 0.18, 0.6); }
+      else if (atBar && N.arrived()) { N.leanT = 0.4; N.reach(0, 0.3, 1.16, 0.5); N.reach(1, -0.3, 1.16, 0.5); }
+      else { N.free(0); N.free(1); }
+      return;
+    }
+    this.atBarT = atBar ? this.atBarT + dt : 0;
+    // someone at the bar: go over, lean on the counter, ask
+    if (atBar && this.atBarT > 0.8) {
+      const z = this.along(PLAY.pos), p = this.roomPt(this.X.pour + 0.08, z, this._v);
+      if (Math.abs(this.myZ() - z) > 0.5 || !this.attending) N.goTo(p.x, p.z, this.faceYaw);
+      if (!this.attending) { this.attending = true; setTimeout(() => { if (this.attending && !SHOP.open && !this.cur && !this.orders.length) this.say('what', 25); }, 600); }
+      this.props.rag.visible = false; this.props.glass.visible = false;
+      if (N.arrived()) { N.leanT = 0.5; N.reach(0, 0.3, 1.16, 0.5); N.reach(1, -0.3, 1.16, 0.5); }
+      else { N.free(0); N.free(1); }
+      if (SHOP.open && !this.saidBroke && INV.money < Math.min(...MENU_BAR.map((id) => ITEMS[id].price))) { this.saidBroke = true; this.say('broke'); }
+      return;
+    }
+    if (this.attending) { this.attending = false; this.saidBroke = false; this.pickIdle(); }
+    if (!N.arrived()) { N.free(0); N.free(1); this.props.rag.visible = this.act === 'wipe'; this.props.glass.visible = false; return; }
+    this.actT -= dt;
+    if (this.actT <= 0) { this.pickIdle(); return; }
+    N.faceYaw = this.faceYaw;
+    if (this.act === 'polish') {
+      // a glass in the left hand, the rag going round in it
+      const a = t * 4.2;
+      N.reach(0, 0.06, 1.12 + Math.sin(t * 0.7) * 0.02, 0.36);
+      N.reach(1, 0.0 + Math.cos(a) * 0.035, 1.2 + Math.sin(a) * 0.025, 0.38);
+      N.leanT = 0.05; N.lookTW = inside ? N.lookTW * 0.5 : 0;
+      if (!inside || Math.sin(t * 0.3) > 0.3) { N.lookAt(N.toWorld(0.05, 1.15, 0.4, this._v), 0.8); }
+    } else if (this.act === 'wipe') {
+      // the rag in wide circles on the counter
+      const a = t * 2.4;
+      N.reach(1, -0.05 + Math.cos(a) * 0.18, 1.15, 0.55 + Math.sin(a) * 0.1);
+      N.reach(0, 0.3, 1.15, 0.45); N.leanT = 0.45;
+      if (!inside) N.lookAt(N.toWorld(-0.05, 1.1, 0.6, this._v), 0.6);
+    } else if (this.act === 'stand') {
+      N.free(1); N.reach(0, 0.3, 1.15, 0.45, 0.7); N.leanT = 0.2;
+      if (!inside) N.lookAt(N.toWorld(Math.sin(t * 0.4) * 3, 1.5, 4, this._v), 0.7);
+    } else { N.free(0); N.free(1); this.pickIdle(); }
+    this.props.rag.visible = this.act === 'polish' || this.act === 'wipe';
+    this.props.glass.visible = this.act === 'polish';
+    this.props.glass.geometry = VESSEL.geo.glassfalse;
+  },
+  /* ---- serving: back bar, bottle, glass on the counter, pour, push it over ---- */
+  updServe(dt) {
+    const N = this.npc;
+    if (!this.cur) {
+      const o = this.orders.shift(), zc = this.along(o.to);
+      // now and then he pours where he stands and sends it sliding down the bar
+      const myZ = clamp(this.myZ(), this.Z0, this.Z1), dz = Math.abs(myZ - zc);
+      const slideLong = ITEMS[o.id].kind !== 'carry' && dz > 1.4 && dz < 4.5 && Math.random() < 0.5;
+      this.cur = { o, z: slideLong ? myZ : zc, st: 'toBack', t: 0, slideLong };
+      this.props.rag.visible = false; this.props.glass.visible = false;
+      this.attending = false;
+    }
+    const S = this.cur, it = ITEMS[S.o.id], carry = it.kind === 'carry';
+    S.t += dt;
+    const go = (st) => { S.st = st; S.t = 0; };
+    switch (S.st) {
+      case 'toBack': {   // to the back bar
+        const p = this.roomPt(this.X.back, S.z, this._v); N.goTo(p.x, p.z, this.backYaw); N.free(0); N.free(1);
+        if (N.arrived() && N.facing(0.25)) go('grab');
+        break;
+      }
+      case 'grab': {     // reach up for a bottle
+        const u = clamp(S.t / 0.55, 0, 1);
+        N.reach(1, -0.12, 1.15 + 0.3 * Math.sin(u * Math.PI), 0.38 + 0.14 * Math.sin(u * Math.PI));
+        N.lookAt(N.toWorld(-0.1, 1.45, 0.6, this._v), 1);
+        if (S.t > 0.3) S.bottle = true;
+        if (S.t > 0.6) go('toPour');
+        break;
+      }
+      case 'toPour': {   // back to the counter with it
+        const p = this.roomPt(this.X.pour, S.z, this._v); N.goTo(p.x, p.z, this.faceYaw);
+        N.reach(1, -0.14, 1.05, 0.28);
+        if (N.arrived() && N.facing(0.2)) go(carry ? 'setBottle' : 'glass');
+        break;
+      }
+      case 'glass': {    // a glass from under the counter onto it
+        const u = clamp(S.t / 0.55, 0, 1), sp = this.pourLocal();
+        N.reach(1, -0.14, 1.05, 0.28);
+        if (u < 0.5) N.reach(0, 0.18, 0.9, 0.36);
+        else N.reach(0, sp.x + 0.02, sp.y + 0.05, sp.z - 0.04);
+        if (u >= 0.5 && !S.glassOut) { S.glassOut = true; this.props.glass.geometry = VESSEL.geo[it.vessel + 'false']; this.glassKnock(0.6); }
+        if (S.t > 0.7) go('pour');
+        break;
+      }
+      case 'pour': {     // tip the bottle over the glass
+        const sp = this.pourLocal(), u = clamp(S.t / 1.1, 0, 1);
+        N.reach(0, sp.x + 0.08, sp.y + 0.03, sp.z - 0.08, 0.6);
+        N.reach(1, sp.x - 0.06, sp.y + 0.3, sp.z - 0.1);
+        S.tilt = Math.sin(Math.min(1, u * 1.25) * Math.PI) * 1.9;
+        N.lookAt(N.toWorld(sp.x, sp.y, sp.z, this._v), 1);
+        if (!S.poured && u > 0.15) { S.poured = true; this.pourSound(0.8); }
+        if (u > 0.55) this.props.glass.geometry = VESSEL.geo[it.vessel + 'true'];
+        if (S.t > 1.2) { S.tilt = 0; go('stow'); }
+        break;
+      }
+      case 'stow': {     // the bottle goes back under the counter
+        N.reach(1, -0.2, 0.9, 0.32); N.free(0);
+        if (S.t > 0.35) S.bottle = false;
+        if (S.t > 0.45) go('push');
+        break;
+      }
+      case 'push': {     // push it across (or send it down the bar)
+        const sp = this.pourLocal(), u = clamp(S.t / 0.3, 0, 1);
+        N.reach(1, sp.x - 0.03, sp.y + 0.06, sp.z - 0.12 - u * (S.slideLong ? 0.05 : 0.18));
+        if (S.slideLong) N.lookAt(this._v.copy(S.o.to), 1);
+        if (S.t > 0.12 && !S.sent) {
+          S.sent = true; this.props.glass.visible = false; S.glassOut = false;
+          GLASS.serve(S.o.id, this.C, S.o.to, this.pourWorld(this._w));
+        }
+        if (S.t > 0.45) { this.cur = null; this.attending = false; this.atBarT = 0.8; }
+        break;
+      }
+      case 'setBottle': { // a bottle to take away: set it down in front of the customer
+        const sp = this.pourLocal();
+        N.reach(1, sp.x - 0.04, sp.y + 0.12, sp.z - 0.02);
+        if (S.t > 0.45 && !S.given) {
+          S.given = true; S.bottle = false; this.glassKnock(0.8);
+          INV.add(S.o.id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long');
+        }
+        if (S.t > 0.8) { this.cur = null; this.attending = false; this.atBarT = 0.8; }
+        break;
+      }
+    }
+    this.props.bottle.visible = !!S.bottle;
+    this.props.glass.visible = !!S.glassOut;
+  },
+  // the spot on the counter in front of him where he pours, in his character space / in the world
+  pourLocal() { this.pourWorld(this._w); return this.npc.toLocal(this._w, this._lp || (this._lp = new THREE.Vector3())); },
+  pourWorld(out) {
+    const z = this.cur ? this.cur.z : this.myZ(), w = rwp(this.R, this.X.pourSpot, this.R.floorY, z);
+    return out.set(w.x, this.C ? this.C.y + this.C.top : w.y + 1.13, w.z);
+  },
+  // the things in his hands (or on the counter) follow
+  placeProps() {
+    const N = this.npc, P = this.props, vis = N.ch.root.visible, mat = N.mat;
+    const S = this.cur;
+    if (P.glass.visible) {
+      if (S && S.glassOut) { this.pourWorld(this._v); this._m.makeRotationY(N.yaw); this._m.setPosition(this._v); }
+      else { N.handWorld(0, this._v); this._m.makeRotationY(N.yaw); this._m.setPosition(this._v.x, this._v.y - 0.04, this._v.z); }
+      P.glass.matrix.copy(this._m); P.glass.matrixWorldNeedsUpdate = true;
+    }
+    if (P.bottle.visible) {
+      // held at the neck-ish, upright, tipped forward when pouring
+      N.handWorld(1, this._v);
+      this._m.makeTranslation(this._v.x, this._v.y, this._v.z);
+      this._q.makeRotationY(N.yaw); this._m.multiply(this._q);
+      this._q.makeRotationX(S ? S.tilt || 0 : 0); this._m.multiply(this._q);
+      this._q.makeTranslation(0, -0.13, 0); this._m.multiply(this._q);
+      P.bottle.matrix.copy(this._m); P.bottle.matrixWorldNeedsUpdate = true;
+    }
+    if (P.rag.visible) {
+      N.handWorld(1, this._v); this._m.makeRotationY(N.yaw + G.time * 2); this._m.setPosition(this._v.x, this._v.y - 0.03, this._v.z);
+      P.rag.matrix.copy(this._m); P.rag.matrixWorldNeedsUpdate = true;
+    }
+    for (const k in P) { if (!vis) P[k].visible = false; P[k].material = mat || G.litMat; }
+  },
+  /* ---- sounds ---- */
+  glassKnock(k) {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.5 * k, this.npc.pos);
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: 1000, q: 0.9, gain: 0.25 * k, attack: 0.001, decay: 0.045 });
+      GLASS.ring(c, g, t + 0.003, 0.7 * k, 'glass');
+    });
+  },
+  // liquid into a glass: a gurgling stream whose pitch rises as the glass fills
+  pourSound(dur) {
+    GSFX.run(() => {
+      const { g, t } = GSFX.out(0.5, this.npc.pos), n = Math.floor(dur / 0.045);
+      for (let i = 0; i < n; i++) {
+        const u = i / n;
+        SFX.noiseHit(t + i * 0.045 + Math.random() * 0.02, g, { type: 'bandpass', freq: 500 + u * 900 + Math.random() * 250, q: 6, gain: 0.08 + 0.06 * Math.sin(u * Math.PI), attack: 0.004, decay: 0.05 });
+      }
+      SFX.noiseHit(t, g, { type: 'bandpass', freq: 1800, q: 0.8, gain: 0.04, attack: 0.05, decay: dur });
+    });
+  }
+};
+
+// ==== npc/talk.js ====
+/* ---------- talking to people ----------
+   Hold V (touch: the "Reden" button) near someone and speak: the browser's speech recognition (German) turns it
+   into text — or type it into the talk panel. The line goes to Claude through the artifact's `sample` capability
+   (on the viewer's own Claude account; the first time the viewer is asked to allow it), together with who the
+   person is, what they know and what is going on right now. The answer comes back as JSON {say, action}.
+   The person SAYS it (bubble, panel, a browser voice), but what HAPPENS is the game's decision: an action is one
+   word from a short list, and the person's own code checks it (serving costs money, …).
+   Without Claude (outside claude.ai, or not allowed, or offline) a small phrase book answers instead.
+   A person who can talk has npc.persona = { rules, context(), offline(text), act(action) }. */
+const TALK = {
+  open: false, npc: null, ai: null, aiOff: false, busy: false, rec: null, listening: false, heard: '', micOff: false,
+  ctl: null, voice: null, holdV: false,
+  init() {
+    const $ = (id) => document.getElementById(id);
+    this.el = $('talk'); this.log = $('talkLog'); this.inp = $('talkIn'); this.state = $('talkState'); this.mic = $('talkMic');
+    this.hint = $('prompt3'); this.btn = $('bTalk');
+    $('talkClose').addEventListener('click', () => this.close());
+    $('talkSend').addEventListener('click', () => this.sendTyped());
+    this.inp.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); this.sendTyped(); }
+      else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
+    });
+    this.mic.addEventListener('pointerdown', (e) => { e.preventDefault(); if (this.listening) this.stopListen(); else this.listen(); });
+    // touch: hold "Reden" to speak, a short tap opens the panel to type
+    this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.btnT = performance.now(); this.start(true); });
+    const up = () => { if (this.btnT && performance.now() - this.btnT > 450) this.stopListen(); this.btnT = 0; };
+    this.btn.addEventListener('pointerup', up); this.btn.addEventListener('pointercancel', up);
+    this.SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    if (!this.SR) this.mic.hidden = true;
+    // Claude, if this page may ask it
+    try {
+      if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.ai = s || null; }).catch(() => { this.ai = null; });
+    } catch (e) { this.ai = null; }
+    try { if (window.speechSynthesis) { const pick = () => { this.voice = this.pickVoice(); }; pick(); speechSynthesis.onvoiceschanged = pick; } } catch (e) { /* no voices */ }
+  },
+  // who could be talked to right now
+  target() {
+    let best = null, bd = 4.2;
+    for (const n of NPCS.list) {
+      if (!n.persona || !n.ch.root.visible || (n.room && n.room !== G.room)) continue;
+      const d = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z);
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
+  },
+  can() { return !SIT.busy() || SIT.state === 'sit'; },
+  update(dt) {
+    const t = this.can() && !DRUNK.blocked() && !MENU.open ? this.target() : null;
+    const show = !!t && !this.open;
+    if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
+    if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
+    if (this.open) {
+      const n = this.npc; n.talking = true;
+      // the camera comes round over his shoulder to the one he talks to; he turns to face them
+      const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
+      PLAY.camYaw += wrapA(Math.atan2(-dx, -dz) + 0.32 - PLAY.camYaw) * (1 - Math.exp(-dt * 2.2));
+      PLAY.camPitch += (0.16 - PLAY.camPitch) * (1 - Math.exp(-dt * 2));
+      if (!SIT.busy() && !FALL.busy()) PLAY.yaw += wrapA(face - PLAY.yaw) * (1 - Math.exp(-dt * 4));
+    }
+  },
+  /* ---- the panel ---- */
+  start(listen) {
+    const n = this.open ? this.npc : this.target();
+    if (!n) return;
+    if (!this.open) {
+      this.open = true; this.npc = n; INPUT.keys.clear(); FIST.up(); GUN.setAim(false);
+      document.getElementById('talkName').textContent = n.name;
+      this.el.hidden = false; this.renderLog(); document.getElementById('app').classList.add('talking');
+      this.setState(this.aiOn() ? '' : 'ohne KI');
+    }
+    if (listen && this.SR && !this.micOff) this.listen();
+    else setTimeout(() => this.inp.focus({ preventScroll: true }), 30);
+  },
+  close() {
+    if (!this.open) return;
+    this.stopListen(true);
+    if (this.ctl) { this.ctl.abort(); this.ctl = null; }
+    this.open = false; this.el.hidden = true; document.getElementById('app').classList.remove('talking');
+    if (this.npc) this.npc.talking = false;
+    this.npc = null; this.busy = false;
+    try { this.inp.blur(); document.getElementById('gl').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+  },
+  // keys while the panel is open (the text field handles its own)
+  key(e, k) {
+    if (k === 'Escape') { this.close(); return true; }
+    if (k === 'v' && !e.repeat) { this.listen(); this.holdV = true; return true; }
+    if (k === 'Enter') { this.inp.focus(); return true; }
+    if (k.length === 1) { this.inp.focus(); return false; }   // start typing: the letter goes into the field
+    return true;   // nothing else reaches the game while talking
+  },
+  keyUp(k) { if (k === 'v' && this.holdV) { this.holdV = false; this.stopListen(); } },
+  setState(s) { this.state.textContent = s; },
+  aiOn() { return !!this.ai && !this.aiOff && SETTINGS.v.aiTalk; },
+  renderLog() {
+    const n = this.npc; this.log.textContent = '';
+    for (const l of (n.talkLog || []).slice(-6)) {
+      const p = document.createElement('p'); p.className = l.who === 'p' ? 'me' : 'them';
+      const b = document.createElement('b'); b.textContent = l.who === 'p' ? 'Du' : n.name; p.appendChild(b);
+      p.appendChild(document.createTextNode(l.text)); this.log.appendChild(p);
+    }
+    if (this.heard) { const p = document.createElement('p'); p.className = 'me live'; p.textContent = this.heard + ' …'; this.log.appendChild(p); }
+    this.log.scrollTop = 1e6;
+  },
+  /* ---- the microphone ---- */
+  listen() {
+    if (!this.open) { this.start(true); return; }
+    if (!this.SR || this.micOff || this.listening || this.busy) { if (!this.SR || this.micOff) this.inp.focus(); return; }
+    try {
+      const r = this.rec = new this.SR();
+      r.lang = 'de-DE'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+      this.heard = ''; this.final = '';
+      r.onresult = (e) => {
+        let fin = '', mid = '';
+        for (let i = 0; i < e.results.length; i++) { const x = e.results[i]; if (x.isFinal) fin += x[0].transcript; else mid += x[0].transcript; }
+        this.final = fin; this.heard = (fin + ' ' + mid).trim(); this.renderLog();
+      };
+      r.onerror = (e) => {
+        if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) {
+          this.micOff = true; this.mic.hidden = true;
+          TOAST.show('Kein Mikrofon hier erlaubt. Schreib stattdessen.', 'long'); this.inp.focus();
+        }
+      };
+      r.onend = () => {
+        this.listening = false; this.mic.setAttribute('aria-pressed', 'false'); this.setState('');
+        const said = (this.final || this.heard || '').trim(); this.heard = '';
+        if (said && !this.dropNext) this.send(said); else this.renderLog();
+        this.dropNext = false;
+      };
+      r.start(); this.listening = true; this.mic.setAttribute('aria-pressed', 'true'); this.setState('hört zu …');
+      if (window.speechSynthesis) speechSynthesis.cancel();
+    } catch (e) { this.micOff = true; this.mic.hidden = true; this.inp.focus(); }
+  },
+  stopListen(drop) { if (this.rec && this.listening) { this.dropNext = !!drop; try { this.rec.stop(); } catch (e) { /* ignore */ } } },
+  sendTyped() { const t = this.inp.value.trim(); if (!t) return; this.inp.value = ''; this.send(t); },
+  /* ---- one exchange ---- */
+  async send(text) {
+    const n = this.npc;
+    if (!n || this.busy) return;
+    text = text.slice(0, 240);
+    this.busy = true;
+    n.talkLog = n.talkLog || [];
+    n.talkLog.push({ who: 'p', text }); this.renderLog();
+    worldEvent('talk', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', to: n.id, text });
+    n.thinking = true; SAY.show(n, '…', 30);
+    let out = null;
+    if (this.aiOn()) {
+      this.setState('überlegt …');
+      out = await this.ask(n, text);
+    }
+    if (!out) out = n.persona.offline(text);
+    if (this.npc !== n) { n.thinking = false; this.busy = false; return; }   // walked off meanwhile
+    n.thinking = false; this.busy = false; this.setState(this.aiOn() ? '' : 'ohne KI');
+    const say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 300) || '…';
+    n.talkLog.push({ who: 'n', text: say });
+    if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
+    this.renderLog();
+    SAY.show(n, say);
+    this.speak(n, say);
+    n.persona.act(String(out.action || 'none'));
+  },
+  async ask(n, text) {
+    const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
+    const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
+      '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\nAntworte nur mit JSON in genau dieser Form: {"say": "deine Antwort", "action": "none"}';
+    this.ctl = new AbortController();
+    try {
+      const r = await this.ai.json(prompt, { modelTier: 'quick', cache: false, signal: this.ctl.signal });
+      this.ctl = null;
+      if (r && typeof r === 'object' && typeof r.say === 'string') return r;
+      return null;
+    } catch (e) {
+      this.ctl = null;
+      const code = e && e.code;
+      if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
+        this.aiOff = true; TOAST.show('KI-Gespräche sind hier nicht erlaubt. ' + n.name + ' antwortet einfacher.', 'long');
+      } else if (code === 'rate_limited') TOAST.show('Zu viele Fragen auf einmal. Gleich wieder.', 'long');
+      return null;
+    }
+  },
+  /* ---- the voice ---- */
+  pickVoice() {
+    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+    const de = vs.filter((v) => /^de/i.test(v.lang));
+    return de.find((v) => /male|mann|conrad|markus|stefan|hans|yannick|killian/i.test(v.name) && !/female|frau/i.test(v.name)) || de[0] || null;
+  },
+  speak(n, text) {
+    if (!SETTINGS.v.voice || !window.speechSynthesis || !SFX.on) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'de-DE'; if (this.voice) u.voice = this.voice;
+      u.pitch = n.voicePitch || 0.8; u.rate = n.voiceRate || 1.0; u.volume = clamp((SETTINGS.v.volume || 30) / 60, 0.2, 1);
+      u.onstart = () => { n.talkT = 30; };
+      u.onend = () => { n.talkT = 0; };
+      speechSynthesis.speak(u);
+    } catch (e) { /* no voice */ }
+  }
+};
+SAVE.part('talk', () => {
+  const o = {};
+  for (const n of NPCS.list) if (n.talkLog && n.talkLog.length) o[n.id] = n.talkLog.slice(-10);
+  return o;
+}, (d) => {
+  for (const n of NPCS.list) if (d && Array.isArray(d[n.id])) n.talkLog = d[n.id].filter((l) => l && typeof l.text === 'string').map((l) => ({ who: l.who === 'p' ? 'p' : 'n', text: String(l.text).slice(0, 300) }));
+});
 
 // ==== audio/ambient.js ====
 /* ---------- ambience: everything synthesised, everything placed in the world ----------
@@ -7568,6 +8441,7 @@ const DEV = {
     if (G.camHook) G.camHook();
     updateWorld(dt, G.time);
     updateCharacterVisual();
+    NPCS.update(dt);
     DRINK.late();
     GUN.late(dt);
     AMB.update(dt);
@@ -7605,6 +8479,7 @@ const DEV = {
     HUD.init(toggleHud);
     initGunPad(onAction);
     INTERACT.init();
+    NPCS.init(G.scene);
     SAVE.init();
     MENU.init();
     SHOP.init();
