@@ -114,4 +114,3 @@ function buildAtlas(signFont) {
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
   return tex;
 }
-

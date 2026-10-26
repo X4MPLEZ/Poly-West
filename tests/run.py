@@ -28,9 +28,10 @@ WALK = '''(a) => { const [yaw, secs, keys] = a; INPUT.keys.clear(); (keys || ['w
 # Refactors must keep it identical; intended changes to the world are accepted with --golden.
 FINGERPRINT = '''() => {
   const r = (v) => Math.round(v * 100) / 100, meshes = [];
+  // order-independent: the same pieces built in another order give the same signature
   const sig = (o) => { const a = o.geometry.attributes, P = a.position.array; let s = 0, c = 0;
-    for (let i = 0; i < P.length; i++) s += P[i] * ((i % 7) + 1);
-    if (a.color) { const C = a.color.array; for (let i = 0; i < C.length; i++) c += C[i] * ((i % 5) + 1); }
+    for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2]; s += x + 2 * y + 3 * z + 0.01 * (x * x + y * y * 2 + z * z * 3); }
+    if (a.color) { const C = a.color.array; for (let i = 0; i < C.length; i += 3) c += C[i] + 2 * C[i + 1] + 3 * C[i + 2] + C[i] * C[i + 1]; }
     o.updateMatrixWorld(); const e = o.matrixWorld.elements;
     return [P.length / 3, r(s), r(c), r(e[12]), r(e[13]), r(e[14])].join(':'); };
   for (const o of W.worldMeshes.concat(ROOMS.map((R) => R.mesh))) meshes.push(sig(o));

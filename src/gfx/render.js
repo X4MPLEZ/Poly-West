@@ -130,4 +130,3 @@ function updateShadow(L) {
   U.uShadowMap.value = SHADOW.rt.texture;
   SHADOW.key = key;
 }
-
