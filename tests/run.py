@@ -553,8 +553,49 @@ async def check_touch(g):
     ok = r['upperLeft'] == [False, True] and r['lowerLeft'] == [True, False] and r['right'] == [False, True] and r['noPunch']
     return ok, json.dumps(r)
 
+async def check_hear(g):
+    """listening with ElevenLabs (stand-ins for microphone, token and WebSocket): opens hands-free, sends 16 kHz pieces,
+       shows the words while you speak, a finished sentence goes to Hank, nothing is sent while he speaks; a key
+       without the right to listen falls back"""
+    await g.js(RESET)
+    r = await g.js(r'''async () => { const out = {}, realFetch = window.fetch, RealWS = window.WebSocket, realGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const sent = [], socks = []; let tokenStatus = 200;
+      class FakeWS { constructor(url) { this.url = url; this.readyState = 0; socks.push(this); setTimeout(() => { this.readyState = 1; this.onmessage && this.onmessage({ data: JSON.stringify({ message_type: 'session_started', session_id: 's1' }) }); }, 20); }
+        send(d) { sent.push(JSON.parse(d)); } close() { this.readyState = 3; } }
+      window.WebSocket = FakeWS;
+      window.fetch = async (url, o) => { if (/single-use-token\/realtime_scribe/.test(url)) return tokenStatus === 200 ? new Response(JSON.stringify({ token: 'tok123' }), { status: 200 }) : new Response('{}', { status: tokenStatus }); return realFetch(url, o); };
+      const ac = new AudioContext(), osc = ac.createOscillator(), dst = ac.createMediaStreamDestination(); osc.connect(dst); osc.start();
+      navigator.mediaDevices.getUserMedia = async () => dst.stream;
+      const keep = [TALK.ai, SETTINGS.v.aiTalk]; let asked = '';
+      TALK.ai = async (p, o) => { asked = p; o.onText({ text: '[nod, neutral] Kommt sofort.' }); return { text: '[nod, neutral] Kommt sofort.' }; }; SETTINGS.v.aiTalk = true; const keepVoice = SETTINGS.v.voice; SETTINGS.v.voice = false;
+      try {
+        SETTINGS.set('elevenKey', 'el-test'); out.wanted = HEAR.wanted();
+        const B = BARKEEP, R = B.R, N = B.npc, bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+        N.talkT = 0; VOICE.q = []; TALK.start(false);
+        await new Promise((x) => setTimeout(x, 600));
+        const ws = socks[0]; out.url = !!ws && /token=tok123/.test(ws.url) && /language_code=de/.test(ws.url) && /commit_strategy=vad/.test(ws.url) && /keyterms=Hank/.test(ws.url);
+        out.state = HEAR.st; out.chunks = sent.length; out.chunk = sent[0] ? [sent[0].message_type, sent[0].sample_rate, sent[0].audio_base_64.length > 100] : null;
+        ws.onmessage({ data: JSON.stringify({ message_type: 'partial_transcript', text: 'Gib mir einen' }) }); out.partial = document.getElementById('talkHeard').textContent;
+        ws.onmessage({ data: JSON.stringify({ message_type: 'committed_transcript', text: 'Gib mir einen Whiskey.' }) });
+        await new Promise((x) => setTimeout(x, 100));
+        out.sentToHank = /Gib mir einen Whiskey/.test(asked) && N.talkLog.slice(-2)[0].text === 'Gib mir einen Whiskey.';
+        // while he speaks nothing goes out
+        N.talkT = 5; const n0 = sent.length; await new Promise((x) => setTimeout(x, 400)); out.mutedWhileSpeaking = sent.length === n0; N.talkT = 0;
+        await new Promise((x) => setTimeout(x, 400)); out.resumed = sent.length > n0;
+        TALK.close(); out.closed = HEAR.st === 'off' && !HEAR.stream;
+        // a key that may not listen: told, and the browser's recognition takes over
+        tokenStatus = 401; TALK.start(false); await new Promise((x) => setTimeout(x, 200)); out.dead = HEAR.dead && !HEAR.wanted(); TALK.close();
+      } finally {
+        window.fetch = realFetch; window.WebSocket = RealWS; if (realGUM) navigator.mediaDevices.getUserMedia = realGUM; osc.stop(); ac.close();
+        TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1]; SETTINGS.set('elevenKey', ''); HEAR.dead = false; HEAR.stop(); SETTINGS.v.voice = keepVoice;
+      }
+      return out; }''')
+    ok = (r['wanted'] and r['url'] and r['state'] == 'open' and r['chunks'] > 0 and r['chunk'] == ['input_audio_chunk', 16000, True] and 'Gib mir einen' in r['partial']
+          and r['sentToHank'] and r['mutedWhileSpeaking'] and r['resumed'] and r['closed'] and r['dead'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

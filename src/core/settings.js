@@ -26,6 +26,7 @@ const SETTINGS = {
     { group: 'Eigene Schlüssel', own: true },
     { key: 'claudeKey', label: 'Claude-API-Schlüssel (console.anthropic.com)', type: 'secret', def: '', own: true },
     { key: 'elevenKey', label: 'ElevenLabs-Schlüssel (elevenlabs.io)', type: 'secret', def: '', own: true },
+    { key: 'sttMode', label: 'Spracheingabe', type: 'choice', def: 'auto', own: true, options: [['auto', 'Automatisch'], ['eleven', 'ElevenLabs'], ['browser', 'Browser'], ['type', 'Tippen / Diktier-App']] },
     { key: 'elevenVoice', label: 'Hanks Stimme: Voice-ID (leer = passende wird gesucht)', type: 'text', def: '', own: true },
     { label: 'Schlüssel prüfen', type: 'action', button: 'Prüfen', run: () => DIRECT.test(), own: true },
     { group: 'Entwicklung' },

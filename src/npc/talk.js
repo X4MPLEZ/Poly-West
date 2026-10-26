@@ -51,7 +51,8 @@ const TALK = {
       if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.sample = s || null; pick(); }).catch(() => { this.sample = null; pick(); });
     } catch (e) { this.sample = null; }
     SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
-    SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; });
+    SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
+    SETTINGS.on('sttMode', () => { HEAR.dead = false; });
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now
@@ -104,10 +105,33 @@ const TALK = {
       // on the game's own page without a key he can only use his phrase book: say where the key goes
       if (!this.aiOn() && DIRECT.ownPage() && /^https?:/.test(location.protocol) && !this.toldKey) { this.toldKey = true; TOAST.show('Für echte KI-Gespräche: Menü → Einstellungen → Eigene Schlüssel', 'long'); }
     }
+    // ElevenLabs listens (own page with a key): just talk, hands free while the strip is open
+    if (HEAR.wanted()) { this.hearMode(); return; }
     // the microphone window is connected: just talk (hands free while the strip is open)
     if (MICWIN.connected()) { this.remoteMode(); return; }
-    if (this.micOff) { this.typeMode(); return; }
+    // typing, or a dictation app / keyboard (Wispr Flow, the phone's microphone key) that writes into the line
+    if (this.micOff || SETTINGS.v.sttMode === 'type' || (SETTINGS.v.sttMode === 'eleven' && !HEAR.wanted() && !this.SR)) { this.typeMode(); return; }
     if (!this.busy) this.listen();
+  },
+  /* ElevenLabs listening: words appear while you speak, a pause sends them; nothing is taken while he speaks */
+  hearMode() {
+    this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
+    if (!this.busy) this.setState('Mikrofon wird verbunden \u2026', 'think');
+    const cb = this.hearCb || (this.hearCb = {
+      partial: (t) => { if (this.open && !this.busy) this.heardEl.textContent = '\u201e' + t + ' \u2026\u201c'; },
+      final: (t) => { if (!this.open || this.busy) return; this.heardEl.textContent = '\u201e' + t + '\u201c'; this.send(t); },
+      state: (k, txt) => {
+        if (!this.open) return;
+        if (k === 'listen' && !this.busy) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+        else if (k === 'closed') setTimeout(() => { if (this.open && HEAR.wanted() && !HEAR.active()) HEAR.start(cb); }, 300);   // the service ended the session: on we go
+        else if (k === 'err') {
+          this.setState(txt, 'err'); this.mic.setAttribute('aria-pressed', 'false');
+          if (HEAR.dead) { TOAST.show('Zuhören über ElevenLabs: ' + txt + '. Es hört wieder der Browser zu.', 'long'); setTimeout(() => { if (this.open) this.start(); }, 1500); }
+        }
+      },
+      muted: () => { const n = this.npc; let synth = false; try { synth = !!(window.speechSynthesis && speechSynthesis.speaking); } catch (e) { /* ignore */ } return !n || this.busy || n.talkT > 0 || VOICE.speaking(n) || synth; }
+    });
+    HEAR.start(cb);
   },
   remoteMode() {
     this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
@@ -144,6 +168,7 @@ const TALK = {
      on the side, not a mode). Only "Stopp" takes an answer back. */
   close() {
     if (!this.open) return;
+    HEAR.stop();
     if (this.inp.value.trim() && !this.busy) this.sendTyped();   // what was typed (or dictated) still goes to him
     this.stopListen(true);
     this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
@@ -154,14 +179,17 @@ const TALK = {
   // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on
   key(e, k) {
     if (k === 'Escape') { this.close(); return true; }
-    if (k === 'v') { if (!e.repeat) { if (MICWIN.connected()) this.remoteMode(); else if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
+    if (k === 'v') { if (!e.repeat) { if (HEAR.wanted()) { if (!HEAR.active()) this.hearMode(); } else if (MICWIN.connected()) this.remoteMode(); else if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
     return false;
   },
   setState(s, cls) { this.state.textContent = s; this.el.dataset.st = cls || ''; },
   aiOn() { return !!this.ai && !this.aiOff && SETTINGS.v.aiTalk; },
   noMic(why) { this.micOff = true; this.micWhy = why; if (this.mic) this.mic.hidden = true; },
   /* ---- the microphone (where it is allowed) ---- */
-  toggleListen() { if (this.listening) this.stopListen(); else if (this.open) this.start(); },
+  toggleListen() {
+    if (HEAR.active()) { HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Pause \u00b7 Mikrofon antippen zum Weiterreden', 'idle'); return; }
+    if (this.listening) this.stopListen(); else if (this.open) this.start();
+  },
   listen() {
     if (this.listening || this.busy || this.micOff) return;
     try {
@@ -230,7 +258,7 @@ const TALK = {
     if (VOICE.ready() && raw !== null && F.queued() > 0) feed(raw, true);   // the rest of what was already being spoken
     else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
-    else if (MICWIN.connected()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+    else if (MICWIN.connected() || HEAR.active()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
     else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
     this.lastErr = '';
     const act = String(out.action || 'none');
