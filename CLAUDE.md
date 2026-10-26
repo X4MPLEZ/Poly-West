@@ -70,7 +70,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
 | `npc/npc.js` | `NPC`: Körper aus dem Rig (`buildCharacter(farben, {hat, gun, apron, bowtie, garter, hair})`), Gehen zu einem Ziel (`goTo`), Blick (`lookAt`), Hände per Arm-IK (`reach`), Ducken/Lehnen, Gesten (`gesture`); `SAY` Sprechblasen; `NPCS.bodies` Kollision mit dem Spieler |
 | `npc/barkeep.js` | `BARKEEP`: Hank. Arbeitet hinter der Theke (polieren, wischen, umsehen), kommt zum Gast, bedient von Hand (`order` ← `SHOP.buy`), duckt sich bei Schüssen, Hände hoch beim Zielen, Sprüche (`LINES`), Gedächtnis (`mem`), `persona` für Gespräche |
-| `npc/talk.js` | `TALK`: Gespräche. V halten / „Reden“ → Spracherkennung (de-DE) oder Textfeld → Claude über die `sample`-Capability (`json`, Antwort `{say, action}`) → Sprechblase, Verlauf, Vorlesen (speechSynthesis). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
+| `npc/talk.js` | `TALK`: Gespräche. V / „Reden“ → Spracherkennung (de-DE; Textfeld nur, wenn kein Mikrofon erlaubt ist) → Claude über die `sample`-Capability (`json`, Antwort `{say, action}`) → Sprechblase, Verlauf, Vorlesen (speechSynthesis, Stimme pro NPC aus `npc.voiceProfile`). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
 | `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |

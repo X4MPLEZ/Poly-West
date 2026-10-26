@@ -178,7 +178,6 @@ const SAY = {
       if (!n.sayEl || n.sayEl.hidden) continue;
       n.sayT -= dt;
       if (n.sayT <= 0) { n.sayEl.hidden = true; continue; }
-      if (TALK.open && TALK.npc === n && n.said !== '…') { n.sayEl.style.visibility = 'hidden'; continue; }   // the panel shows it
       const v = this._v.set(n.pos.x, n.pos.y + 2.1 - n.crouch * 0.45, n.pos.z).project(cam);
       const far = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z) > 16;
       const seen = v.z < 1 && Math.abs(v.x) < 1.1 && v.y < 1.1 && !far && n.ch.root.visible;
