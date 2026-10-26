@@ -3,7 +3,7 @@
    worker so the game does not stutter: onnxruntime-web (wasm), piper_phonemize (espeak, German), and per voice a
    model that is put back together from a template + float16 weights. Then a line is spoken sentence by sentence:
    the next sentence is computed while the one before plays, so speech starts after the first sentence.
-   Every person has a voice profile: npc.voiceProfile = { piper: 'thorsten', pitch, length, noise }. Pitch is a
+   Every person has a voice profile: npc.voiceProfile = { pitch, length, noiseW }, and every line a mood (MOODS). Pitch is a
    playback-rate shift; the model is asked for a matching tempo so the pace stays as set by `length`.
    Whatever a person says goes through VOICE.line(npc, text): the real voice when it is ready, otherwise (still
    loading, or not possible here) the browser's own voice at once, so nobody ever stays silent. */
@@ -53,11 +53,13 @@ function VOICE_WORKER() {
   function ids(text) { return new Promise((res) => { pending = res; phon.callMain(['-l', cfg.voice.espeak.voice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data']); }); }
   async function say(m) {
     await ready;
-    const id = await ids(m.text), I = cfg.voice.inference;
+    const id = await ids(m.text), I = cfg.voice.inference, map = cfg.voice.speaker_id_map, spk = map && Object.keys(map).length ? map : null;
     const r = await sess.run({
       input: new ort.Tensor('int64', BigInt64Array.from(id.map(BigInt)), [1, id.length]),
       input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(id.length)]), [1]),
-      scales: new ort.Tensor('float32', Float32Array.from([m.noise != null ? m.noise : I.noise_scale, m.length != null ? m.length : I.length_scale, m.noiseW != null ? m.noiseW : I.noise_w]), [3])
+      scales: new ort.Tensor('float32', Float32Array.from([m.noise != null ? m.noise : I.noise_scale, m.length != null ? m.length : I.length_scale, m.noiseW != null ? m.noiseW : I.noise_w]), [3]),
+      // voices with several speakers (moods): which one
+      ...(spk ? { sid: new ort.Tensor('int64', BigInt64Array.from([BigInt(spk[m.mood] != null ? spk[m.mood] : (spk.neutral != null ? spk.neutral : 0))]), [1]) } : {})
     });
     const pcm = new Float32Array(r.output.data);
     postMessage({ t: 'audio', id: m.id, pcm }, [pcm.buffer]);
@@ -71,7 +73,20 @@ function VOICE_WORKER() {
 }
 
 const VOICE = {
-  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
+  // the model: Thorsten with eight moods (speakers): amused angry disgusted drunk neutral sleepy surprised whisper
+  MODEL: 'thorsten_emo', EXPECT: 52e6,
+  /* how a mood is spoken on top of the model's own colour: tempo (length > 1 slower), how much it varies, how
+     loud, and the pause after each sentence (seconds). The moods of the model have their own pace (same sentence:
+     neutral 1.0, amused 1.06, angry 1.14, surprised 1.11, disgusted 1.43, sleepy 1.74, whisper 1.38, drunk 1.34),
+     the lengths here bring them close to each other and keep a little of it: angry a bit quicker than calm. */
+  MOODS: {
+    neutral: { len: 1.0, noise: 0.64, gain: 1.0, gap: 0.22 }, amused: { len: 0.97, noise: 0.7, gain: 1.0, gap: 0.18 },
+    angry: { len: 0.76, noise: 0.68, gain: 1.15, gap: 0.12 }, surprised: { len: 0.86, noise: 0.68, gain: 1.05, gap: 0.16 },
+    disgusted: { len: 0.74, noise: 0.64, gain: 0.95, gap: 0.26 }, sleepy: { len: 0.64, noise: 0.58, gain: 0.85, gap: 0.4 },
+    whisper: { len: 0.74, noise: 0.62, gain: 0.8, gap: 0.3 }, drunk: { len: 0.74, noise: 0.75, gain: 1.0, gap: 0.35 }
+  },
+  mood(name) { return this.MOODS[name] ? name : 'neutral'; },
+  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 22050, q: [], playing: null, nextId: 1, waits: {},
   wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
   ready() { return this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
@@ -86,7 +101,7 @@ const VOICE = {
       const w = this.worker = new Worker(URL.createObjectURL(new Blob(['(' + VOICE_WORKER.toString() + ')()'], { type: 'text/javascript' })));
       w.onmessage = (e) => this.msg(e.data);
       w.onerror = (e) => { e.preventDefault && e.preventDefault(); this.fail('Worker: ' + (e.message || 'Fehler')); };
-      w.postMessage({ t: 'init', base, voice: 'thorsten' });
+      w.postMessage({ t: 'init', base, voice: this.MODEL });
     } catch (e) { this.fail(String((e && e.message) || e)); }
   },
   fail(why) {
@@ -129,9 +144,9 @@ const VOICE = {
     return 'Browser-Stimme';
   },
   // a person says something: every word is heard
-  line(npc, text) {
+  line(npc, text, mood) {
     if (!SETTINGS.v.voice || !text || text === '\u2026') return;
-    if (this.ready() || (this.st === 'loading' && this.IOS)) { for (const s of this.sentences(text)) this.push(npc, s); }   // (iPhone: wait for it, see IOS)
+    if (this.ready() || (this.st === 'loading' && this.IOS)) { for (const s of this.sentences(text)) this.push(npc, s, mood); }   // (iPhone: wait for it, see IOS)
     else this.browser(npc, text);
   },
   // On iPhones the browser voice takes the sound away from the game's audio until the next tap, so there nothing
@@ -172,13 +187,15 @@ const VOICE = {
       speechSynthesis.speak(u);
     } catch (e) { this.browserErr = String(e); }
   },
-  synth(text, prof) {
+  synth(text, prof, mood) {
     return new Promise((res, rej) => {
       if (!this.worker) { rej(new Error(this.why || 'keine Stimme')); return; }
-      const id = this.nextId++, P = prof || {}, pitch = P.pitch || 1;
+      const id = this.nextId++, P = prof || {}, pitch = P.pitch || 1, M = this.MOODS[this.mood(mood)];
       this.waits[id] = { res, rej };
-      // played back `pitch` times faster, so ask for that much slower speech: the pace stays at `length`
-      this.worker.postMessage({ t: 'say', id, text, length: (P.length || 1) * pitch, noise: P.noise, noiseW: P.noiseW });
+      // played back `pitch` times faster, so ask for that much slower speech: the pace stays at `length`;
+      // every sentence a little different in pace, like a person
+      const vary = 1 + (Math.random() - 0.5) * 0.06;
+      this.worker.postMessage({ t: 'say', id, text, mood: this.mood(mood), length: (P.length || 1) * M.len * pitch * vary, noise: M.noise, noiseW: P.noiseW });
     });
   },
   /* the little status in the corner: while the voice loads, when it is ready, when it failed (and why) */
@@ -199,11 +216,11 @@ const VOICE = {
   // what the voice should not stumble over
   clean(text) { for (const [re, w] of this.WORDS) text = text.replace(re, w); return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
   // a sentence for npc to say: computed now (in order), played when its turn comes
-  push(npc, sentence) {
+  push(npc, sentence, mood) {
     const text = this.clean(sentence);
     if (!text || !/[\p{L}\d]/u.test(text)) return;
-    const job = { npc, text, pcm: null, err: false, at: performance.now() };
-    this.synth(text, npc.voiceProfile).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
+    const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now() };
+    this.synth(text, npc.voiceProfile, job.mood).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
   /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
@@ -248,19 +265,22 @@ const VOICE = {
     // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
     if (SFX.ctx.state !== 'running') { try { SFX.ctx.resume(); } catch (e) { /* ignore */ } }
     const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
-    // the model speaks quietly (peaks around 0.3): bring every sentence up to a full, even level
-    let peak = 1e-4; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); if (a > peak) peak = a; }
-    const k = Math.min(8, 0.9 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
+    // the model speaks quietly and each mood at its own level: bring every sentence to the same loudness (rms),
+    // without letting a peak clip; the mood's own gain comes on top
+    let peak = 1e-4, e = 0; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); e += a * a; if (a > peak) peak = a; }
+    const k = Math.min(10, 0.16 / Math.sqrt(e / job.pcm.length + 1e-9), 0.97 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
     buf.getChannelData(0).set(job.pcm);
     const src = c.createBufferSource(), g = c.createGain();
     src.buffer = buf; src.playbackRate.value = P.pitch || 1;
     const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
-    g.gain.value = 1 / (1 + Math.max(0, d - 2) * 0.12);
+    const M = this.MOODS[job.mood] || this.MOODS.neutral;
+    g.gain.value = M.gain / (1 + Math.max(0, d - 2) * 0.12);
     src.connect(g); g.connect(this.output());
     const dur = buf.duration / (P.pitch || 1);
     job.npc.talkT = dur + 0.15;
     this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
-    src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), 90); };
+    // a breath between sentences, as long as the mood wants it
+    src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), M.gap * 1000); };
     src.start();
   }
 };

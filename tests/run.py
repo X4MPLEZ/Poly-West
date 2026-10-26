@@ -359,9 +359,9 @@ async def check_npc(g):
     return ok, json.dumps(r)
 
 async def check_voice(g):
-    """the real voice (Piper in a worker): loads over http, says a sentence; skipped without tools/voices.py output"""
+    """the real voice (Piper in a worker): loads over http, says a sentence in two moods; skipped without tools/voices.py output"""
     import threading, http.server, functools, socketserver
-    if not (ROOT / 'vendor' / 'voice' / 'thorsten.voice.json').exists(): return True, 'skipped (python3 tools/voices.py)'
+    if not (ROOT / 'vendor' / 'voice' / 'thorsten_emo.voice.json').exists(): return True, 'skipped (python3 tools/voices.py)'
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
     h.log_message = lambda *a: None
     srv = socketserver.TCPServer(('127.0.0.1', 0), h); port = srv.server_address[1]
@@ -371,14 +371,20 @@ async def check_voice(g):
         await page.goto(f'http://127.0.0.1:{port}/dist/test.html')
         await page.wait_for_function('() => typeof VOICE !== "undefined" && typeof G !== "undefined" && G.cam', timeout=90000)
         r = await page.evaluate("""() => new Promise((res) => { G.manual = true; VOICE.load(); const t0 = performance.now();
+          const rms = (p) => { let e = 0; for (const v of p) e += v * v; return +Math.sqrt(e / p.length).toFixed(3); };
           const iv = setInterval(() => { if (VOICE.st === 'loading') return; clearInterval(iv);
             if (VOICE.st !== 'ready') { res({ st: VOICE.st, why: VOICE.why }); return; }
-            const t1 = performance.now(); VOICE.synth('Howdy, Fremder. Was darf es sein?', { pitch: 0.9, length: 1.05 }).then((p) => {
-              let e = 0; for (const v of p) e += v * v; res({ st: 'ready', load: Math.round(t1 - t0), synth: Math.round(performance.now() - t1), secs: +(p.length / VOICE.rate).toFixed(2), rms: +Math.sqrt(e / p.length).toFixed(3) }); },
-              (err) => res({ st: 'synth failed', why: String(err) })); }, 50); })""")
+            const t1 = performance.now(), txt = 'Nicht in meinem Saloon, Fremder!';
+            // the same sentence in two moods: both spoken, the angry one faster
+            VOICE.synth(txt, { pitch: 1, length: 1 }, 'neutral').then((p) => { const synth = Math.round(performance.now() - t1);
+              return VOICE.synth(txt, { pitch: 1, length: 1 }, 'angry').then((q) => res({ st: 'ready', load: Math.round(t1 - t0), synth,
+                secs: +(p.length / VOICE.rate).toFixed(2), rms: rms(p), angrySecs: +(q.length / VOICE.rate).toFixed(2), angryRms: rms(q) })); })
+              .catch((err) => res({ st: 'synth failed', why: String(err) })); }, 50); })""")
     finally:
         await page.close(); srv.shutdown()
-    return r.get('st') == 'ready' and r.get('secs', 0) > 1.0 and r.get('rms', 0) > 0.01, json.dumps(r)
+    ok = (r.get('st') == 'ready' and r.get('secs', 0) > 1.0 and r.get('rms', 0) > 0.01 and r.get('angryRms', 0) > 0.01
+          and abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05)
+    return ok, json.dumps(r)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
           ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('voice', check_voice)]

@@ -14,6 +14,8 @@
 const TALK = {
   open: false, npc: null, ai: null, aiOff: false, aiOk: false, busy: false, rec: null, listening: false, heard: '', final: '',
   micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0,
+  // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
+  MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
   ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
   init() {
     const $ = (id) => document.getElementById(id);
@@ -170,10 +172,10 @@ const TALK = {
   // "[nod] Klar. Kommt sofort." -> { action, say }; while streaming the bracket may not be complete yet
   parse(raw) {
     const s = raw.replace(/^\s+/, '');
-    const m = /^\[\s*([a-z_]+)\s*\]\s*/i.exec(s);
-    if (m) return { action: m[1].toLowerCase(), say: s.slice(m[0].length) };
-    if (s.startsWith('[')) return { action: 'none', say: s.indexOf(']') < 0 ? '' : s.slice(s.indexOf(']') + 1) };
-    return { action: 'none', say: s };
+    const m = /^\[\s*([a-z_]+)\s*(?:[,;|/]\s*([a-z_]+)\s*)?\]\s*/i.exec(s);
+    if (m) return { action: m[1].toLowerCase(), mood: (m[2] || 'neutral').toLowerCase(), say: s.slice(m[0].length) };
+    if (s.startsWith('[')) return { action: 'none', mood: 'neutral', say: s.indexOf(']') < 0 ? '' : s.slice(s.indexOf(']') + 1) };
+    return { action: 'none', mood: 'neutral', say: s };
   },
   async send(text) {
     const n = this.npc;
@@ -190,12 +192,12 @@ const TALK = {
     let queued = 0, shown = '';
     const feed = (raw, done) => {
       if (seq !== this.seq) return;
-      const say = this.parse(raw).say.replace(/\s+/g, ' ');
+      const pr = this.parse(raw), say = pr.say.replace(/\s+/g, ' ');
       if (say && say !== shown) { shown = say; n.thinking = false; SAY.show(n, say, 60); if (this.el.dataset.st === 'think') this.setState('', 'idle'); }
       if (VOICE.ready()) {
         const rest = say.slice(queued), re = /[^.!?…]*[.!?…]+["'“”)]*(\s+|$)/g; let m, used = 0;
-        while ((m = re.exec(rest)) && m[0]) { if (!m[1] && !done) break; VOICE.push(n, m[0]); used = re.lastIndex; }
-        if (done && used < rest.length && rest.slice(used).trim()) { VOICE.push(n, rest.slice(used)); used = rest.length; }
+        while ((m = re.exec(rest)) && m[0]) { if (!m[1] && !done) break; VOICE.push(n, m[0], pr.mood); used = re.lastIndex; }
+        if (done && used < rest.length && rest.slice(used).trim()) { VOICE.push(n, rest.slice(used), pr.mood); used = rest.length; }
         queued += used;
       }
     };
@@ -212,7 +214,7 @@ const TALK = {
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
     if (VOICE.ready() && raw !== null && queued > 0) feed(raw, true);   // the rest of what was already being spoken
-    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say); }
+    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
     else if (MICWIN.connected()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
     else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
@@ -225,7 +227,8 @@ const TALK = {
     const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
-      'Antworte genau so: zuerst EINE Aktion in eckigen Klammern (' + this.ACTIONS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiel: [nod] Kommt sofort.';
+      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
+      'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';
     const once = async () => {
       const ctl = this.ctl = new AbortController(); this.userAbort = false;
       // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)

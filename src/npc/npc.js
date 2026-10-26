@@ -48,7 +48,7 @@ class NPC {
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
-  speak(text, dur) { SAY.show(this, text, dur); VOICE.line(this, text); }
+  speak(text, dur, mood) { SAY.show(this, text, dur); VOICE.line(this, text, mood); }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w

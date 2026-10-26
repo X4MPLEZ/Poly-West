@@ -11,6 +11,9 @@ const BARKEEP = {
   X: { stand: 4.8, pour: 4.42, back: 5.2, pourSpot: 3.82 }, Z0: -9.7, Z1: -3.3,
   props: {}, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _m: new THREE.Matrix4(), _q: new THREE.Matrix4(),
   cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0,
+  // in which mood each kind of line is said (see VOICE.MOODS)
+  MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
+    leave: 'amused', shot: 'angry', aimed: 'whisper', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
     hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
@@ -51,7 +54,7 @@ const BARKEEP = {
     onWorldEvent((e) => this.event(e));
     this.npc.persona = this.persona();
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
-    this.npc.voiceProfile = { male: true, piper: 'thorsten', pitch: 0.94, length: 1.04, noise: 0.62, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
+    this.npc.voiceProfile = { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
@@ -67,6 +70,7 @@ const BARKEEP = {
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
+        'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), leise und vorsichtig bei Gefahr (whisper), überrascht (surprised), müde spät nachts (sleepy). Wähle die Stimmung, die zu deinem Satz passt.',
         'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt; das Spiel kassiert selbst und prüft, ob sein Geld reicht. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
       ].join('\n'),
       context() {
@@ -109,8 +113,8 @@ const BARKEEP = {
   serveFromTalk(id) {
     const it = ITEMS[id];
     if (!it) return;
-    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => this.npc.speak('Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
-    if (INV.money < it.price) { setTimeout(() => this.npc.speak('Das Geld reicht nicht, Freund.'), 2600); return; }
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => this.npc.speak('Nein. Für dich gibt’s nur noch Wasser.', undefined, 'disgusted'), 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => this.npc.speak('Das Geld reicht nicht, Freund.', undefined, 'disgusted'), 2600); return; }
     SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
     SHOP.buy(id, true);
   },
@@ -123,7 +127,7 @@ const BARKEEP = {
     const now = G.time;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)]);
+    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, this.MOOD[kind]);
     return true;
   },
   /* ---- orders: from SHOP ---- */

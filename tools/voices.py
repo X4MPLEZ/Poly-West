@@ -23,7 +23,7 @@ VOICES = {
     'karlsson': ('rhasspy', 'voice-de-karlsson-low'), 'pavoque': ('rhasspy', 'voice-de-pavoque-low'),
     'kerstin': ('rhasspy', 'voice-de-kerstin-low'), 'ramona': ('rhasspy', 'voice-de-ramona-low'), 'eva': ('rhasspy', 'voice-de-eva_k-x-low'),
 }
-want = [a for a in sys.argv[1:] if not a.startswith('-')] or ['thorsten']
+want = [a for a in sys.argv[1:] if not a.startswith('-')] or ['thorsten_emo']
 CHUNK = 14_000_000
 
 def npm(pkg, tmp):
