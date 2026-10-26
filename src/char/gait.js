@@ -112,6 +112,7 @@ function updateGait() {
     g.init = true;
   }
   // sitting: the seat has the whole pose
+  if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   const sp = Math.hypot(PLAY.vx, PLAY.vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));

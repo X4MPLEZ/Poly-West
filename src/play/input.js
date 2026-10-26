@@ -43,7 +43,7 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('lostpointercapture', end);
   // mouse: right button aims (pointer lock if the page allows it), left button fires
   canvas.addEventListener('mousedown', (e) => {
-    if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || DRINK.busy() || DRUNK.out) return;
+    if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
@@ -60,10 +60,12 @@ function initInput(app, canvas, onAction) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
-    if (DRUNK.out) return;
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
+    if (DRUNK.blocked() && k !== 'F2') return;
     if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
     if (MENU.open) return;
+    if (k === 'Tab') { e.preventDefault(); if (!e.repeat) WHEEL.show(); return; }
+    if (WHEEL.open) { const n = parseInt(k, 10); if (n >= 1 && n <= WHEEL.N) { WHEEL.sel = n - 1; WHEEL.use(); } if (k === 'Escape') WHEEL.close(); return; }
     if (DEV.fly && (k === 'q' || k === 'r' || k === 'f' || k === 'e')) return;
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
@@ -84,7 +86,8 @@ function initInput(app, canvas, onAction) {
       if (k.startsWith('Arrow')) e.preventDefault();
     }
   });
-  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k); if (k === 'f') FIST.up(); if (k === 'Shift') INPUT.keys.delete('Shift'); });
+  window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k);
+    if (k === 'Tab' && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); } if (k === 'f') FIST.up(); if (k === 'Shift') INPUT.keys.delete('Shift'); });
   window.addEventListener('blur', () => { INPUT.keys.clear(); });
 }
 
@@ -117,17 +120,21 @@ function pollGamepad(onAction) {
   const prev = INPUT.padPrev;
   if (b(5) && !prev[5]) onAction('slow');
   if (b(9) && !prev[9]) MENU.toggle();
-  if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); return; }
+  // d-pad up held: the quick wheel, the right stick points, letting go uses
+  if (b(12) && !prev[12]) WHEEL.show();
+  if (!b(12) && prev[12] && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); }
+  if (WHEEL.open) { WHEEL.pad(INPUT.padLookX, INPUT.padLookY); INPUT.padLookX = INPUT.padLookY = 0; INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); return; }
+  if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); return; }
   if (b(8) && !prev[8]) onAction('sound');
   if (b(3) && !prev[3]) INTERACT.use(0);
   if (b(1) && !prev[1]) INTERACT.use(1);
-  if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
+  if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
   if (b(6) !== !!prev[6]) GUN.setAim(b(6));
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
   if (!b(7) && prev[7]) FIST.up();
   if (b(2) && !prev[2]) GUN.pressReload();
   if (b(4) && !prev[4]) GUN.toggleHolster();
-  INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b);
+  INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b);
   if (GUN.camW > 0.3) { PLAY.camYaw -= INPUT.padLookX * 0.05; PLAY.aimPitch = clamp(PLAY.aimPitch + INPUT.padLookY * 0.03, -0.75, 0.9); INPUT.padLookX = INPUT.padLookY = 0; }
   if (INPUT.padX || INPUT.padY) onAction('move');
 }

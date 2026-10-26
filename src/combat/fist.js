@@ -75,7 +75,7 @@ const FIST = {
   fists: null, from: null, body: { ty: 0, tp: 0, pz: 0, dy: 0, roll: 0 }, bodyFrom: null, trail: [], trailT: 0,
   active() { return this.st !== 'idle' || this.fight > 0; },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.out) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;
@@ -94,6 +94,8 @@ const FIST = {
     this.weak = this.stamina < cost;
     this.stamina = Math.max(0, this.stamina - cost); this.rest = 0.8;
     this.fight = 3; this.hitDone = false; this.landed = false;
+    const L = Math.min(DRUNK.level, 1);   // a sloppy fist path and a lurching body when drunk
+    this.sloppy = [(Math.random() - 0.5) * L * 0.34, (Math.random() - 0.5) * L * 0.26, (Math.random() - 0.5) * L * 0.5];
     this.faceYaw = this.aimYaw();
     if (heavy) { this.side = Math.random() < 0.5 ? 1 : -1; this.st = 'charge'; this.t = 0; this.clipName = 'overhand'; this.snapFrom(); FSFX.cloth(); return; }
     // each tap picks a punch at random: mostly the other hand, rarely the same punch twice in a row
@@ -125,7 +127,9 @@ const FIST = {
   },
   /* where to punch: the way you are steering, or the way you face; then pulled onto anything hittable close by */
   aimYaw() {
-    const base = PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw;
+    const L = Math.min(DRUNK.level, 1);
+    const base = (PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw) + (Math.random() - 0.5) * L * 0.9;
+    if (Math.random() < L * 0.6) return base;   // drunk: often not even close
     let best = null, bestS = 1e9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
@@ -143,7 +147,7 @@ const FIST = {
   },
   /* ---- per frame ---- */
   update(dt) {
-    const slow = this.weak ? 1.45 : 1;
+    const slow = (this.weak ? 1.45 : 1) * (1 + Math.min(DRUNK.level, 1) * 0.9);   // drunk: slow and heavy
     this.t += dt / slow;
     if (this.holding && this.st === 'idle' && this.moved < 10 && G.time - this.downT > 0.24 && GUN.state === 'holster') this.start(true);
     if (this.st === 'charge') {
@@ -155,6 +159,8 @@ const FIST = {
       const first = this.clip.find((c) => c.ph === 'strike' || c.ph === 'arc');
       if (K === first && this.t < dt * 1.5) { this.lunge(this.heavy ? 2.4 : this.clipName === 'hook' ? 1.5 : 1.3); FSFX.whoosh(this.heavy || this.clipName === 'hook'); this.trail.length = 0; this.trailT = this.heavy ? 0.3 : 0.22; }
       if (this.t >= K.dur) {
+        // drunk: the swing carries him after it
+        if (K.hit && DRUNK.level > 0.2 && Math.random() < Math.min(DRUNK.level, 1) * 0.85) DRUNK.stumble(this.faceYaw + (Math.random() - 0.5) * 0.8, this.heavy);
         this.k++; this.t = 0; this.snapFrom();
         if (this.k >= this.clip.length) { this.clip = null; this.st = 'idle'; }
         else this.st = this.clip[this.k].ph;
@@ -240,6 +246,7 @@ const FIST = {
       e = EASE[K.ease](clamp(this.t / K.dur, 0, 1));
       goal = K.fist ? { fist: V(K.fist, m), pole: V(K.pole, m), via: K.via ? V(K.via, m) : null } : this.guardOf(pi);
       bodyGoal = { ty: K.ty * m, tp: K.tp, pz: K.pz, dy: K.dy, roll: (K.roll || 0) * m };
+      if (K.fist && this.sloppy) { goal.fist.x += this.sloppy[0]; goal.fist.y += this.sloppy[1]; bodyGoal.roll += this.sloppy[2]; bodyGoal.tp += Math.abs(this.sloppy[2]) * 0.4; }
       // a landed blow stops the fist and bounces it back a little
       if (this.landed && (K.ph === 'hold' || K.ph === 'follow')) goal.fist.z -= 0.08;
     }

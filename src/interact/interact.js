@@ -61,7 +61,7 @@ const INTERACT = {
   update(force) {
     if (this.seated !== SIT.busy()) { this.seated = SIT.busy(); document.getElementById('app').classList.toggle('seated', this.seated); }
     let best = null, acts = [];
-    const free = !DRINK.busy() && !SHOP.open && !DRUNK.out;
+    const free = !DRINK.busy() && !SHOP.open && !DRUNK.blocked();
     if (SIT.state === 'sit') {
       best = SIT.seat;
       if (free) acts = (best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best) : []).concat([{ label: 'Aufstehen', run: () => SIT.stand() }]);

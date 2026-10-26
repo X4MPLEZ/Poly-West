@@ -2,10 +2,10 @@
    Money is kept in cents. ITEMS describes each kind of thing once; INV holds what the player carries.
    A drink is served in a vessel (glass, mug, bottle) and taken in sips; alc is what one sip adds to the blood. */
 const ITEMS = {
-  beer:    { name: 'Bier', price: 10, kind: 'drink', vessel: 'mug', sips: 3, alc: 0.045, sipT: 0.95 },
-  whiskey: { name: 'Whiskey', price: 25, kind: 'drink', vessel: 'shot', sips: 1, alc: 0.14, sipT: 0.45 },
-  water:   { name: 'Wasser', price: 5, kind: 'drink', vessel: 'glass', sips: 2, alc: -0.04, sipT: 0.8 },
-  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.1, sipT: 0.75 }
+  beer:    { name: 'Bier', price: 10, kind: 'drink', vessel: 'mug', sips: 3, alc: 0.07, sipT: 0.95 },
+  whiskey: { name: 'Whiskey', price: 25, kind: 'drink', vessel: 'shot', sips: 1, alc: 0.2, sipT: 0.45 },
+  water:   { name: 'Wasser', price: 5, kind: 'drink', vessel: 'glass', sips: 2, alc: -0.05, sipT: 0.8 },
+  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.15, sipT: 0.75 }
 };
 const MENU_BAR = ['beer', 'whiskey', 'water', 'bottle'];
 

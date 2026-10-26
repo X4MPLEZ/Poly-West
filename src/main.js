@@ -48,7 +48,7 @@
     const frameMs = Math.max(0.1, ts - last);
     last = ts;
     if (G.manual || MENU.open) return;
-    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1) * (G.timeScale || 1), frameMs, ts);
+    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1) * (G.timeScale || 1) * (WHEEL.open ? 0.3 : 1), frameMs, ts);
   }
   G.stepFrame = (dt) => frame(dt, dt * 1000, performance.now());
   function frame(dt, frameMs, ts) {
@@ -61,6 +61,7 @@
     FIST.update(dt);
     DEV.update(dt);
     DRUNK.update(dt);
+    FALL.update(dt);
     DRINK.update(dt);
     updatePlayer(dt);
     GLASS.update(dt);
@@ -77,8 +78,7 @@
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();
-    G.renderer.setRenderTarget(null);
-    G.renderer.render(G.scene, G.cam);
+    POST.render(G.renderer, G.scene, G.cam);
     G.drawInfo = { calls: G.renderer.info.render.calls, tris: G.renderer.info.render.triangles };
     HUD.frame(frameMs, null, 0, 0, ts);
   }
@@ -111,6 +111,8 @@
     SAVE.init();
     MENU.init();
     SHOP.init();
+    WHEEL.init();
+    POST.init();
     DEV.init();
     G.layout = layout;
     SETTINGS.on('quality', () => layout());

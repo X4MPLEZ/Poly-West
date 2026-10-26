@@ -1,75 +1,123 @@
 /* ---------- drunkenness ----------
-   A sip puts alcohol in the stomach; from there it goes into the blood over half a minute and leaves it slowly
-   (one whiskey takes a couple of minutes). The level in the blood (0 sober, 0.3 tipsy, 0.6 drunk, 1 out cold)
-   sways the body, the view and the aim, lets the feet wander and stumble, and brings the hiccups.
+   A sip puts alcohol in the stomach; from there it goes into the blood within some seconds and leaves it slowly.
+   The level in the blood (0 sober, 0.25 tipsy, 0.5 drunk, 0.75 very drunk, 1 out cold) drives:
+   - balance: the head wobbles off first, the upper body follows it, the hips lag behind and the feet have to step
+     after them (a chain of springs; the feet move because the body really drifts, so the gait steps by itself)
+   - walking: the course wanders, the pace surges and drags, the arms go out for balance; now and then a stumble,
+     and when very drunk a stumble can end on the ground (FALL)
+   - the view (camera sway and roll, double vision in POST), the aim, the fists, the hiccups
    At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
 const DRUNK = {
-  level: 0, stomach: 0, t: 0, hicT: 12, stumbleT: 4, out: null, sway: new THREE.Vector2(),
+  level: 0, stomach: 0, t: 0, hicT: 12, stumbleT: 4, out: null,
+  // the balance chain, angles in radians: x = to the side (+ = his right), y = forwards
+  head: new THREE.Vector2(), headV: new THREE.Vector2(), body: new THREE.Vector2(), bodyV: new THREE.Vector2(),
+  goal: new THREE.Vector2(), goalT: 0, drift: new THREE.Vector2(), sway: new THREE.Vector2(),
   drink(alc) {
     if (alc < 0) { this.level = Math.max(0, this.level + alc); return; }   // water helps a little
     this.stomach += alc;
   },
+  blocked() { return !!this.out || FALL.busy(); },
   update(dt) {
     this.t += dt;
-    // stomach -> blood (half of it within ~20 s), blood -> gone (slowly, faster when it is a lot)
-    const absorb = this.stomach * (1 - Math.exp(-dt / 28));
+    // stomach -> blood (half of it within ~8 s), blood -> gone (slowly, faster when it is a lot)
+    const absorb = this.stomach * (1 - Math.exp(-dt / 11));
     this.stomach -= absorb; this.level += absorb;
-    this.level = Math.max(0, this.level - dt * (0.0011 + this.level * 0.0009));
-    const L = this.level, t = this.t;
-    // a slow wandering sway the body and camera share
+    this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
+    const L = Math.min(this.level, 1), t = this.t;
+    // the camera's slow sway
     this.sway.set(Math.sin(t * 0.83) * 0.7 + Math.sin(t * 2.1 + 1) * 0.3, Math.sin(t * 0.61 + 2) * 0.6 + Math.sin(t * 1.7) * 0.4);
-    if (L > 0.25 && !SIT.busy() && !MENU.open) {
-      // hiccups
+    this.balance(dt, L);
+    if (L > 0.2 && !SIT.busy() && !MENU.open && !FALL.busy()) {
       this.hicT -= dt;
-      if (this.hicT <= 0) { this.hicT = 5 + Math.random() * 14 / L; this.hiccup(); }
-      // now and then the legs do not quite do what they should
-      if (PLAY.speed > 0.6 && L > 0.4) {
-        this.stumbleT -= dt * (L - 0.3);
-        if (this.stumbleT <= 0) {
-          this.stumbleT = 1.5 + Math.random() * 3;
-          const a = PLAY.yaw + (Math.random() < 0.5 ? 1 : -1) * (0.9 + Math.random() * 0.8), f = 1.2 + L * 1.6;
-          PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
-          FSFX.cloth();
-        }
+      if (this.hicT <= 0) { this.hicT = 4 + Math.random() * 10 / L; this.hiccup(); }
+      if (PLAY.speed > 0.6 && L > 0.3 && PLAY.inYaw !== null) {   // only while walking on purpose
+        this.stumbleT -= dt * (L - 0.2) * (PLAY.speed > 3 ? 1.8 : 1);
+        if (this.stumbleT <= 0) { this.stumbleT = 1.2 + Math.random() * 2.5; this.stumble(); }
       }
     }
     // a drunk hand does not hold the revolver still
     if (L > 0.05 && GUN.camW > 0.3) {
-      PLAY.camYaw += Math.cos(t * 0.9) * L * 0.18 * dt + Math.cos(t * 2.3) * L * 0.08 * dt;
-      PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.1 * dt;
+      PLAY.camYaw += (Math.cos(t * 0.9) * 0.22 + Math.cos(t * 2.3) * 0.1) * L * dt;
+      PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.12 * dt;
     }
     const v = document.getElementById('drunkFx');
-    if (v) { const o = clamp((L - 0.15) * 0.9, 0, 0.6); if (Math.abs(o - (this.fxO || 0)) > 0.01) { this.fxO = o; v.style.opacity = o.toFixed(2); } }
-    if (L >= 1 && !this.out) this.blackout();
+    if (v) { const o = clamp((L - 0.1) * 0.9, 0, 0.6); if (Math.abs(o - (this.fxO || 0)) > 0.01) { this.fxO = o; v.style.opacity = o.toFixed(2); } }
+    if (this.level >= 1 && !this.out) this.blackout();
     if (this.out) this.updateBlackout(dt);
   },
-  // steering: the way you want to go, turned a little this way and that
+  /* the head chases a wandering goal, the body chases the head (later, heavier), the hips chase the body */
+  balance(dt, L) {
+    if (L < 0.01) { this.head.set(0, 0); this.body.set(0, 0); this.headV.set(0, 0); this.bodyV.set(0, 0); this.drift.set(0, 0); return; }
+    this.goalT -= dt;
+    if (this.goalT <= 0) {
+      this.goalT = 0.5 + Math.random() * (1.6 - L);
+      const a = Math.random() * TAU, m = (0.12 + Math.random() * 0.22) * L;
+      this.goal.set(Math.cos(a) * m, Math.sin(a) * m * 0.7 + 0.03 * L);
+    }
+    const sp = (pos, vel, target, k, c) => {
+      vel.x += ((target.x - pos.x) * k - vel.x * c) * dt; vel.y += ((target.y - pos.y) * k - vel.y * c) * dt;
+      pos.x += vel.x * dt; pos.y += vel.y * dt;
+    };
+    sp(this.head, this.headV, this.goal, 22, 4.5);       // quick and bouncy
+    sp(this.body, this.bodyV, this.head, 7, 2.6);        // follows, overshoots
+    // the leaning body pulls the feet after it: the root drifts the way the body leans
+    const k = (SIT.busy() || FALL.busy()) ? 0 : L * 1.7;
+    const cy = Math.cos(PLAY.yaw), sy = Math.sin(PLAY.yaw);
+    // forwards (sin y, cos y), his right (-cos y, sin y)
+    this.drift.set((sy * this.body.y - cy * this.body.x) * k, (cy * this.body.y + sy * this.body.x) * k);
+  },
+  // steering: the way you want to go, turned this way and that
   steer(mx, mz) {
-    const L = this.level;
+    const L = Math.min(this.level, 1);
     if (L < 0.05) return [mx, mz];
-    const a = this.sway.x * L * 0.55, c = Math.cos(a), s = Math.sin(a);
+    const a = (this.sway.x * 0.8 + this.body.x * 1.5) * L, c = Math.cos(a), s = Math.sin(a);
     return [mx * c + mz * s, -mx * s + mz * c];
   },
-  maxSpeed() { return 1 - clamp(this.level - 0.3, 0, 0.6) * 0.45; },
-  // the body: sway, a heavy head, loose shoulders (called after the gait or the seat has posed it)
+  // the pace surges and drags
+  maxSpeed() { const L = Math.min(this.level, 1); return (1 - clamp(L - 0.25, 0, 0.6) * 0.5) * (1 + Math.sin(this.t * 1.9) * 0.22 * L); },
+  stumble(dir, big) {
+    if (FALL.busy() || SIT.busy()) return;
+    const L = Math.min(this.level, 1);
+    const a = dir !== undefined ? dir : PLAY.yaw + (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * 1.0);
+    const f = (1.0 + L * 2.2) * (big ? 1.4 : 1);
+    PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
+    // the body lurches the same way
+    const rel = a - PLAY.yaw;
+    this.bodyV.x += -Math.sin(rel) * 1.6 * f * 0.5; this.bodyV.y += Math.cos(rel) * 1.2 * f * 0.5;
+    this.headV.x += -Math.sin(rel) * 2.5 * f * 0.5;
+    FSFX.cloth();
+    // very drunk: sometimes it ends on the floor
+    if (L > 0.45 && Math.random() < (L - 0.4) * 1.1) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 180);
+  },
+  // the body: the chain of springs (called after the gait or the seat has posed it)
   pose(P) {
     const L = Math.min(this.level, 1);
-    if (L < 0.02) return;
-    const sx = this.sway.x, sy = this.sway.y, seated = SIT.owns();
-    P.spRoll += sx * 0.09 * L * (seated ? 0.7 : 1);
-    P.pelRoll += sx * 0.03 * L * (seated ? 0 : 1);
-    if (!seated) P.pel.x += sx * 0.035 * L;
-    P.spPitch += (0.04 + sy * 0.03) * L;
-    P.hdPitch += (0.12 + Math.sin(this.t * 0.4) * 0.06) * L;
-    P.hdRoll = (P.hdRoll || 0) - sx * 0.14 * L;
-    P.hdYaw += sy * 0.12 * L;
+    if (L < 0.01 || FALL.owns()) return;
+    const seated = SIT.owns(), k = seated ? 0.6 : 1, H = this.head, B = this.body;
+    // upper body follows the body spring; positive x leans to his right (roll about z tips +y towards -x)
+    P.spRoll += B.x * 0.9 * k; P.spPitch += B.y * 0.8 * k + 0.04 * L;
+    if (!seated) { P.pelRoll += B.x * 0.25; P.pel.x += B.x * 0.08; P.pel.z -= B.y * 0.06; P.pel.y -= Math.abs(B.x) * 0.04; }
+    // the head leads: its own lean on top of the body's, heavy and loose
+    P.hdRoll = (H.x - B.x) * 1.3 * k;
+    P.hdPitch += (H.y - B.y) * 1.1 * k + 0.12 * L;
+    P.hdYaw += (H.x - B.x) * 0.25 * k;
+    // the arms come out to catch the balance
+    if (!seated) for (let i = 0; i < 2; i++) {
+      const s = i === 0 ? 1 : -1, a = P.arm[i], lean = Math.abs(B.x) + Math.abs(B.y) * 0.6;
+      a.out += Math.min(0.6, lean * 2.2 + (s * B.x < 0 ? Math.abs(B.x) * 1.5 : 0)) * L;
+      a.el += lean * 0.8 * L; a.sw += Math.sin(this.t * 2.3 + i * 2) * 0.15 * L;
+    }
+    if (this.hicPose > 0) { P.hdPitch -= this.hicPose * 0.6; P.spPitch -= this.hicPose * 0.15; this.hicPose = Math.max(0, this.hicPose - 1 / 60); }
   },
-  // the view: the horizon tilts and the camera lags and drifts
+  // the view: the horizon tilts, the camera drifts and lags
   camera(cam) {
     const L = Math.min(this.level, 1);
     if (L < 0.02) return;
-    cam.position.x += this.sway.y * 0.12 * L; cam.position.y += this.sway.x * 0.06 * L;
-    cam.rotateZ(this.sway.x * 0.07 * L);
+    const k = Math.min(1, L * 1.6);
+    cam.position.x += (this.sway.y * 0.25 + this.body.x * 0.6) * k; cam.position.y += this.sway.x * 0.12 * k;
+    cam.rotateZ((this.sway.x * 0.1 + this.body.x * 0.25) * k);
+    const fov = cam.fov * (1 + Math.sin(this.t * 0.7) * 0.04 * k);
+    if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
   },
   hiccup() {
     GSFX.run(() => {
@@ -81,7 +129,7 @@ const DRUNK = {
       SFX.noiseHit(t, g, { freq: 1400, q: 1.2, gain: 0.12, attack: 0.005, decay: 0.05 });
     });
     PLAY.camShake = Math.max(PLAY.camShake, 0.03);
-    this.hicPose = 0.25;
+    this.hicPose = 0.25; this.headV.y -= 1.2;
   },
 
   /* ---- out cold: fade to black, wake up somewhere ---- */
@@ -89,15 +137,16 @@ const DRUNK = {
     this.out = { t: 0, phase: 'fade', where: null };
     GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
     DRINK.cancel();
+    if (!FALL.busy() && !SIT.busy()) FALL.start(true);
     worldEvent('passout', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   updateBlackout(dt) {
     const O = this.out, el = document.getElementById('blackout');
     O.t += dt;
     if (O.phase === 'fade') {
-      el.hidden = false; el.style.opacity = clamp(O.t / 1.6, 0, 1).toFixed(2);
+      el.hidden = false; el.style.opacity = clamp((O.t - 0.6) / 1.6, 0, 1).toFixed(2);
       PLAY.vx *= Math.exp(-dt * 3); PLAY.vz *= Math.exp(-dt * 3);
-      if (O.t >= 2.2) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
+      if (O.t >= 2.6) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
     } else if (O.phase === 'dark') {
       if (O.t >= 1.4) { O.phase = 'wake'; O.t = 0; }
     } else {
@@ -106,6 +155,7 @@ const DRUNK = {
     }
   },
   wakeSomewhere() {
+    FALL.cancel();
     if (SIT.busy()) SIT.cancel();
     const R = (type) => ROOMS.find((r) => r.type === type);
     const spots = [

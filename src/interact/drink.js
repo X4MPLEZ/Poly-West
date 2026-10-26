@@ -93,7 +93,7 @@ const DRINK = {
   busy() { return this.st !== 'idle' || !!this.queued; },
   // src: 'glass' (the served one) or 'bottle' (from the bag)
   start(src) {
-    if (this.busy() || DRUNK.out) return false;
+    if (this.busy() || DRUNK.blocked()) return false;
     if (src === 'glass' && !GLASS.ready()) return false;
     if (src === 'bottle' && !INV.has('bottle')) return false;
     FIST.fight = 0; FIST.queued = false;

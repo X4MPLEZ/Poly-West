@@ -63,7 +63,10 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `interact/interact.js` | **ein System für alles Benutzbare**: Einträge mit Ort, Raum, Belegung, Verb; Fokus und Hinweis „E …“ |
 | `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest), `SIT.warp(seat)` |
 | `interact/drink.js` | Trinken: `GLASS` (serviertes Getränk, rutscht über die Theke), `DRINK` (Arm-Animation greifen → heben → Schluck → abstellen), Theken (`makeCounter`, `barActions`), `SHOP` (Bestellliste) |
-| `play/drunk.js` | `DRUNK`: Magen → Blut, Schwanken von Körper/Kamera/Ziel, Kurs-Drift, Stolpern, Schluckauf, Filmriss mit Aufwachen woanders |
+| `play/drunk.js` | `DRUNK`: Magen → Blut; Gleichgewicht als Federkette (Kopf führt, Oberkörper folgt, Hüfte/Füße werden mitgezogen → `drift`), Kurs-Drift, Stolpern, Schluckauf, Kamera, Filmriss mit Aufwachen woanders |
+| `play/fall.js` | `FALL`: Hinfallen und Aufstehen als Schlüsselposen (`FALL_KEYS`/`FALL_STEPS`), übernimmt die Pose wie das Sitzen |
+| `gfx/post.js` | `POST`: Doppeltsehen + Wabern + warme Farbe, nur wenn betrunken (sonst direkt auf den Bildschirm) |
+| `ui/wheel.js` | `WHEEL`: Schnellrad für die Tasche (Tab halten / Taschen-Knopf / Steuerkreuz hoch), Zeit läuft langsamer |
 | `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
@@ -92,6 +95,6 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - Three.js **r159** (letzte Version mit `three.min.js`). Kein Modul-Build.
 
 ## Stand und Plan
-- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit mit Filmriss.
+- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit (Schwanken, Stolpern, Hinfallen, Doppeltsehen, ungenaue Schläge) mit Filmriss, Schnellrad für die Tasche.
 - **Als Nächstes:** Tag/Nacht mit Schlafen, dann der erste NPC (Barkeeper bietet sich an), Pferd, Soziales/Duell und Wildnis.
 - Das NPC-Konzept steht in `docs/npc-konzept.md`. Spielidee (Leben im Westen, Ruf, Beziehungen, Überraschungen) und Sprachsteuerung per Mikrofon: `docs/spielidee.md`.

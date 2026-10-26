@@ -74,7 +74,7 @@ const GUN = {
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
   setAim(on) {
-    if (on && (SIT.busy() || DRINK.busy() || DRUNK.out)) return;
+    if (on && (SIT.busy() || DRINK.busy() || DRUNK.blocked())) return;
     this.wantAim = on;
     if (on) {
       if (this.state === 'holster') this.startDraw();
@@ -83,7 +83,7 @@ const GUN = {
     }
   },
   pressFire() {
-    if (SIT.busy() || DRINK.busy() || DRUNK.out) return;
+    if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return;
     if (this.state === 'holster') { this.startDraw(); return; }
     if (this.state === 'holstering') return;
     if (this.reload) { if (this.ammo > 0) this.reload.stop = true; else return; }

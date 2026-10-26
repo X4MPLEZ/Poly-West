@@ -1,5 +1,5 @@
 function updateCamera(dt) {
-  const look = PLAY.pos.clone(); look.y += 1.35 - 0.32 * SIT.w;
+  const look = PLAY.pos.clone(); look.y += 1.35 - 0.32 * SIT.w - 0.95 * FALL.down;
   if (!G.lookAt) G.lookAt = look.clone();
   G.lookAt.lerp(look, 1 - Math.exp(-dt * 10));
   const cam = G.cam;

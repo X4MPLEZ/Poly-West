@@ -76,7 +76,7 @@ function updatePlayer(dt) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
   [mx, mz] = DRUNK.steer(mx, mz);
-  if (DRUNK.out || SHOP.open) { mx = mz = 0; mag = 0; }
+  if (DRUNK.blocked() || SHOP.open) { mx = mz = 0; mag = 0; }
   const ml = Math.hypot(mx, mz);
   if (ml > 1e-4) { mx /= ml; mz /= ml; }
   PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
@@ -88,8 +88,9 @@ function updatePlayer(dt) {
   if (DRINK.busy()) target = Math.min(target, WALK * 0.55);
   target *= DRUNK.maxSpeed();
   const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
-  PLAY.vx += (mx * target - PLAY.vx) * a;
-  PLAY.vz += (mz * target - PLAY.vz) * a;
+  // drunk: the leaning body drags the feet after it, even standing still
+  PLAY.vx += (mx * target + DRUNK.drift.x - PLAY.vx) * a;
+  PLAY.vz += (mz * target + DRUNK.drift.y - PLAY.vz) * a;
   PLAY.speed = Math.hypot(PLAY.vx, PLAY.vz);
   PLAY.moving = PLAY.speed > 0.35;
   if (punching && FIST.faceYaw !== null) {
@@ -100,7 +101,7 @@ function updatePlayer(dt) {
     const ty = PLAY.camYaw + Math.PI + 0.35;
     let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * 16));
-  } else if (PLAY.speed > 0.25) {
+  } else if (PLAY.speed > 0.25 && mag > 0.05) {
     const ty = Math.atan2(PLAY.vx, PLAY.vz);
     let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * 14));

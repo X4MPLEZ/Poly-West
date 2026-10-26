@@ -259,8 +259,38 @@ async def check_drink(g):
     await g.js('() => { DRUNK.level = 0; DRUNK.stomach = 0; if (SIT.busy()) SIT.cancel(); GLASS.clear(); }')
     return ok, json.dumps(r) + ' ' + json.dumps(r2)
 
+async def check_drunk(g):
+    """drunk: the head only rolls (no spinning), the body drifts and the feet follow, fists get slow and sloppy,
+    a fall runs through and hands back to the gait, the wheel drinks from the bottle"""
+    await g.js(RESET)
+    r = await g.js('''() => { const out = {}; INV.items = {}; INV.sips = {};
+      PLAY.pos.set(-8, 0, 2); PLAY.yaw = 0; GAIT.init = false; FALL.cancel();
+      let hr = [9, -9], hy = 0, moved = 0, steps = 0; const last = PLAY.pos.clone();
+      for (let k = 0; k < 600; k++) { DRUNK.level = 0.6; DRUNK.stomach = 0; if (FALL.busy()) FALL.cancel(); G.stepFrame(1/60); const P = W.ch.pose;
+        hr[0] = Math.min(hr[0], P.hdRoll); hr[1] = Math.max(hr[1], P.hdRoll); hy = Math.max(hy, Math.abs(P.hdYaw)); moved += PLAY.pos.distanceTo(last); last.copy(PLAY.pos);
+        if (GAIT.feet[0].swing || GAIT.feet[1].swing) steps++; }
+      out.headRoll = hr.map(v => +v.toFixed(2)); out.headYaw = +hy.toFixed(2); out.swayMoved = +moved.toFixed(2); out.stepFrames = steps;
+      // fists: how long one punch takes, sober and drunk
+      const punchT = (L) => { DRUNK.level = L; FIST.stamina = 1; FIST.st = 'idle'; FIST.clip = null; FIST.down(false); G.stepFrame(1/60); FIST.up(); let t = 0; while (FIST.st !== 'idle' && t < 3) { DRUNK.level = L; if (FALL.busy()) FALL.cancel(); G.stepFrame(1/60); t += 1/60; } return +t.toFixed(2); };
+      out.punchSober = punchT(0); out.punchDrunk = punchT(0.8);
+      // a fall: down and back up, the gait takes over again
+      DRUNK.level = 0.5; FALL.cancel(); FALL.start(); let t = 0, low = 9;
+      while (FALL.busy() && t < 9) { G.stepFrame(1/60); t += 1/60; low = Math.min(low, W.ch.pose.pel.y); }
+      out.fallT = +t.toFixed(1); out.fallLow = +low.toFixed(2);
+      for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      out.afterPel = +W.ch.pose.pel.y.toFixed(2);
+      // the wheel: Tab, point at the bottle, let go
+      DRUNK.level = 0; INV.add('bottle'); WHEEL.show(); out.slots = WHEEL.list.map(s => s.label).join(',');
+      WHEEL.sel = WHEEL.list.findIndex(s => s.label === 'Flasche Whiskey'); WHEEL.use();
+      t = 0; while (DRINK.busy() && t < 5) { G.stepFrame(1/60); t += 1/60; } out.sipsLeft = INV.sips.bottle; out.wheelClosed = !WHEEL.open;
+      DRUNK.level = 0; DRUNK.stomach = 0; return out; }''')
+    ok = (abs(r['headRoll'][0]) < 0.7 and r['headRoll'][1] < 0.7 and r['headYaw'] < 0.9 and r['swayMoved'] > 0.2 and r['stepFrames'] > 20
+          and r['punchDrunk'] > r['punchSober'] * 1.4 and r['fallT'] < 8 and r['fallLow'] < 0.25 and r['afterPel'] > 0.85
+          and 'Flasche Whiskey' in r['slots'] and r['sipsLeft'] == 5 and r['wheelClosed'])
+    return ok, json.dumps(r)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

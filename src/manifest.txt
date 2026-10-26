@@ -20,10 +20,12 @@ char/gait.js
 gfx/dust.js
 gfx/shaders.js
 gfx/render.js
+gfx/post.js
 play/player.js
 play/input.js
 play/camera.js
 play/drunk.js
+play/fall.js
 audio/sfx.js
 audio/samples.js
 combat/fx.js
@@ -37,5 +39,6 @@ interact/drink.js
 audio/ambient.js
 ui/hud.js
 ui/menu.js
+ui/wheel.js
 dev/devtools.js
 main.js
