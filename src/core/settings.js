@@ -23,7 +23,7 @@ const SETTINGS = {
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
     { group: 'Entwicklung' },
-    { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
+    { key: 'dev', label: 'Entwickler-Werkzeuge (F2 oder Knopf oben rechts)', type: 'toggle', def: false }
   ],
   v: {}, fns: {},
   load() {

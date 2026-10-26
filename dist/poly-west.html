@@ -107,7 +107,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bFire { width: 82px; height: 82px; right: calc(22px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); font-size: 13px; border-color: rgba(231, 166, 64, 0.8); }
 #bAim { width: 64px; height: 64px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
 #bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); font-size: 8.8px; letter-spacing: -0.3px; }
-#bReload { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
+#bReload { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
 .touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
@@ -153,7 +153,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bTalk[hidden] { display: none; }
 #talk { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 32px)); pointer-events: auto;
   display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 7px 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
-.touch #talk { width: min(440px, calc(100% - 360px)); min-width: 260px; }
+/* phones: at the top, where the keyboard does not cover it and the thumbs are not */
+.touch #talk { top: calc(6px + env(safe-area-inset-top, 0px)); bottom: auto; left: max(10px, env(safe-area-inset-left, 0px)); transform: none; width: min(430px, calc(100% - 330px)); min-width: 290px; padding: 6px 8px; }
+.touch.talking #ammo, .touch.talking #perf, .touch.talking #voiceSt { visibility: hidden; }
 #talk[hidden] { display: none; }
 #talkMid { flex: 1; min-width: 0; }
 #talkMid b { font-family: var(--f-display); font-weight: 400; font-size: 15px; color: var(--brass); margin-right: 8px; }
@@ -166,7 +168,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #talkType[hidden] { display: none; }
 #talkType input { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 15px var(--f-ui); -webkit-user-select: text; user-select: text; }
 #talkType button { height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font: 700 14px var(--f-ui); padding: 0 12px; }
-#talkClose { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--edge); background: transparent; color: var(--bone); font-size: 18px; line-height: 1; }
+#talkClose, #talkStop { height: 32px; flex: none; border-radius: 9px; border: 1px solid var(--edge); background: transparent; color: var(--bone); font: 700 13px var(--f-ui); padding: 0 10px; }
+#talkStop { border-color: var(--warn); color: var(--warn); }
+#talkStop[hidden] { display: none; }
 #talkMic { width: 42px; height: 42px; flex: none; border-radius: 50%; border: 2px solid var(--brass); background: rgba(231, 166, 64, 0.18); color: var(--bone); display: grid; place-items: center; padding: 0; }
 #talkMic[hidden] { display: none; }
 #talkMic svg { width: 24px; height: 24px; }
@@ -251,7 +255,10 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .devRow button { flex: 1; min-height: 28px; border-radius: 6px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 11.5px; padding: 0 6px; }
 .devRow button[aria-pressed="true"] { background: var(--brass); color: var(--ink); border-color: var(--brass); }
 .touch #dev { top: 52px; width: 240px; }
-#devMemBox { position: absolute; left: calc(100% + 8px); top: 0; width: 340px; max-width: calc(100vw - 300px); max-height: calc(100vh - 60px); overflow: auto; background: rgba(16, 11, 8, 0.9); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; }
+#dev { max-height: calc(100% - 50px); overflow: auto; overscroll-behavior: contain; }
+.touch #devMemBox { left: calc(max(10px, env(safe-area-inset-left, 0px)) + 248px); top: 52px; max-height: calc(100% - 62px); max-width: calc(100% - 270px); }
+#devBtn[hidden] { display: none; }
+#devMemBox { position: absolute; left: calc(max(10px, env(safe-area-inset-left, 0px)) + 278px); top: 40px; z-index: 3; pointer-events: auto; font-size: 12px; width: 340px; max-width: calc(100% - 300px); max-height: calc(100% - 60px); overflow: auto; background: rgba(16, 11, 8, 0.9); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; }
 #devMemBox[hidden] { display: none; }
 #devMemBox h4 { margin: 4px 0 2px; font-size: 12px; color: var(--brass); }
 #devMemBox .dmT { margin: 6px 0 2px; font-size: 10.5px; color: var(--bone); opacity: 0.75; }
@@ -267,7 +274,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 /* the quick wheel */
 #bagBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right, 0px)) + 112px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; }
 .touch #bagBtn { display: none; }
-#bBag { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
+#bBag { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
 #wheel { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(12, 8, 5, 0.25), rgba(12, 8, 5, 0.6)); z-index: 3; pointer-events: auto; }
 #wheel[hidden] { display: none; }
 #wheelRing { position: relative; width: min(340px, 78vmin); height: min(340px, 78vmin); border-radius: 50%; background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); }
@@ -303,6 +310,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek</span>
+      <button id="devBtn" class="round" type="button" hidden aria-label="Entwickler-Werkzeuge (F2)" title="Entwickler-Werkzeuge (F2)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>
+      </button>
       <button id="menuBtn" class="round" type="button" aria-label="Menü (Esc)" title="Menü (Esc)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
@@ -322,7 +332,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="talkMic" type="button" aria-pressed="false" aria-label="Sprechen (V)" title="Sprechen (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
       <div id="talkMid"><b id="talkName">Hank</b><span id="talkState" aria-live="polite"></span><p id="talkHeard"></p>
         <div id="talkType" hidden><input id="talkIn" type="text" maxlength="240" placeholder="Sag etwas …" autocomplete="off" enterkeyhint="send" aria-label="Was du sagst"><button id="talkSend" type="button">Sagen</button><button id="talkMicWin" type="button" title="Ein eigenes Fenster, das für das Spiel zuhört">🎤 Fenster</button></div></div>
-      <button id="talkClose" type="button" aria-label="Gespräch beenden (Esc)">×</button>
+      <button id="talkStop" type="button" hidden title="Abbrechen: er hört auf zu reden">Stopp</button>
+      <button id="talkClose" type="button" title="Gespräch beenden (Esc)">Ende</button>
     </section>
     <div id="toasts" aria-live="polite"></div>
     <section id="shop" hidden aria-labelledby="shopTitle">
@@ -357,8 +368,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
       <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
       <div class="devRow"><button id="devMem" type="button" aria-pressed="false">Gedächtnis der Figuren</button><button id="devGlass" type="button">Glas zurück</button></div>
-      <div id="devMemBox" hidden></div>
     </section>
+    <div id="devMemBox" hidden></div>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
   </div>
   <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
@@ -681,7 +692,7 @@ const SETTINGS = {
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
     { group: 'Entwicklung' },
-    { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
+    { key: 'dev', label: 'Entwickler-Werkzeuge (F2 oder Knopf oben rechts)', type: 'toggle', def: false }
   ],
   v: {}, fns: {},
   load() {
@@ -4267,7 +4278,8 @@ const DRUNK = {
     }
     this.bumpT = Math.max(0, this.bumpT - dt);
     // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
-    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
+    // (once out, he may go back in: it does not start again for a while)
+    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy() && G.time - (this.leftAt || -999) > 120) this.startLeave();
     if (this.leave) this.updateLeave(dt);
     if (!this.out && !this.leave && !this.edge && this.level >= 0.95) this.startEdge();
     if (this.edge) this.updateEdge(dt);
@@ -4351,10 +4363,10 @@ const DRUNK = {
     PLAY.camShake = Math.max(PLAY.camShake, 0.04);
     GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.thump(t, g, 120, 60, 0.4, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.2, attack: 0.002, decay: 0.08 }); });
   },
-  /* had enough indoors: stand up, stagger out of the door, go down in the street */
+  /* had enough indoors: stand up and stagger out of the door, to just in front of it; then he is yours again */
   startLeave() {
     const R = ROOMSTATE.cur, F = R.floorY;
-    this.leave = { R, t: 0, i: 0, done: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 2.2), rwp(R, (Math.random() - 0.5) * 3, 0, R.doorZ + 5.5)] };
+    this.leave = { R, t: 0, i: 0, done: 0, best: Infinity, stuckT: 0, side: 1, sideT: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 1.6)] };
     DRINK.cancel(); SHOP.open && SHOP.close();
     if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
     TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
@@ -4362,18 +4374,27 @@ const DRUNK = {
   },
   autoDir() {
     const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;
-    const w = Lv.way[Lv.i], dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
-    return d > 1e-3 ? [dx / d, dz / d] : null;
+    const w = Lv.way[Lv.i];
+    let dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
+    if (d < 1e-3) return null;
+    dx /= d; dz /= d;
+    // stuck on a table or a chair: step sideways a moment, then on again
+    if (Lv.sideT > 0) { const ex = dx + dz * Lv.side * 1.4, ez = dz - dx * Lv.side * 1.4, e = Math.hypot(ex, ez); dx = ex / e; dz = ez / e; }
+    return [dx, dz];
   },
   updateLeave(dt) {
     const Lv = this.leave;
     Lv.t += dt;
     this.level = Math.min(this.level, 0.97);   // not before he is out
+    Lv.sideT = Math.max(0, Lv.sideT - dt);
     if (Lv.i < Lv.way.length) {
-      const w = Lv.way[Lv.i];
-      if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
+      const w = Lv.way[Lv.i], d = Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z);
+      if (d < 0.7) { Lv.i++; Lv.best = Infinity; Lv.stuckT = 0; }
+      else if (d < Lv.best - 0.05) { Lv.best = d; Lv.stuckT = 0; }
+      else if (!FALL.busy() && (Lv.stuckT += dt) > 0.9) { Lv.stuckT = 0; Lv.sideT = 0.8; Lv.side = -Lv.side; Lv.best = d; }
     } else Lv.done += dt;
-    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 0.95); if (!this.edge) this.startEdge(); }
+    // out (or it takes too long): he is yours again, and may go back in
+    if (Lv.done > 0.4 || Lv.t > 16) { this.leave = null; this.leftAt = G.time; }
   },
   /* the last stretch: as drunk as it gets for a while (time to stagger about), the picture swims and darkens,
      then he goes down. More drink makes it shorter, water can pull him back from it. */
@@ -4913,22 +4934,45 @@ function VOICE_WORKER() {
   const ready = new Promise((r) => { readyRes = r; });
   const HALF = new Float32Array(65536);
   for (let h = 0; h < 65536; h++) { const s = h >> 15, e = (h >> 10) & 31, m = h & 1023; HALF[h] = (s ? -1 : 1) * (e === 0 ? m * 5.960464477539063e-8 : e === 31 ? (m ? NaN : Infinity) : Math.pow(2, e - 15) * (1 + m / 1024)); }
-  async function get(url, part) {
-    const r = await fetch(url);
+  /* the files are kept in the browser's Cache Storage after the first download (one cache per model version, older
+     ones are removed), so the next start reads them from the disk; where that is not allowed, they are downloaded */
+  let store = null, fromStore = 0, fromNet = 0;
+  async function openStore(name) {
+    try {
+      store = await caches.open(name);
+      for (const k of await caches.keys()) if (k.startsWith('poly-west-voice-') && k !== name) caches.delete(k);
+    } catch (e) { store = null; }
+  }
+  async function get(url, part, fresh) {
+    let r = null, hit = false;
+    if (store && !fresh) { try { r = await store.match(url); hit = !!r; } catch (e) { r = null; } }
+    if (!r) r = await fetch(url, fresh ? { cache: 'no-cache' } : undefined);
     if (!r.ok) throw new Error(url.split('/').pop() + ': ' + r.status);
     const rd = r.body.getReader(), chunks = []; let n = 0;
     for (;;) { const { done, value } = await rd.read(); if (done) break; chunks.push(value); n += value.length; postMessage({ t: 'progress', part, n }); }
     const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+    if (hit) fromStore++; else if (!fresh) { fromNet++; if (store) { try { await store.put(url, new Response(out)); } catch (e) { /* full or not allowed: fine */ } } }
     return out;
   }
+  const blobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
+  // the same test onnxruntime makes: can this browser run the SIMD build?
+  const simd = () => { try { return WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 30, 1, 28, 0, 65, 0, 253, 15, 253, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 253, 186, 1, 26, 11])); } catch (e) { return false; } };
   const phase = (name) => postMessage({ t: 'phase', name });
   async function init(m) {
     const base = m.base;
     phase('Laufzeit');
-    importScripts(base + 'ort.wasm.min.js', base + 'piper_phonemize.js');
-    ort.env.wasm.numThreads = 1; ort.env.wasm.wasmPaths = base;
+    // the voice's description always fresh from the server: its size names the cache, so a new model is fetched anew
+    cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg', true)));
+    await openStore('poly-west-voice-' + m.voice + '-' + cfg.size + '-' + cfg.parts.length);
+    const ortWasm = simd() ? 'ort-wasm-simd.wasm' : 'ort-wasm.wasm';
+    const rt = { js: await get(base + 'ort.wasm.min.js', 'rt'), ph: await get(base + 'piper_phonemize.js', 'rt2') };
+    importScripts(blobUrl(rt.js, 'text/javascript'), blobUrl(rt.ph, 'text/javascript'));
     phase('Download');
-    cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg')));
+    const wasmBytes = await get(base + ortWasm, 'ort');
+    ort.env.wasm.numThreads = 1; ort.env.wasm.simd = ortWasm === 'ort-wasm-simd.wasm';
+    ort.env.wasm.wasmPaths = { [ortWasm]: blobUrl(wasmBytes, 'application/wasm') };
+    const phWasm = await get(base + 'piper_phonemize.wasm', 'phw'), phData = await get(base + 'piper_phonemize.data.wasm', 'phd');
+    const phUrls = { 'piper_phonemize.wasm': blobUrl(phWasm, 'application/wasm'), 'piper_phonemize.data': blobUrl(phData, 'application/octet-stream') };
     const tmpl = await get(base + m.voice + '.tmpl.wasm', 'tmpl'), parts = [];
     for (const p of cfg.parts) parts.push(await get(base + p, p));
     let hl = 0; for (const p of parts) hl += p.length;
@@ -4947,9 +4991,9 @@ function VOICE_WORKER() {
     phase('Modell startet');
     sess = await ort.InferenceSession.create(full, { executionProviders: ['wasm'] });
     phase('Aussprache');
-    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
+    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => phUrls[x] || base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
     readyRes();
-    postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate });
+    postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate, fromStore, fromNet, stored: !!store });
   }
   function ids(text) { return new Promise((res) => { pending = res; phon.callMain(['-l', cfg.voice.espeak.voice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data']); }); }
   async function say(m) {
@@ -5016,7 +5060,15 @@ const VOICE = {
   msg(m) {
     if (m.t === 'phase') { this.phase = m.name; this.lastProg = performance.now(); }
     else if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
-    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.readyAt = performance.now(); this.pump(); }
+    else if (m.t === 'ready') {
+      this.st = 'ready'; this.rate = m.rate; this.readyAt = performance.now(); this.fromStore = m.fromStore; this.fromNet = m.fromNet; this.stored = m.stored;
+      // ask the browser to keep the stored voice even when space runs short (Chrome decides by itself; not asked in Firefox, which would show a question)
+      try { if (m.stored && navigator.storage && navigator.storage.persist && !/firefox/i.test(navigator.userAgent)) navigator.storage.persist(); } catch (e) { /* ignore */ }
+      // what was said while it loaded is not caught up on later; only a line from the last moments, if he is still heard
+      const p = this.pend; this.pend = null;
+      if (p && performance.now() - p.at < 4000 && (!p.npc.canBeHeard || p.npc.canBeHeard())) for (const s of this.sentences(p.text)) this.push(p.npc, s, p.mood);
+      this.pump();
+    }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
@@ -5039,7 +5091,7 @@ const VOICE = {
   // for the player: which voice is speaking
   label() {
     if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
-    if (this.st === 'ready') return 'echte Stimme';
+    if (this.st === 'ready') return 'echte Stimme' + (this.fromStore && !this.fromNet ? ' (gespeichert)' : '');
     if (this.st === 'loading') return 'echte Stimme lädt ' + (this.phase === 'Download' || !this.phase ? this.pct() + ' %' : '\u00b7 ' + this.phase);
     if (this.st === 'failed') return 'Browser-Stimme (' + this.why + ')';
     return 'Browser-Stimme';
@@ -5047,11 +5099,12 @@ const VOICE = {
   // a person says something: every word is heard
   line(npc, text, mood) {
     if (!SETTINGS.v.voice || !text || text === '\u2026') return;
-    if (this.ready() || (this.st === 'loading' && this.IOS)) { for (const s of this.sentences(text)) this.push(npc, s, mood); }   // (iPhone: wait for it, see IOS)
+    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s, mood); }
+    else if (this.st === 'loading' && this.IOS) this.pend = { npc, text, mood, at: performance.now() };   // (iPhone: only the newest line waits, see IOS)
     else this.browser(npc, text);
   },
   // On iPhones the browser voice takes the sound away from the game's audio until the next tap, so there nothing
-  // is said with it while the real voice is loading: those lines wait (a short while) for the real voice instead.
+  // is said with it while the real voice is loading: only the newest line waits (a few seconds) for the real voice.
   IOS: /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
   sentences(text) { return (text.match(/[^.!?\u2026]+[.!?\u2026]*["'\u201c\u201d)]*\s*/g) || [text]).map((s) => s.trim()).filter(Boolean); },
   /* the browser's own voices: the best fitting German one of the device (preferred names, the right sex,
@@ -5160,7 +5213,7 @@ const VOICE = {
     if (this.playing || !this.q.length) return;
     const job = this.q[0], now = performance.now();
     // a line that could not be made, or came too late to still fit (said while the voice was loading): skip it
-    if (job.err || (job.pcm && now - job.at > 20000) || (!job.pcm && this.ready() && now - job.at > 25000)) { this.q.shift(); this.pump(); return; }
+    if (job.err || (job.pcm && now - job.at > 12000) || (!job.pcm && this.ready() && now - job.at > 20000) || (job.npc.canBeHeard && !job.npc.canBeHeard())) { this.q.shift(); this.pump(); return; }
     if (!job.pcm || !SFX.ctx) return;
     this.q.shift();
     // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
@@ -7253,7 +7306,9 @@ class NPC {
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
-  speak(text, dur, mood) { SAY.show(this, text, dur); VOICE.line(this, text, mood); }
+  // he speaks only where you can hear him: in his room (or near him outdoors)
+  canBeHeard() { return this.room ? G.room === this.room : Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  speak(text, dur, mood) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
@@ -7379,6 +7434,7 @@ const SAY = {
     npc.sayEl.classList.remove('out'); npc.sayEl.hidden = false;
     npc.said = text;
   },
+  hide(npc) { if (npc.sayEl) npc.sayEl.hidden = true; npc.sayT = 0; },
   update(dt) {
     const cam = G.cam, W0 = G.renderer.domElement.clientWidth, H0 = G.renderer.domElement.clientHeight;
     for (const n of NPCS.list) {
@@ -7413,7 +7469,7 @@ const BARKEEP = {
   MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
     leave: 'amused', shot: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
-    hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
+    hello: ['Howdy, Fremder.', 'Willkommen im Saloon.', 'Na, wieder Durst?', 'Komm rein, setz dich.'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
     whiskey: ['Ein Whiskey. Kommt sofort.', 'Whiskey, sauber.', 'Einer vom Guten.'],
     beer: ['Ein kühles Bier.', 'Bier kommt.', 'Frisch vom Fass. Fast.'],
@@ -7461,6 +7517,7 @@ const BARKEEP = {
   sayOrRemark(kind, cool, situation, chance) {
     if (cool && (this.cool[kind] || -99) > G.time - cool) return;
     this.cool[kind] = G.time;
+    if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, false)) { delete this.cool[kind]; return; }
     if (situation && Math.random() < chance && TALK.remark(this.npc, situation, () => this.say(kind), this.MOOD[kind])) return;
     this.say(kind);
   },
@@ -7499,6 +7556,7 @@ const BARKEEP = {
         'Wer du bist: Mitte fünfzig, Schnurrbart, weiße Schürze. Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen. Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.',
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
+        'Dein Ton: ruhig, souverän und glaubwürdig, wie ein Mann, der schon alles gesehen hat. Ernst, wenn es ernst ist. Trockener Humor nur ab und zu, nicht in jedem Satz, kein Clown. Sag nie zweimal dasselbe; finde jedes Mal neue Worte.',
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
@@ -7561,11 +7619,14 @@ const BARKEEP = {
   yawFor(dir) { const a = rwp(this.R, 4, 0, -6), b = rwp(this.R, 4 + dir, 0, -6); return Math.atan2(b.x - a.x, b.z - a.z); },
   along(p) { return clamp(rLocal(this.R, p.x, p.z)[1], this.Z0, this.Z1); },
   myZ() { return rLocal(this.R, this.npc.pos.x, this.npc.pos.z)[1]; },
+  // a ready-made line; not over his own words and not when you are not there to hear it (then it is tried again later
+  // by the callers that keep calling, the others let it go)
   say(kind, cool) {
     const now = G.time;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
+    if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'aimed' || kind === 'behind' || kind === 'shot')) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, this.MOOD[kind]);
+    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, TALK.barkMood(this.npc, this.MOOD[kind]));
     return true;
   },
   /* ---- orders: from SHOP ---- */
@@ -7881,6 +7942,8 @@ const TALK = {
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
     this.typeRow = $('talkType'); this.inp = $('talkIn'); this.hint = $('prompt3'); this.btn = $('bTalk');
     $('talkClose').addEventListener('click', () => this.close());
+    this.stopBtn = $('talkStop');
+    this.stopBtn.addEventListener('click', () => this.abort());
     $('talkSend').addEventListener('click', () => this.sendTyped());
     $('talkMicWin').addEventListener('click', () => MICWIN.open());
     this.inp.addEventListener('keydown', (e) => {
@@ -7926,6 +7989,8 @@ const TALK = {
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
+    const talkingNow = this.busy || VOICE.speaking(n);
+    if (talkingNow === this.stopBtn.hidden) this.stopBtn.hidden = !talkingNow;
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
     // dictated text: send when the dictation pauses
     if (this.dictT > 0) { this.dictT -= dt; if (this.dictT <= 0 && this.inp.value.trim() && !this.busy) this.sendTyped(); }
@@ -7976,8 +8041,18 @@ const TALK = {
     if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Tipp ins Feld, dann aufs Mikrofon der Tastatur' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
     setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
+  /* "Stopp": he stops talking (the answer on its way is dropped), the conversation stays open */
+  abort() {
+    const n = this.npc;
+    this.userAbort = true;
+    if (this.ctl) { this.ctl.abort(); this.ctl = null; }
+    this.seq++; this.busy = false;
+    if (n) { n.thinking = false; VOICE.stop(n); SAY.hide && SAY.hide(n); n.aiAt = G.time; }
+    if (this.open) this.setState('Abgebrochen \u00b7 ' + (this.micOff ? 'schreib weiter oder Ende' : 'V: weiterreden'), 'idle');
+  },
   close() {
     if (!this.open) return;
+    if (this.busy || (this.npc && VOICE.speaking(this.npc))) this.abort();
     this.stopListen(true);
     this.userAbort = true;
     if (this.ctl) { this.ctl.abort(); this.ctl = null; }
@@ -8061,6 +8136,7 @@ const TALK = {
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
+    this.felt(n, out.mood);
     if (VOICE.ready() && raw !== null && F.queued() > 0) feed(raw, true);   // the rest of what was already being spoken
     else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
@@ -8070,6 +8146,29 @@ const TALK = {
     const act = String(out.action || 'none');
     n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
     if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
+  },
+  // ways a spontaneous remark can go (one is picked at random each time)
+  ANGLES: ['knappe, trockene Feststellung', 'ruhige, aber deutliche Warnung', 'kurze Frage an ihn', 'Hinweis auf die Folgen (Sheriff, Rechnung, sein Ruf in der Stadt)',
+    'Erinnerung an etwas, das du in deinen Jahren hinter der Theke erlebt hast', 'kühler Kommentar zu seinem Zustand', 'klare Anweisung, was er jetzt tun soll',
+    'Bemerkung, die zeigt, dass du dir das merkst', 'gelassene Reaktion eines Mannes, den so etwas kaum noch beeindruckt'],
+  // after his own words he stays in that mood a while (his ready-made lines take it on) and does not bark at once
+  felt(n, mood) { n.aiAt = G.time; if (mood && this.MOODS.includes(mood)) n.feel = { mood, t: G.time }; },
+  /* may a ready-made line be said now? Not over his own words: not while an answer is coming or being spoken, and
+     not in the few seconds after one; during a conversation only the urgent ones */
+  mayBark(n, urgent) {
+    if (!n) return false;
+    if (this.remarking || (this.busy && this.npc === n) || n.thinking) return false;
+    if (VOICE.speaking(n)) return false;
+    try { if (window.speechSynthesis && speechSynthesis.speaking && G.time - (n.aiAt || -99) < 15) return false; } catch (e) { /* ignore */ }
+    if (G.time - (n.aiAt || -99) < (urgent ? 1.5 : 4)) return false;
+    if (this.open && this.npc === n && !urgent) return false;
+    return true;
+  },
+  // the mood a ready-made line is said in: an angry or disgusted man stays so for a while, even for a friendly line
+  barkMood(n, mood) {
+    const f = n.feel;
+    if (f && G.time - f.t < 45 && (f.mood === 'angry' || f.mood === 'disgusted') && (mood === 'neutral' || mood === 'amused' || mood === 'surprised')) return f.mood;
+    return mood;
   },
   /* a streamed answer for person n: words into the bubble as they come, each finished sentence to the voice.
      Stops by itself once another answer has started (seq). noWhisper: say it out loud whatever mood comes back */
@@ -8096,14 +8195,21 @@ const TALK = {
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
+    if (!n.canBeHeard()) return true;   // nobody there to hear it: say nothing at all
+    if (VOICE.speaking(n) || G.time - (n.aiAt || -99) < 3) return false;
     if (G.time - (this.remarkT || -99) < 6) return false;
     this.remarking = true; this.remarkT = G.time;
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
+    const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
     const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
+    // a different angle each time, so he does not say the same kind of thing twice
+    const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
-      '\nSag spontan von dir aus etwas dazu, direkt zu ihm, so wie du bist und mit dem, was du über ihn weißt. Nenn ruhig konkrete Zahlen oder Dinge. Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
+      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + ang + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
+      (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
+      ' Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
     const ctl = new AbortController();
     let failed = false;
@@ -8115,6 +8221,7 @@ const TALK = {
       const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
       if (!say) { fail(); return; }
       if (out.mood === 'whisper') out.mood = 'neutral';
+      this.felt(n, out.mood);
       n.talkLog = n.talkLog || []; n.talkLog.push({ who: 'n', text: say });
       if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
       SAY.show(n, say);
@@ -8971,7 +9078,10 @@ const DEV = {
     this.places = this.listPlaces();
     for (const [i, p] of this.places.entries()) { const o = document.createElement('option'); o.value = i; o.textContent = p.name; sel.appendChild(o); }
     sel.addEventListener('change', () => { if (sel.value !== '') this.teleport(this.places[+sel.value]); sel.value = ''; });
-    SETTINGS.on('dev', (on) => { if (!on) this.toggle(false); });
+    // a button in the top bar while the tools are switched on (phones have no F2)
+    const db = $('devBtn');
+    db.addEventListener('click', () => this.toggle());
+    SETTINGS.on('dev', (on) => { db.hidden = !on; if (!on) this.toggle(false); });
     this.setSpeed(1);
   },
   /* ---- what the people who can talk keep about you: Hank's memories exactly as they are stored and sent ---- */
@@ -9008,7 +9118,7 @@ const DEV = {
     if (on === undefined) on = !this.on;
     if (on && !SETTINGS.v.dev) SETTINGS.set('dev', true);
     this.on = on; this.el.hidden = !on;
-    if (!on) { this.setFly(false); for (const k of Object.keys(this.overlays)) this.setOverlay(k, false); }
+    if (!on) { this.setFly(false); this.showMem(false); for (const k of Object.keys(this.overlays)) this.setOverlay(k, false); }
   },
 
   /* ---- places to jump to: in front of every door, inside every room, and a few spots outdoors ---- */

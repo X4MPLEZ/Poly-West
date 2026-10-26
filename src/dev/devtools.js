@@ -32,7 +32,10 @@ const DEV = {
     this.places = this.listPlaces();
     for (const [i, p] of this.places.entries()) { const o = document.createElement('option'); o.value = i; o.textContent = p.name; sel.appendChild(o); }
     sel.addEventListener('change', () => { if (sel.value !== '') this.teleport(this.places[+sel.value]); sel.value = ''; });
-    SETTINGS.on('dev', (on) => { if (!on) this.toggle(false); });
+    // a button in the top bar while the tools are switched on (phones have no F2)
+    const db = $('devBtn');
+    db.addEventListener('click', () => this.toggle());
+    SETTINGS.on('dev', (on) => { db.hidden = !on; if (!on) this.toggle(false); });
     this.setSpeed(1);
   },
   /* ---- what the people who can talk keep about you: Hank's memories exactly as they are stored and sent ---- */
@@ -69,7 +72,7 @@ const DEV = {
     if (on === undefined) on = !this.on;
     if (on && !SETTINGS.v.dev) SETTINGS.set('dev', true);
     this.on = on; this.el.hidden = !on;
-    if (!on) { this.setFly(false); for (const k of Object.keys(this.overlays)) this.setOverlay(k, false); }
+    if (!on) { this.setFly(false); this.showMem(false); for (const k of Object.keys(this.overlays)) this.setOverlay(k, false); }
   },
 
   /* ---- places to jump to: in front of every door, inside every room, and a few spots outdoors ---- */

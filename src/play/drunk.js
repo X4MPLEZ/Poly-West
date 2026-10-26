@@ -46,7 +46,8 @@ const DRUNK = {
     }
     this.bumpT = Math.max(0, this.bumpT - dt);
     // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
-    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
+    // (once out, he may go back in: it does not start again for a while)
+    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy() && G.time - (this.leftAt || -999) > 120) this.startLeave();
     if (this.leave) this.updateLeave(dt);
     if (!this.out && !this.leave && !this.edge && this.level >= 0.95) this.startEdge();
     if (this.edge) this.updateEdge(dt);
@@ -130,10 +131,10 @@ const DRUNK = {
     PLAY.camShake = Math.max(PLAY.camShake, 0.04);
     GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.thump(t, g, 120, 60, 0.4, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.2, attack: 0.002, decay: 0.08 }); });
   },
-  /* had enough indoors: stand up, stagger out of the door, go down in the street */
+  /* had enough indoors: stand up and stagger out of the door, to just in front of it; then he is yours again */
   startLeave() {
     const R = ROOMSTATE.cur, F = R.floorY;
-    this.leave = { R, t: 0, i: 0, done: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 2.2), rwp(R, (Math.random() - 0.5) * 3, 0, R.doorZ + 5.5)] };
+    this.leave = { R, t: 0, i: 0, done: 0, best: Infinity, stuckT: 0, side: 1, sideT: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 1.6)] };
     DRINK.cancel(); SHOP.open && SHOP.close();
     if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
     TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
@@ -141,18 +142,27 @@ const DRUNK = {
   },
   autoDir() {
     const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;
-    const w = Lv.way[Lv.i], dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
-    return d > 1e-3 ? [dx / d, dz / d] : null;
+    const w = Lv.way[Lv.i];
+    let dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
+    if (d < 1e-3) return null;
+    dx /= d; dz /= d;
+    // stuck on a table or a chair: step sideways a moment, then on again
+    if (Lv.sideT > 0) { const ex = dx + dz * Lv.side * 1.4, ez = dz - dx * Lv.side * 1.4, e = Math.hypot(ex, ez); dx = ex / e; dz = ez / e; }
+    return [dx, dz];
   },
   updateLeave(dt) {
     const Lv = this.leave;
     Lv.t += dt;
     this.level = Math.min(this.level, 0.97);   // not before he is out
+    Lv.sideT = Math.max(0, Lv.sideT - dt);
     if (Lv.i < Lv.way.length) {
-      const w = Lv.way[Lv.i];
-      if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
+      const w = Lv.way[Lv.i], d = Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z);
+      if (d < 0.7) { Lv.i++; Lv.best = Infinity; Lv.stuckT = 0; }
+      else if (d < Lv.best - 0.05) { Lv.best = d; Lv.stuckT = 0; }
+      else if (!FALL.busy() && (Lv.stuckT += dt) > 0.9) { Lv.stuckT = 0; Lv.sideT = 0.8; Lv.side = -Lv.side; Lv.best = d; }
     } else Lv.done += dt;
-    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 0.95); if (!this.edge) this.startEdge(); }
+    // out (or it takes too long): he is yours again, and may go back in
+    if (Lv.done > 0.4 || Lv.t > 16) { this.leave = null; this.leftAt = G.time; }
   },
   /* the last stretch: as drunk as it gets for a while (time to stagger about), the picture swims and darkens,
      then he goes down. More drink makes it shorter, water can pull him back from it. */

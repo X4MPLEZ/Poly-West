@@ -380,11 +380,17 @@ async def check_voice(g):
               return VOICE.synth(txt, { pitch: 1, length: 1 }, 'angry').then((q) => res({ st: 'ready', load: Math.round(t1 - t0), synth,
                 secs: +(p.length / VOICE.rate).toFixed(2), rms: rms(p), angrySecs: +(q.length / VOICE.rate).toFixed(2), angryRms: rms(q) })); })
               .catch((err) => res({ st: 'synth failed', why: String(err) })); }, 50); })""")
+        # the second start reads every file from the browser's own storage, nothing comes over the network
+        if r.get('st') == 'ready':
+            r['first'] = await page.evaluate('() => [VOICE.fromNet, VOICE.fromStore]')
+            r['again'] = await page.evaluate("""() => new Promise((res) => { try { VOICE.worker.terminate(); } catch (e) {} VOICE.worker = null; VOICE.st = 'off'; VOICE.tries = 0; VOICE.load(); const t0 = performance.now();
+              const iv = setInterval(() => { if (VOICE.st === 'loading') return; clearInterval(iv); res([VOICE.st, VOICE.fromNet, VOICE.fromStore, Math.round(performance.now() - t0), VOICE.label()]); }, 50); })""")
     finally:
         await page.close(); srv.shutdown()
     ok = (r.get('st') == 'ready' and r.get('secs', 0) > 1.0 and r.get('rms', 0) > 0.01 and r.get('angryRms', 0) > 0.01
-          and abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05)
-    return ok, json.dumps(r)
+          and abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05
+          and r['first'][0] >= 8 and r['again'][0] == 'ready' and r['again'][1] == 0 and r['again'][2] >= 8)
+    return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_glass(g):
     """glass in the buildings: a shot breaks it (the bullet flies on), it comes back after you left; Hank comments on
@@ -437,8 +443,43 @@ async def check_glass(g):
           and h['noWhisperRule'] and h['aimedMood'] != 'whisper' and h['canned'] and h['panel'] and h['deleted'] and h['back'])
     return ok, json.dumps([r, h], ensure_ascii=False)
 
+async def check_manners(g):
+    """Hank does not talk over himself: no ready-made line right after his own words (and those keep his mood), nothing
+       at all while you are outside; "Stopp" ends an answer; too drunk inside, you are walked to just outside the door"""
+    await g.js(RESET)
+    r = await g.js('''async () => { const out = {}, B = BARKEEP, R = B.R, N = B.npc; B.cool = {}; B.st = 'idle'; N.aiAt = -99; N.feel = null;
+      const pin = rwp(R, 0, R.floorY, -2); PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      // right after an answer of his own: the ready-made line waits
+      TALK.felt(N, 'angry'); N.said = ''; out.blocked = !B.say('cheers'); for (let k = 0; k < 60 * 5; k++) G.stepFrame(1/60);
+      try { speechSynthesis.cancel(); } catch (e) {} out.later = B.say('cheers'); out.mood = TALK.barkMood(N, 'neutral'); out.moodAmused = TALK.barkMood(N, 'amused');
+      // outside the saloon: nothing said, no bubble
+      PLAY.pos.set(-8, 0, 2); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60); N.said = ''; B.cool = {}; N.aiAt = -99;
+      out.outside = B.say('fall') === false && N.said === '' && N.speak('Hallo?') === false;
+      // Stopp: the answer on its way is dropped
+      PLAY.pos.set(pin.x, pin.y, pin.z); const bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      const keep = [TALK.ai, SETTINGS.v.aiTalk]; let aborted = false;
+      TALK.ai = (p, o) => new Promise((res, rej) => { o.signal.addEventListener('abort', () => { aborted = true; const e = new Error('x'); e.code = 'cancelled'; rej(e); }); });
+      SETTINGS.v.aiTalk = true; TALK.start(false); const sent = TALK.send('Erzähl mal was.'); await new Promise((x) => setTimeout(x, 30));
+      out.busy = TALK.busy; out.stopShown = (G.stepFrame(1/60), !document.getElementById('talkStop').hidden);
+      TALK.abort(); await sent; out.aborted = aborted && !TALK.busy && TALK.open && !N.thinking; TALK.close();
+      TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1];
+      // too drunk inside: out through the door, then he is yours again (and may go back in)
+      const seat = rwp(R, -3.6, R.floorY, -3.6); PLAY.pos.set(seat.x, seat.y, seat.z); GAIT.init = false; DRUNK.leftAt = -999; for (let k = 0; k < 5; k++) G.stepFrame(1/60);
+      DRUNK.level = 0.92; DRUNK.stomach = 0; DRUNK.gut = 0; let started = false, t = 0;
+      for (; t < 60 * 20; t++) { G.stepFrame(1/60); if (DRUNK.leave) started = true; if (started && !DRUNK.leave) break; if (FALL.busy() && FALL.t > 0) {} }
+      out.leave = started; out.secs = +(t / 60).toFixed(1); out.outRoom = G.room ? G.room.type : null;
+      const [lx, lz] = rLocal(R, PLAY.pos.x, PLAY.pos.z); out.local = [+lx.toFixed(2), +(lz - R.doorZ).toFixed(2)];
+      out.free = !DRUNK.blocked() || FALL.busy();
+      // back in: it does not start again
+      PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.noAgain = !DRUNK.leave;
+      DRUNK.level = 0; DRUNK.edge = null; DRUNK.leave = null; if (FALL.busy()) FALL.st = null;
+      return out; }''')
+    ok = (r['blocked'] and r['later'] and r['mood'] == 'angry' and r['moodAmused'] == 'angry' and r['outside'] and r['busy'] and r['stopShown'] and r['aborted']
+          and r['leave'] and r['secs'] < 17 and r['outRoom'] is None and r['local'][1] > 0 and r['local'][1] < 3.5 and abs(r['local'][0]) < 2.5 and r['noAgain'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

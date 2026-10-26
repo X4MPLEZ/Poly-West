@@ -107,7 +107,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bFire { width: 82px; height: 82px; right: calc(22px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); font-size: 13px; border-color: rgba(231, 166, 64, 0.8); }
 #bAim { width: 64px; height: 64px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
 #bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); font-size: 8.8px; letter-spacing: -0.3px; }
-#bReload { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
+#bReload { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
 .touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
@@ -153,7 +153,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bTalk[hidden] { display: none; }
 #talk { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 32px)); pointer-events: auto;
   display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 7px 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
-.touch #talk { width: min(440px, calc(100% - 360px)); min-width: 260px; }
+/* phones: at the top, where the keyboard does not cover it and the thumbs are not */
+.touch #talk { top: calc(6px + env(safe-area-inset-top, 0px)); bottom: auto; left: max(10px, env(safe-area-inset-left, 0px)); transform: none; width: min(430px, calc(100% - 330px)); min-width: 290px; padding: 6px 8px; }
+.touch.talking #ammo, .touch.talking #perf, .touch.talking #voiceSt { visibility: hidden; }
 #talk[hidden] { display: none; }
 #talkMid { flex: 1; min-width: 0; }
 #talkMid b { font-family: var(--f-display); font-weight: 400; font-size: 15px; color: var(--brass); margin-right: 8px; }
@@ -166,7 +168,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #talkType[hidden] { display: none; }
 #talkType input { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 15px var(--f-ui); -webkit-user-select: text; user-select: text; }
 #talkType button { height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font: 700 14px var(--f-ui); padding: 0 12px; }
-#talkClose { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--edge); background: transparent; color: var(--bone); font-size: 18px; line-height: 1; }
+#talkClose, #talkStop { height: 32px; flex: none; border-radius: 9px; border: 1px solid var(--edge); background: transparent; color: var(--bone); font: 700 13px var(--f-ui); padding: 0 10px; }
+#talkStop { border-color: var(--warn); color: var(--warn); }
+#talkStop[hidden] { display: none; }
 #talkMic { width: 42px; height: 42px; flex: none; border-radius: 50%; border: 2px solid var(--brass); background: rgba(231, 166, 64, 0.18); color: var(--bone); display: grid; place-items: center; padding: 0; }
 #talkMic[hidden] { display: none; }
 #talkMic svg { width: 24px; height: 24px; }
@@ -251,7 +255,10 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .devRow button { flex: 1; min-height: 28px; border-radius: 6px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 11.5px; padding: 0 6px; }
 .devRow button[aria-pressed="true"] { background: var(--brass); color: var(--ink); border-color: var(--brass); }
 .touch #dev { top: 52px; width: 240px; }
-#devMemBox { position: absolute; left: calc(100% + 8px); top: 0; width: 340px; max-width: calc(100vw - 300px); max-height: calc(100vh - 60px); overflow: auto; background: rgba(16, 11, 8, 0.9); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; }
+#dev { max-height: calc(100% - 50px); overflow: auto; overscroll-behavior: contain; }
+.touch #devMemBox { left: calc(max(10px, env(safe-area-inset-left, 0px)) + 248px); top: 52px; max-height: calc(100% - 62px); max-width: calc(100% - 270px); }
+#devBtn[hidden] { display: none; }
+#devMemBox { position: absolute; left: calc(max(10px, env(safe-area-inset-left, 0px)) + 278px); top: 40px; z-index: 3; pointer-events: auto; font-size: 12px; width: 340px; max-width: calc(100% - 300px); max-height: calc(100% - 60px); overflow: auto; background: rgba(16, 11, 8, 0.9); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; }
 #devMemBox[hidden] { display: none; }
 #devMemBox h4 { margin: 4px 0 2px; font-size: 12px; color: var(--brass); }
 #devMemBox .dmT { margin: 6px 0 2px; font-size: 10.5px; color: var(--bone); opacity: 0.75; }
@@ -267,7 +274,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 /* the quick wheel */
 #bagBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right, 0px)) + 112px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; }
 .touch #bagBtn { display: none; }
-#bBag { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
+#bBag { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
 #wheel { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(12, 8, 5, 0.25), rgba(12, 8, 5, 0.6)); z-index: 3; pointer-events: auto; }
 #wheel[hidden] { display: none; }
 #wheelRing { position: relative; width: min(340px, 78vmin); height: min(340px, 78vmin); border-radius: 50%; background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); }
@@ -303,6 +310,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek</span>
+      <button id="devBtn" class="round" type="button" hidden aria-label="Entwickler-Werkzeuge (F2)" title="Entwickler-Werkzeuge (F2)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>
+      </button>
       <button id="menuBtn" class="round" type="button" aria-label="Menü (Esc)" title="Menü (Esc)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
@@ -322,7 +332,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="talkMic" type="button" aria-pressed="false" aria-label="Sprechen (V)" title="Sprechen (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
       <div id="talkMid"><b id="talkName">Hank</b><span id="talkState" aria-live="polite"></span><p id="talkHeard"></p>
         <div id="talkType" hidden><input id="talkIn" type="text" maxlength="240" placeholder="Sag etwas …" autocomplete="off" enterkeyhint="send" aria-label="Was du sagst"><button id="talkSend" type="button">Sagen</button><button id="talkMicWin" type="button" title="Ein eigenes Fenster, das für das Spiel zuhört">🎤 Fenster</button></div></div>
-      <button id="talkClose" type="button" aria-label="Gespräch beenden (Esc)">×</button>
+      <button id="talkStop" type="button" hidden title="Abbrechen: er hört auf zu reden">Stopp</button>
+      <button id="talkClose" type="button" title="Gespräch beenden (Esc)">Ende</button>
     </section>
     <div id="toasts" aria-live="polite"></div>
     <section id="shop" hidden aria-labelledby="shopTitle">
@@ -357,8 +368,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
       <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
       <div class="devRow"><button id="devMem" type="button" aria-pressed="false">Gedächtnis der Figuren</button><button id="devGlass" type="button">Glas zurück</button></div>
-      <div id="devMemBox" hidden></div>
     </section>
+    <div id="devMemBox" hidden></div>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
   </div>
   <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">

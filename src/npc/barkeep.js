@@ -15,7 +15,7 @@ const BARKEEP = {
   MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
     leave: 'amused', shot: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
-    hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
+    hello: ['Howdy, Fremder.', 'Willkommen im Saloon.', 'Na, wieder Durst?', 'Komm rein, setz dich.'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
     whiskey: ['Ein Whiskey. Kommt sofort.', 'Whiskey, sauber.', 'Einer vom Guten.'],
     beer: ['Ein kühles Bier.', 'Bier kommt.', 'Frisch vom Fass. Fast.'],
@@ -63,6 +63,7 @@ const BARKEEP = {
   sayOrRemark(kind, cool, situation, chance) {
     if (cool && (this.cool[kind] || -99) > G.time - cool) return;
     this.cool[kind] = G.time;
+    if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, false)) { delete this.cool[kind]; return; }
     if (situation && Math.random() < chance && TALK.remark(this.npc, situation, () => this.say(kind), this.MOOD[kind])) return;
     this.say(kind);
   },
@@ -101,6 +102,7 @@ const BARKEEP = {
         'Wer du bist: Mitte fünfzig, Schnurrbart, weiße Schürze. Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen. Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.',
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
+        'Dein Ton: ruhig, souverän und glaubwürdig, wie ein Mann, der schon alles gesehen hat. Ernst, wenn es ernst ist. Trockener Humor nur ab und zu, nicht in jedem Satz, kein Clown. Sag nie zweimal dasselbe; finde jedes Mal neue Worte.',
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
@@ -163,11 +165,14 @@ const BARKEEP = {
   yawFor(dir) { const a = rwp(this.R, 4, 0, -6), b = rwp(this.R, 4 + dir, 0, -6); return Math.atan2(b.x - a.x, b.z - a.z); },
   along(p) { return clamp(rLocal(this.R, p.x, p.z)[1], this.Z0, this.Z1); },
   myZ() { return rLocal(this.R, this.npc.pos.x, this.npc.pos.z)[1]; },
+  // a ready-made line; not over his own words and not when you are not there to hear it (then it is tried again later
+  // by the callers that keep calling, the others let it go)
   say(kind, cool) {
     const now = G.time;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
+    if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'aimed' || kind === 'behind' || kind === 'shot')) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, this.MOOD[kind]);
+    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)], undefined, TALK.barkMood(this.npc, this.MOOD[kind]));
     return true;
   },
   /* ---- orders: from SHOP ---- */

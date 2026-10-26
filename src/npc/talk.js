@@ -22,6 +22,8 @@ const TALK = {
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
     this.typeRow = $('talkType'); this.inp = $('talkIn'); this.hint = $('prompt3'); this.btn = $('bTalk');
     $('talkClose').addEventListener('click', () => this.close());
+    this.stopBtn = $('talkStop');
+    this.stopBtn.addEventListener('click', () => this.abort());
     $('talkSend').addEventListener('click', () => this.sendTyped());
     $('talkMicWin').addEventListener('click', () => MICWIN.open());
     this.inp.addEventListener('keydown', (e) => {
@@ -67,6 +69,8 @@ const TALK = {
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
+    const talkingNow = this.busy || VOICE.speaking(n);
+    if (talkingNow === this.stopBtn.hidden) this.stopBtn.hidden = !talkingNow;
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
     // dictated text: send when the dictation pauses
     if (this.dictT > 0) { this.dictT -= dt; if (this.dictT <= 0 && this.inp.value.trim() && !this.busy) this.sendTyped(); }
@@ -117,8 +121,18 @@ const TALK = {
     if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Tipp ins Feld, dann aufs Mikrofon der Tastatur' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
     setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
+  /* "Stopp": he stops talking (the answer on its way is dropped), the conversation stays open */
+  abort() {
+    const n = this.npc;
+    this.userAbort = true;
+    if (this.ctl) { this.ctl.abort(); this.ctl = null; }
+    this.seq++; this.busy = false;
+    if (n) { n.thinking = false; VOICE.stop(n); SAY.hide && SAY.hide(n); n.aiAt = G.time; }
+    if (this.open) this.setState('Abgebrochen \u00b7 ' + (this.micOff ? 'schreib weiter oder Ende' : 'V: weiterreden'), 'idle');
+  },
   close() {
     if (!this.open) return;
+    if (this.busy || (this.npc && VOICE.speaking(this.npc))) this.abort();
     this.stopListen(true);
     this.userAbort = true;
     if (this.ctl) { this.ctl.abort(); this.ctl = null; }
@@ -202,6 +216,7 @@ const TALK = {
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
+    this.felt(n, out.mood);
     if (VOICE.ready() && raw !== null && F.queued() > 0) feed(raw, true);   // the rest of what was already being spoken
     else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
@@ -211,6 +226,29 @@ const TALK = {
     const act = String(out.action || 'none');
     n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
     if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
+  },
+  // ways a spontaneous remark can go (one is picked at random each time)
+  ANGLES: ['knappe, trockene Feststellung', 'ruhige, aber deutliche Warnung', 'kurze Frage an ihn', 'Hinweis auf die Folgen (Sheriff, Rechnung, sein Ruf in der Stadt)',
+    'Erinnerung an etwas, das du in deinen Jahren hinter der Theke erlebt hast', 'kühler Kommentar zu seinem Zustand', 'klare Anweisung, was er jetzt tun soll',
+    'Bemerkung, die zeigt, dass du dir das merkst', 'gelassene Reaktion eines Mannes, den so etwas kaum noch beeindruckt'],
+  // after his own words he stays in that mood a while (his ready-made lines take it on) and does not bark at once
+  felt(n, mood) { n.aiAt = G.time; if (mood && this.MOODS.includes(mood)) n.feel = { mood, t: G.time }; },
+  /* may a ready-made line be said now? Not over his own words: not while an answer is coming or being spoken, and
+     not in the few seconds after one; during a conversation only the urgent ones */
+  mayBark(n, urgent) {
+    if (!n) return false;
+    if (this.remarking || (this.busy && this.npc === n) || n.thinking) return false;
+    if (VOICE.speaking(n)) return false;
+    try { if (window.speechSynthesis && speechSynthesis.speaking && G.time - (n.aiAt || -99) < 15) return false; } catch (e) { /* ignore */ }
+    if (G.time - (n.aiAt || -99) < (urgent ? 1.5 : 4)) return false;
+    if (this.open && this.npc === n && !urgent) return false;
+    return true;
+  },
+  // the mood a ready-made line is said in: an angry or disgusted man stays so for a while, even for a friendly line
+  barkMood(n, mood) {
+    const f = n.feel;
+    if (f && G.time - f.t < 45 && (f.mood === 'angry' || f.mood === 'disgusted') && (mood === 'neutral' || mood === 'amused' || mood === 'surprised')) return f.mood;
+    return mood;
   },
   /* a streamed answer for person n: words into the bubble as they come, each finished sentence to the voice.
      Stops by itself once another answer has started (seq). noWhisper: say it out loud whatever mood comes back */
@@ -237,14 +275,21 @@ const TALK = {
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
+    if (!n.canBeHeard()) return true;   // nobody there to hear it: say nothing at all
+    if (VOICE.speaking(n) || G.time - (n.aiAt || -99) < 3) return false;
     if (G.time - (this.remarkT || -99) < 6) return false;
     this.remarking = true; this.remarkT = G.time;
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
+    const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
     const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
+    // a different angle each time, so he does not say the same kind of thing twice
+    const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
-      '\nSag spontan von dir aus etwas dazu, direkt zu ihm, so wie du bist und mit dem, was du über ihn weißt. Nenn ruhig konkrete Zahlen oder Dinge. Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
+      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + ang + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
+      (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
+      ' Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
     const ctl = new AbortController();
     let failed = false;
@@ -256,6 +301,7 @@ const TALK = {
       const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
       if (!say) { fail(); return; }
       if (out.mood === 'whisper') out.mood = 'neutral';
+      this.felt(n, out.mood);
       n.talkLog = n.talkLog || []; n.talkLog.push({ who: 'n', text: say });
       if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
       SAY.show(n, say);

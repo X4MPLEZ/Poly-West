@@ -48,7 +48,9 @@ class NPC {
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
-  speak(text, dur, mood) { SAY.show(this, text, dur); VOICE.line(this, text, mood); }
+  // he speaks only where you can hear him: in his room (or near him outdoors)
+  canBeHeard() { return this.room ? G.room === this.room : Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  speak(text, dur, mood) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
@@ -174,6 +176,7 @@ const SAY = {
     npc.sayEl.classList.remove('out'); npc.sayEl.hidden = false;
     npc.said = text;
   },
+  hide(npc) { if (npc.sayEl) npc.sayEl.hidden = true; npc.sayT = 0; },
   update(dt) {
     const cam = G.cam, W0 = G.renderer.domElement.clientWidth, H0 = G.renderer.domElement.clientHeight;
     for (const n of NPCS.list) {

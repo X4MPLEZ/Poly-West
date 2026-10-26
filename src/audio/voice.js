@@ -12,22 +12,45 @@ function VOICE_WORKER() {
   const ready = new Promise((r) => { readyRes = r; });
   const HALF = new Float32Array(65536);
   for (let h = 0; h < 65536; h++) { const s = h >> 15, e = (h >> 10) & 31, m = h & 1023; HALF[h] = (s ? -1 : 1) * (e === 0 ? m * 5.960464477539063e-8 : e === 31 ? (m ? NaN : Infinity) : Math.pow(2, e - 15) * (1 + m / 1024)); }
-  async function get(url, part) {
-    const r = await fetch(url);
+  /* the files are kept in the browser's Cache Storage after the first download (one cache per model version, older
+     ones are removed), so the next start reads them from the disk; where that is not allowed, they are downloaded */
+  let store = null, fromStore = 0, fromNet = 0;
+  async function openStore(name) {
+    try {
+      store = await caches.open(name);
+      for (const k of await caches.keys()) if (k.startsWith('poly-west-voice-') && k !== name) caches.delete(k);
+    } catch (e) { store = null; }
+  }
+  async function get(url, part, fresh) {
+    let r = null, hit = false;
+    if (store && !fresh) { try { r = await store.match(url); hit = !!r; } catch (e) { r = null; } }
+    if (!r) r = await fetch(url, fresh ? { cache: 'no-cache' } : undefined);
     if (!r.ok) throw new Error(url.split('/').pop() + ': ' + r.status);
     const rd = r.body.getReader(), chunks = []; let n = 0;
     for (;;) { const { done, value } = await rd.read(); if (done) break; chunks.push(value); n += value.length; postMessage({ t: 'progress', part, n }); }
     const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+    if (hit) fromStore++; else if (!fresh) { fromNet++; if (store) { try { await store.put(url, new Response(out)); } catch (e) { /* full or not allowed: fine */ } } }
     return out;
   }
+  const blobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
+  // the same test onnxruntime makes: can this browser run the SIMD build?
+  const simd = () => { try { return WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 30, 1, 28, 0, 65, 0, 253, 15, 253, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 253, 186, 1, 26, 11])); } catch (e) { return false; } };
   const phase = (name) => postMessage({ t: 'phase', name });
   async function init(m) {
     const base = m.base;
     phase('Laufzeit');
-    importScripts(base + 'ort.wasm.min.js', base + 'piper_phonemize.js');
-    ort.env.wasm.numThreads = 1; ort.env.wasm.wasmPaths = base;
+    // the voice's description always fresh from the server: its size names the cache, so a new model is fetched anew
+    cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg', true)));
+    await openStore('poly-west-voice-' + m.voice + '-' + cfg.size + '-' + cfg.parts.length);
+    const ortWasm = simd() ? 'ort-wasm-simd.wasm' : 'ort-wasm.wasm';
+    const rt = { js: await get(base + 'ort.wasm.min.js', 'rt'), ph: await get(base + 'piper_phonemize.js', 'rt2') };
+    importScripts(blobUrl(rt.js, 'text/javascript'), blobUrl(rt.ph, 'text/javascript'));
     phase('Download');
-    cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg')));
+    const wasmBytes = await get(base + ortWasm, 'ort');
+    ort.env.wasm.numThreads = 1; ort.env.wasm.simd = ortWasm === 'ort-wasm-simd.wasm';
+    ort.env.wasm.wasmPaths = { [ortWasm]: blobUrl(wasmBytes, 'application/wasm') };
+    const phWasm = await get(base + 'piper_phonemize.wasm', 'phw'), phData = await get(base + 'piper_phonemize.data.wasm', 'phd');
+    const phUrls = { 'piper_phonemize.wasm': blobUrl(phWasm, 'application/wasm'), 'piper_phonemize.data': blobUrl(phData, 'application/octet-stream') };
     const tmpl = await get(base + m.voice + '.tmpl.wasm', 'tmpl'), parts = [];
     for (const p of cfg.parts) parts.push(await get(base + p, p));
     let hl = 0; for (const p of parts) hl += p.length;
@@ -46,9 +69,9 @@ function VOICE_WORKER() {
     phase('Modell startet');
     sess = await ort.InferenceSession.create(full, { executionProviders: ['wasm'] });
     phase('Aussprache');
-    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
+    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => phUrls[x] || base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
     readyRes();
-    postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate });
+    postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate, fromStore, fromNet, stored: !!store });
   }
   function ids(text) { return new Promise((res) => { pending = res; phon.callMain(['-l', cfg.voice.espeak.voice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data']); }); }
   async function say(m) {
@@ -115,7 +138,15 @@ const VOICE = {
   msg(m) {
     if (m.t === 'phase') { this.phase = m.name; this.lastProg = performance.now(); }
     else if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
-    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.readyAt = performance.now(); this.pump(); }
+    else if (m.t === 'ready') {
+      this.st = 'ready'; this.rate = m.rate; this.readyAt = performance.now(); this.fromStore = m.fromStore; this.fromNet = m.fromNet; this.stored = m.stored;
+      // ask the browser to keep the stored voice even when space runs short (Chrome decides by itself; not asked in Firefox, which would show a question)
+      try { if (m.stored && navigator.storage && navigator.storage.persist && !/firefox/i.test(navigator.userAgent)) navigator.storage.persist(); } catch (e) { /* ignore */ }
+      // what was said while it loaded is not caught up on later; only a line from the last moments, if he is still heard
+      const p = this.pend; this.pend = null;
+      if (p && performance.now() - p.at < 4000 && (!p.npc.canBeHeard || p.npc.canBeHeard())) for (const s of this.sentences(p.text)) this.push(p.npc, s, p.mood);
+      this.pump();
+    }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
@@ -138,7 +169,7 @@ const VOICE = {
   // for the player: which voice is speaking
   label() {
     if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
-    if (this.st === 'ready') return 'echte Stimme';
+    if (this.st === 'ready') return 'echte Stimme' + (this.fromStore && !this.fromNet ? ' (gespeichert)' : '');
     if (this.st === 'loading') return 'echte Stimme lädt ' + (this.phase === 'Download' || !this.phase ? this.pct() + ' %' : '\u00b7 ' + this.phase);
     if (this.st === 'failed') return 'Browser-Stimme (' + this.why + ')';
     return 'Browser-Stimme';
@@ -146,11 +177,12 @@ const VOICE = {
   // a person says something: every word is heard
   line(npc, text, mood) {
     if (!SETTINGS.v.voice || !text || text === '\u2026') return;
-    if (this.ready() || (this.st === 'loading' && this.IOS)) { for (const s of this.sentences(text)) this.push(npc, s, mood); }   // (iPhone: wait for it, see IOS)
+    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s, mood); }
+    else if (this.st === 'loading' && this.IOS) this.pend = { npc, text, mood, at: performance.now() };   // (iPhone: only the newest line waits, see IOS)
     else this.browser(npc, text);
   },
   // On iPhones the browser voice takes the sound away from the game's audio until the next tap, so there nothing
-  // is said with it while the real voice is loading: those lines wait (a short while) for the real voice instead.
+  // is said with it while the real voice is loading: only the newest line waits (a few seconds) for the real voice.
   IOS: /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
   sentences(text) { return (text.match(/[^.!?\u2026]+[.!?\u2026]*["'\u201c\u201d)]*\s*/g) || [text]).map((s) => s.trim()).filter(Boolean); },
   /* the browser's own voices: the best fitting German one of the device (preferred names, the right sex,
@@ -259,7 +291,7 @@ const VOICE = {
     if (this.playing || !this.q.length) return;
     const job = this.q[0], now = performance.now();
     // a line that could not be made, or came too late to still fit (said while the voice was loading): skip it
-    if (job.err || (job.pcm && now - job.at > 20000) || (!job.pcm && this.ready() && now - job.at > 25000)) { this.q.shift(); this.pump(); return; }
+    if (job.err || (job.pcm && now - job.at > 12000) || (!job.pcm && this.ready() && now - job.at > 20000) || (job.npc.canBeHeard && !job.npc.canBeHeard())) { this.q.shift(); this.pump(); return; }
     if (!job.pcm || !SFX.ctx) return;
     this.q.shift();
     // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
