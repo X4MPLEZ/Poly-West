@@ -1,6 +1,7 @@
 # concatenation order of the game script (one shared scope; later files may use earlier ones at load time)
 core/util.js
 core/world.js
+core/settings.js
 world/terrain.js
 world/town_data.js
 world/facades.js
@@ -31,5 +32,7 @@ interact/interact.js
 interact/sit.js
 audio/ambient.js
 ui/hud.js
+ui/menu.js
+dev/devtools.js
 core/save.js
 main.js

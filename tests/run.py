@@ -187,8 +187,42 @@ async def check_save(g):
       return { v: JSON.parse(raw).v, pos: [PLAY.pos.x, PLAY.pos.z], ammo: [GUN.ammo, GUN.reserve] }; }''')
     return r['pos'] == [3, 4] and r['ammo'] == [3, 11], json.dumps(r)
 
+async def check_menu(g):
+    """menu opens and closes, pauses the game, settings are kept and applied"""
+    await g.js(RESET)
+    r = await g.js('''() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      const opened = MENU.open && !document.getElementById('menu').hidden;
+      MENU.show('set'); const rows = document.querySelectorAll('#mSettings .mRow').length;
+      SETTINGS.set('sensMouse', 200); const y0 = PLAY.camYaw; lookBy(10, 0, false); const turned = +(y0 - PLAY.camYaw).toFixed(4);
+      SETTINGS.set('sensMouse', 100); SETTINGS.set('invertY', true); const p0 = PLAY.camPitch; lookBy(0, 10, false); const inv = PLAY.camPitch < p0; SETTINGS.set('invertY', false);
+      SETTINGS.set('quality', 'low'); const prLow = G.renderer.getPixelRatio(); SETTINGS.set('quality', 'high'); const prHigh = G.renderer.getPixelRatio();
+      const kept = JSON.parse(localStorage.getItem(SETTINGS.KEY)).quality;
+      SETTINGS.set('camDist', 5); const cam = PLAY.camDist; SETTINGS.set('camDist', 7.5);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      return { opened, rows, turned, inv, prLow, prHigh, kept, cam, closed: !MENU.open }; }''')
+    ok = r['opened'] and r['rows'] >= 9 and abs(r['turned'] - 0.13) < 0.001 and r['inv'] and r['prLow'] < r['prHigh'] and r['kept'] == 'high' and r['cam'] == 5 and r['closed']
+    return ok, json.dumps(r)
+
+async def check_dev(g):
+    """developer tools: places, teleport, free camera, overlays"""
+    await g.js(RESET)
+    r = await g.js('''() => { DEV.toggle(true); const n = DEV.places.length;
+      const P = DEV.places.find(p => p.name.startsWith('Saloon (drinnen)')); DEV.teleport(P); for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      const room = G.room && G.room.type;
+      DEV.setFly(true); const c0 = DEV.flyPos.clone(); INPUT.keys.add('w'); for (let k = 0; k < 30; k++) G.stepFrame(1/60); INPUT.keys.clear();
+      const flew = +c0.distanceTo(DEV.flyPos).toFixed(2), stayed = +Math.hypot(PLAY.pos.x - P.x, PLAY.pos.z - P.z).toFixed(2);
+      DEV.setFly(false);
+      for (const o of ['coll', 'plats', 'seats', 'chunks']) DEV.setOverlay(o, true);
+      const segs = Object.values(DEV.lines).map(m => m.geometry.attributes.position.count / 2);
+      for (const o of ['coll', 'plats', 'seats', 'chunks']) DEV.setOverlay(o, false);
+      DEV.setSpeed(2); const ts = G.timeScale; DEV.setSpeed(1); DEV.toggle(false);
+      return { n, room, flew, stayed, segs, ts }; }''')
+    ok = r['n'] >= 20 and r['room'] == 'saloon' and r['flew'] > 2 and r['stayed'] < 0.05 and min(r['segs']) > 10 and r['ts'] == 2
+    return ok, json.dumps(r)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

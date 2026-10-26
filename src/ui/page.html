@@ -122,6 +122,54 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
 #bUse[hidden] { display: none; }
 .seated .pb:not(#bUse) { opacity: 0.3; pointer-events: none; }
+/* pause menu */
+#menu { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(12, 8, 5, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding: 12px; }
+#menu[hidden] { display: none; }
+.mPanel { width: min(560px, 100%); max-height: calc(100% - 8px); overflow: auto; background: rgba(28, 19, 13, 0.96); border: 1px solid var(--edge); border-radius: 14px; padding: 14px 16px 16px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+.mPanel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.mPanel header b { font-family: var(--f-display); font-weight: 400; font-size: 24px; color: var(--brass); }
+#mClose, #devClose { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; font-size: 20px; line-height: 1; color: var(--bone); }
+.mTabs { display: flex; gap: 4px; border-bottom: 1px solid var(--edge); margin-bottom: 12px; }
+.mTabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; font-weight: 700; font-size: 14px; letter-spacing: 0.04em; color: var(--dust); }
+.mTabs button[aria-selected="true"] { color: var(--bone); border-bottom-color: var(--brass); }
+.mPane { display: flex; flex-direction: column; gap: 8px; }
+.mPane[hidden] { display: none; }
+.mPane > button { min-height: 44px; border-radius: 10px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); font-weight: 700; font-size: 15px; color: var(--bone); }
+.mPane > button.mBig { background: var(--brass); border-color: var(--brass); color: var(--ink); }
+.mPane > button.mDanger { color: var(--bad); }
+.mNote { min-height: 1.2em; margin: 2px 0 0; color: var(--good); font-size: 13px; }
+.mSmall { margin: 0; color: var(--dust); font-size: 12px; }
+#mSettings h3 { margin: 10px 0 4px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass); }
+#mSettings h3:first-child { margin-top: 0; }
+.mRow { display: flex; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.mRow label { flex: 1; font-size: 14.5px; font-weight: 600; }
+.mRow input[type="range"] { width: min(200px, 40vw); accent-color: var(--brass); }
+.mRow output { width: 52px; text-align: right; font-family: var(--f-mono); font-size: 12.5px; color: var(--dust); }
+.mSwitch { width: 22px; height: 22px; accent-color: var(--brass); }
+.mSeg { display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+.mSeg button { border: 0; background: transparent; padding: 7px 10px; font-weight: 700; font-size: 13px; color: var(--dust); }
+.mSeg button[aria-checked="true"] { background: var(--brass); color: var(--ink); }
+.mPane .mSmallBtn { margin-top: 8px; min-height: 36px; align-self: flex-start; padding: 0 12px; font-size: 13px; }
+.mKeys { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mKeys th { text-align: left; width: 26%; padding: 7px 8px 7px 0; color: var(--brass); font-weight: 700; vertical-align: top; }
+.mKeys td { padding: 7px 6px; color: var(--bone); vertical-align: top; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.touch .mKeys td:nth-child(2) { color: var(--dust); }
+.paused #hud > *:not(#tr) { visibility: hidden; }
+
+/* developer panel */
+#dev { position: absolute; left: max(10px, env(safe-area-inset-left, 0px)); top: 40px; width: 270px; pointer-events: auto; background: rgba(16, 11, 8, 0.86); border: 1px solid var(--edge); border-radius: 10px; padding: 8px; font-size: 12px; z-index: 3; }
+#dev[hidden] { display: none; }
+#dev header { display: flex; align-items: center; justify-content: space-between; }
+#dev header b { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass); }
+#devClose { width: 26px; height: 26px; font-size: 16px; }
+#devInfo { margin: 6px 0; font-family: var(--f-mono); font-size: 10.5px; line-height: 1.45; white-space: pre-wrap; color: var(--bone); }
+#devPlace { width: 100%; margin-bottom: 6px; background: #2a1d14; color: var(--bone); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; font: inherit; }
+.devRow { display: flex; gap: 4px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.devRow span { color: var(--dust); margin-right: 2px; }
+.devRow button { flex: 1; min-height: 28px; border-radius: 6px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 11.5px; padding: 0 6px; }
+.devRow button[aria-pressed="true"] { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+.touch #dev { top: 52px; width: 240px; }
+
 #rotateHint { display: none; position: absolute; left: 50%; top: 58px; transform: translateX(-50%); pointer-events: none;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 @media (orientation: portrait) { .touch #rotateHint { display: block; } .touch #perf { display: none; } }
@@ -138,6 +186,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek</span>
+      <button id="menuBtn" class="round" type="button" aria-label="Menü (Esc)" title="Menü (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
       <button id="soundBtn" class="round" type="button" aria-pressed="true" aria-label="Ton ausschalten">
         <svg id="soundOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19.5 5.5a9 9 0 0 1 0 13"/></svg>
         <svg id="soundOff" hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
@@ -161,7 +212,42 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bFire" class="pb" type="button">Feuer</button>
       <button id="bUse" class="pb" type="button" hidden></button>
     </div>
+    <section id="dev" hidden aria-label="Entwickler-Werkzeuge">
+      <header><b>Entwickler</b><button id="devClose" type="button" aria-label="Werkzeuge schließen">×</button></header>
+      <pre id="devInfo"></pre>
+      <select id="devPlace" aria-label="Teleportieren"><option value="">Teleportieren nach …</option></select>
+      <div class="devRow"><button id="devFly" type="button" aria-pressed="false" title="WASD fliegen, Leertaste hoch, X runter, Shift schnell">Freie Kamera</button><button id="devHere" type="button">Spieler hierher</button></div>
+      <div class="devRow" role="group" aria-label="Zeit"><span>Zeit</span><button type="button" data-speed="0.25">¼×</button><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
+      <div class="devRow" role="group" aria-label="Anzeigen"><button type="button" data-overlay="coll" aria-pressed="false">Kollision</button><button type="button" data-overlay="plats" aria-pressed="false">Böden</button><button type="button" data-overlay="seats" aria-pressed="false">Plätze</button><button type="button" data-overlay="chunks" aria-pressed="false">Zellen</button></div>
+      <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
+    </section>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
+  </div>
+  <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+    <div class="mPanel">
+      <header><b id="menuTitle">Pause</b><button id="mClose" type="button" aria-label="Weiterspielen">×</button></header>
+      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
+      <section data-pane="game" class="mPane">
+        <button id="mResume" type="button" class="mBig">Weiterspielen</button>
+        <button id="mSave" type="button">Jetzt speichern</button>
+        <button id="mDev" type="button" hidden>Entwickler-Werkzeuge</button>
+        <button id="mNew" type="button" class="mDanger">Neues Spiel</button>
+        <p id="mNote" class="mNote" role="status"></p>
+        <p class="mSmall">Das Spiel speichert alle 20 Sekunden und beim Schließen von selbst, in diesem Browser.</p>
+      </section>
+      <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
+      <section data-pane="keys" class="mPane" hidden>
+        <table class="mKeys">
+          <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>linker Daumen ziehen, weit = rennen</td></tr>
+          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
+          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
+          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Ziehen · Zielen · Feuer · Laden</td></tr>
+          <tr><th scope="row">Benutzen</th><td>E</td><td>Knopf, der an Orten erscheint</td></tr>
+          <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
+          <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
+        </table>
+      </section>
+    </div>
   </div>
   <div id="boot"><div class="bootIn"><b>Poly West</b><span id="bootMsg">wird aufgebaut …</span></div>
     <small id="credits">Schuss-Aufnahme: „9mm Gunshot“ von GoodSoundForYou (soundbible.com), CC BY 3.0, bearbeitet · Schlag-Luftzug: kwahmah_02 (freesound.org), CC BY 3.0 · Glas, Leerklick und Schläge: CC0 (freesound.org)</small></div>

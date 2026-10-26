@@ -6,8 +6,8 @@ const SFX = {
   init() {
     try {
       if (localStorage.getItem('dustcreek-sound') === '0') this.on = false;
-      const v = parseInt(localStorage.getItem('dustcreek-volume'), 10); if (v >= 0 && v <= 100) this.vol = v;
     } catch (e) { /* ignore */ }
+    SETTINGS.on('volume', (v) => this.setVolume(v));
     // Browsers only allow sound inside certain user gestures. On phones a finger going *down* does not count,
     // lifting it does, so listen to every candidate and keep trying until the audio really runs.
     const unlock = () => this.unlock();
@@ -70,7 +70,6 @@ const SFX = {
   gainValue() { return this.on ? Math.pow(this.vol / 100, 1.6) * 0.75 : 0; },
   setVolume(v) {
     this.vol = v;
-    try { localStorage.setItem('dustcreek-volume', String(v)); } catch (e) { /* ignore */ }
     if (this.master) this.master.gain.setTargetAtTime(this.gainValue(), this.ctx.currentTime, 0.03);
   },
   ready() { return this.ctx && this.on && this.ctx.state === 'running'; },

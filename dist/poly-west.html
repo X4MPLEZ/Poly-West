@@ -122,6 +122,54 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
 #bUse[hidden] { display: none; }
 .seated .pb:not(#bUse) { opacity: 0.3; pointer-events: none; }
+/* pause menu */
+#menu { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(12, 8, 5, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding: 12px; }
+#menu[hidden] { display: none; }
+.mPanel { width: min(560px, 100%); max-height: calc(100% - 8px); overflow: auto; background: rgba(28, 19, 13, 0.96); border: 1px solid var(--edge); border-radius: 14px; padding: 14px 16px 16px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+.mPanel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.mPanel header b { font-family: var(--f-display); font-weight: 400; font-size: 24px; color: var(--brass); }
+#mClose, #devClose { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; font-size: 20px; line-height: 1; color: var(--bone); }
+.mTabs { display: flex; gap: 4px; border-bottom: 1px solid var(--edge); margin-bottom: 12px; }
+.mTabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; font-weight: 700; font-size: 14px; letter-spacing: 0.04em; color: var(--dust); }
+.mTabs button[aria-selected="true"] { color: var(--bone); border-bottom-color: var(--brass); }
+.mPane { display: flex; flex-direction: column; gap: 8px; }
+.mPane[hidden] { display: none; }
+.mPane > button { min-height: 44px; border-radius: 10px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); font-weight: 700; font-size: 15px; color: var(--bone); }
+.mPane > button.mBig { background: var(--brass); border-color: var(--brass); color: var(--ink); }
+.mPane > button.mDanger { color: var(--bad); }
+.mNote { min-height: 1.2em; margin: 2px 0 0; color: var(--good); font-size: 13px; }
+.mSmall { margin: 0; color: var(--dust); font-size: 12px; }
+#mSettings h3 { margin: 10px 0 4px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass); }
+#mSettings h3:first-child { margin-top: 0; }
+.mRow { display: flex; align-items: center; gap: 10px; min-height: 40px; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.mRow label { flex: 1; font-size: 14.5px; font-weight: 600; }
+.mRow input[type="range"] { width: min(200px, 40vw); accent-color: var(--brass); }
+.mRow output { width: 52px; text-align: right; font-family: var(--f-mono); font-size: 12.5px; color: var(--dust); }
+.mSwitch { width: 22px; height: 22px; accent-color: var(--brass); }
+.mSeg { display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+.mSeg button { border: 0; background: transparent; padding: 7px 10px; font-weight: 700; font-size: 13px; color: var(--dust); }
+.mSeg button[aria-checked="true"] { background: var(--brass); color: var(--ink); }
+.mPane .mSmallBtn { margin-top: 8px; min-height: 36px; align-self: flex-start; padding: 0 12px; font-size: 13px; }
+.mKeys { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mKeys th { text-align: left; width: 26%; padding: 7px 8px 7px 0; color: var(--brass); font-weight: 700; vertical-align: top; }
+.mKeys td { padding: 7px 6px; color: var(--bone); vertical-align: top; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.touch .mKeys td:nth-child(2) { color: var(--dust); }
+.paused #hud > *:not(#tr) { visibility: hidden; }
+
+/* developer panel */
+#dev { position: absolute; left: max(10px, env(safe-area-inset-left, 0px)); top: 40px; width: 270px; pointer-events: auto; background: rgba(16, 11, 8, 0.86); border: 1px solid var(--edge); border-radius: 10px; padding: 8px; font-size: 12px; z-index: 3; }
+#dev[hidden] { display: none; }
+#dev header { display: flex; align-items: center; justify-content: space-between; }
+#dev header b { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass); }
+#devClose { width: 26px; height: 26px; font-size: 16px; }
+#devInfo { margin: 6px 0; font-family: var(--f-mono); font-size: 10.5px; line-height: 1.45; white-space: pre-wrap; color: var(--bone); }
+#devPlace { width: 100%; margin-bottom: 6px; background: #2a1d14; color: var(--bone); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; font: inherit; }
+.devRow { display: flex; gap: 4px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.devRow span { color: var(--dust); margin-right: 2px; }
+.devRow button { flex: 1; min-height: 28px; border-radius: 6px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 11.5px; padding: 0 6px; }
+.devRow button[aria-pressed="true"] { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+.touch #dev { top: 52px; width: 240px; }
+
 #rotateHint { display: none; position: absolute; left: 50%; top: 58px; transform: translateX(-50%); pointer-events: none;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 @media (orientation: portrait) { .touch #rotateHint { display: block; } .touch #perf { display: none; } }
@@ -138,6 +186,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek</span>
+      <button id="menuBtn" class="round" type="button" aria-label="Menü (Esc)" title="Menü (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
       <button id="soundBtn" class="round" type="button" aria-pressed="true" aria-label="Ton ausschalten">
         <svg id="soundOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19.5 5.5a9 9 0 0 1 0 13"/></svg>
         <svg id="soundOff" hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
@@ -161,7 +212,42 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bFire" class="pb" type="button">Feuer</button>
       <button id="bUse" class="pb" type="button" hidden></button>
     </div>
+    <section id="dev" hidden aria-label="Entwickler-Werkzeuge">
+      <header><b>Entwickler</b><button id="devClose" type="button" aria-label="Werkzeuge schließen">×</button></header>
+      <pre id="devInfo"></pre>
+      <select id="devPlace" aria-label="Teleportieren"><option value="">Teleportieren nach …</option></select>
+      <div class="devRow"><button id="devFly" type="button" aria-pressed="false" title="WASD fliegen, Leertaste hoch, X runter, Shift schnell">Freie Kamera</button><button id="devHere" type="button">Spieler hierher</button></div>
+      <div class="devRow" role="group" aria-label="Zeit"><span>Zeit</span><button type="button" data-speed="0.25">¼×</button><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
+      <div class="devRow" role="group" aria-label="Anzeigen"><button type="button" data-overlay="coll" aria-pressed="false">Kollision</button><button type="button" data-overlay="plats" aria-pressed="false">Böden</button><button type="button" data-overlay="seats" aria-pressed="false">Plätze</button><button type="button" data-overlay="chunks" aria-pressed="false">Zellen</button></div>
+      <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
+    </section>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
+  </div>
+  <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+    <div class="mPanel">
+      <header><b id="menuTitle">Pause</b><button id="mClose" type="button" aria-label="Weiterspielen">×</button></header>
+      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
+      <section data-pane="game" class="mPane">
+        <button id="mResume" type="button" class="mBig">Weiterspielen</button>
+        <button id="mSave" type="button">Jetzt speichern</button>
+        <button id="mDev" type="button" hidden>Entwickler-Werkzeuge</button>
+        <button id="mNew" type="button" class="mDanger">Neues Spiel</button>
+        <p id="mNote" class="mNote" role="status"></p>
+        <p class="mSmall">Das Spiel speichert alle 20 Sekunden und beim Schließen von selbst, in diesem Browser.</p>
+      </section>
+      <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
+      <section data-pane="keys" class="mPane" hidden>
+        <table class="mKeys">
+          <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>linker Daumen ziehen, weit = rennen</td></tr>
+          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
+          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
+          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Ziehen · Zielen · Feuer · Laden</td></tr>
+          <tr><th scope="row">Benutzen</th><td>E</td><td>Knopf, der an Orten erscheint</td></tr>
+          <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
+          <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
+        </table>
+      </section>
+    </div>
   </div>
   <div id="boot"><div class="bootIn"><b>Poly West</b><span id="bootMsg">wird aufgebaut …</span></div>
     <small id="credits">Schuss-Aufnahme: „9mm Gunshot“ von GoodSoundForYou (soundbible.com), CC BY 3.0, bearbeitet · Schlag-Luftzug: kwahmah_02 (freesound.org), CC BY 3.0 · Glas, Leerklick und Schläge: CC0 (freesound.org)</small></div>
@@ -428,6 +514,46 @@ const ACTORS = {
   add(a) { this.list.push(a); this.byId.set(a.id, a); return a; },
   get(id) { return this.byId.get(id); }
 };
+
+// ==== core/settings.js ====
+/* ---------- settings: what the player can adjust, kept in this browser ----------
+   SETTINGS.v holds the values; SETTINGS.set(key, value) stores them and calls the appliers that systems register
+   with SETTINGS.on(key, fn). The menu builds its controls from SETTINGS.SPEC. */
+const SETTINGS = {
+  KEY: 'polywest.settings',
+  SPEC: [
+    { group: 'Ton' },
+    { key: 'volume', label: 'Lautstärke', type: 'range', min: 0, max: 100, step: 1, def: 30, unit: '%' },
+    { key: 'ambient', label: 'Umgebung', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%' },
+    { group: 'Steuerung' },
+    { key: 'sensMouse', label: 'Maus-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
+    { key: 'sensTouch', label: 'Touch-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
+    { key: 'invertY', label: 'Y-Achse umkehren', type: 'toggle', def: false },
+    { group: 'Grafik' },
+    { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
+    { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },
+    { key: 'showFps', label: 'Bildrate anzeigen', type: 'toggle', def: true },
+    { group: 'Entwicklung' },
+    { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
+  ],
+  v: {}, fns: {},
+  load() {
+    for (const s of this.SPEC) if (s.key) this.v[s.key] = s.def;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(this.KEY) || 'null'); } catch (e) { /* none */ }
+    // the old volume from before the settings existed
+    if (!saved) { try { const old = parseInt(localStorage.getItem('dustcreek-volume'), 10); if (old >= 0 && old <= 100) this.v.volume = old; } catch (e) { /* none */ } }
+    if (saved && typeof saved === 'object') for (const s of this.SPEC) if (s.key && s.key in saved && typeof saved[s.key] === typeof s.def) this.v[s.key] = saved[s.key];
+  },
+  on(key, fn) { (this.fns[key] = this.fns[key] || []).push(fn); fn(this.v[key]); },
+  set(key, value) {
+    this.v[key] = value;
+    try { localStorage.setItem(this.KEY, JSON.stringify(this.v)); } catch (e) { /* not kept */ }
+    for (const fn of this.fns[key] || []) fn(value);
+  },
+  reset() { for (const s of this.SPEC) if (s.key) this.set(s.key, s.def); }
+};
+SETTINGS.load();
 
 // ==== world/terrain.js ====
 /* ---------- terrain: a stretched grid (4 m cells near town, growing towards the horizon) ---------- */
@@ -3295,6 +3421,7 @@ const PLAY = {
   inYaw: null, camPush: new THREE.Vector3()
 };
 const WALK = 1.7, RUN = 5.4;
+SETTINGS.on('camDist', (v) => { PLAY.camDist = v; });
 ACTORS.add({ id: 'player', kind: 'player', pos: PLAY.pos, get yaw() { return PLAY.yaw; }, get room() { return G.room || null; }, get seat() { return SIT.seat; } });
 
 function collide(px, pz, py) {
@@ -3357,6 +3484,7 @@ function updatePlayer(dt) {
   PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
   PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
   if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
+  if (DEV.fly) { PLAY.vx = PLAY.vz = 0; PLAY.speed = 0; PLAY.moving = false; PLAY.inYaw = null; return; }   // the keys fly the free camera
   const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
   const aiming = GUN.aiming();
   const run = !aiming && (k.has('Shift') || INPUT.padRun || touchRun);
@@ -3479,7 +3607,7 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('lostpointercapture', end);
   // mouse: right button aims (pointer lock if the page allows it), left button fires
   canvas.addEventListener('mousedown', (e) => {
-    if (SIT.busy()) return;
+    if (SIT.busy() || DEV.fly || MENU.open) return;
     if (e.button === 2) {
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
@@ -3490,11 +3618,15 @@ function initInput(app, canvas, onAction) {
     if (e.button === 2) { GUN.setAim(false); try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (err) { /* ignore */ } }
   });
   document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === canvas) lookBy(e.movementX, e.movementY, false); });
-  canvas.addEventListener('wheel', (e) => { PLAY.camDist = clamp(PLAY.camDist * Math.exp(e.deltaY * 0.0012), 3.2, 16); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('wheel', (e) => { SETTINGS.set('camDist', +clamp(PLAY.camDist * Math.exp(e.deltaY * 0.0012), 3.2, 12).toFixed(1)); e.preventDefault(); }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
+    if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
+    if (MENU.open) return;
+    if (DEV.fly && (k === 'q' || k === 'r' || k === 'f' || k === 'e')) return;
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
@@ -3503,9 +3635,10 @@ function initInput(app, canvas, onAction) {
     if (k === 'q' && !e.repeat) { GUN.toggleHolster(); onAction('gun'); return; }
     if (k === 'r' && !e.repeat) { GUN.pressReload(); onAction('gun'); return; }
     if (k === 'f' && !e.repeat) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); onAction('fire'); return; }
-    if (k === '+' || k === '=') PLAY.camDist = clamp(PLAY.camDist * 0.85, 3.2, 16);
-    if (k === '-') PLAY.camDist = clamp(PLAY.camDist / 0.85, 3.2, 16);
-    if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Shift'].includes(k)) {
+    if (k === '+' || k === '=') SETTINGS.set('camDist', +clamp(PLAY.camDist * 0.85, 3.2, 12).toFixed(1));
+    if (k === '-') SETTINGS.set('camDist', +clamp(PLAY.camDist / 0.85, 3.2, 12).toFixed(1));
+    if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Shift', ' ', 'x'].includes(k)) {
+      if (k === ' ') e.preventDefault();
       INPUT.keys.add(k);
       if (k !== 'Shift') onAction('move');
       if (k.startsWith('Arrow')) e.preventDefault();
@@ -3517,6 +3650,9 @@ function initInput(app, canvas, onAction) {
 
 /* camera / aim from a drag or mouse movement in pixels */
 function lookBy(dx, dy, touch) {
+  const sens = (touch ? SETTINGS.v.sensTouch : SETTINGS.v.sensMouse) / 100;
+  dx *= sens; dy *= sens * (SETTINGS.v.invertY ? -1 : 1);
+  if (DEV.fly) { DEV.look(dx, dy, touch); return; }
   if (!touch) FIST.look(dx, dy);
   if (GUN.camW > 0.3) {
     const k = touch ? 0.0042 : 0.0026;
@@ -3540,15 +3676,17 @@ function pollGamepad(onAction) {
   INPUT.padRun = b(0) || b(10);
   const prev = INPUT.padPrev;
   if (b(5) && !prev[5]) onAction('slow');
+  if (b(9) && !prev[9]) MENU.toggle();
+  if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); return; }
   if (b(8) && !prev[8]) onAction('sound');
   if (b(3) && !prev[3]) INTERACT.use();
-  if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
+  if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
   if (b(6) !== !!prev[6]) GUN.setAim(b(6));
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
   if (!b(7) && prev[7]) FIST.up();
   if (b(2) && !prev[2]) GUN.pressReload();
   if (b(4) && !prev[4]) GUN.toggleHolster();
-  INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(b);
+  INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b);
   if (GUN.camW > 0.3) { PLAY.camYaw -= INPUT.padLookX * 0.05; PLAY.aimPitch = clamp(PLAY.aimPitch + INPUT.padLookY * 0.03, -0.75, 0.9); INPUT.padLookX = INPUT.padLookY = 0; }
   if (INPUT.padX || INPUT.padY) onAction('move');
 }
@@ -3673,8 +3811,8 @@ const SFX = {
   init() {
     try {
       if (localStorage.getItem('dustcreek-sound') === '0') this.on = false;
-      const v = parseInt(localStorage.getItem('dustcreek-volume'), 10); if (v >= 0 && v <= 100) this.vol = v;
     } catch (e) { /* ignore */ }
+    SETTINGS.on('volume', (v) => this.setVolume(v));
     // Browsers only allow sound inside certain user gestures. On phones a finger going *down* does not count,
     // lifting it does, so listen to every candidate and keep trying until the audio really runs.
     const unlock = () => this.unlock();
@@ -3737,7 +3875,6 @@ const SFX = {
   gainValue() { return this.on ? Math.pow(this.vol / 100, 1.6) * 0.75 : 0; },
   setVolume(v) {
     this.vol = v;
-    try { localStorage.setItem('dustcreek-volume', String(v)); } catch (e) { /* ignore */ }
     if (this.master) this.master.gain.setTargetAtTime(this.gainValue(), this.ctx.currentTime, 0.03);
   },
   ready() { return this.ctx && this.on && this.ctx.state === 'running'; },
@@ -5356,7 +5493,8 @@ const AMB = {
   ok() { return this.started && SFX.ready(); },
   start() {
     const c = SFX.ctx;
-    this.bus = c.createGain(); this.bus.gain.value = 1; this.bus.connect(SFX.master);
+    this.bus = c.createGain(); this.bus.gain.value = SETTINGS.v.ambient / 100; this.bus.connect(SFX.master);
+    SETTINGS.on('ambient', (v) => this.bus.gain.setTargetAtTime(v / 100, c.currentTime, 0.05));
     // a short, warm room for the saloon
     const len = Math.floor(c.sampleRate * 1.1), ir = c.createBuffer(2, len, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * 0.5; }
@@ -5785,7 +5923,7 @@ const HUD = {
     this.winT = 0; this.winN = 0; this.lastText = 0; this.costs = [];
     this.fpsEl = $('fps');
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    this.hint(coarse ? 'Links ziehen: laufen · Rechts ziehen: Kamera · Schlag antippen oder halten · Ziehen: Revolver · Knopf erscheint an Sitzplätzen' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen');
+    this.hint(coarse ? 'Links ziehen: laufen · Rechts ziehen: Kamera · Schlag antippen oder halten · Ziehen: Revolver · Knopf erscheint an Sitzplätzen · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen · Esc Menü');
     if (coarse) { document.getElementById('app').classList.add('touch'); GUN.touch = true; }
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
   },
@@ -5844,6 +5982,250 @@ function initGunPad(onAction) {
   on('bHolster', () => GUN.toggleHolster());
 }
 
+// ==== ui/menu.js ====
+/* ---------- pause menu: the game stops, three tabs (game, settings, controls) ----------
+   Opened with Esc / P, the menu button top right, or Start on a gamepad. The settings controls are built from
+   SETTINGS.SPEC, so a new setting only needs a line there. */
+const MENU = {
+  open: false, tab: 'game', armed: 0,
+  init() {
+    const $ = (id) => document.getElementById(id);
+    this.el = $('menu');
+    $('menuBtn').addEventListener('click', () => this.toggle());
+    $('mClose').addEventListener('click', () => this.close());
+    $('mResume').addEventListener('click', () => this.close());
+    $('mSave').addEventListener('click', () => { const ok = SAVE.write(); this.note(ok ? 'Gespeichert.' : 'Speichern ist in diesem Browser nicht möglich.'); });
+    $('mNew').addEventListener('click', () => {
+      // two taps, so that nobody loses the game by accident
+      if (G.time - this.armed < 4 && this.armedNew) { SAVE.clear(); SAVE.write = () => true; location.reload(); return; }
+      this.armedNew = true; this.armed = G.time; $('mNew').textContent = 'Wirklich neu anfangen? Nochmal tippen';
+      setTimeout(() => { this.armedNew = false; $('mNew').textContent = 'Neues Spiel'; }, 4000);
+    });
+    $('mDev').addEventListener('click', () => { this.close(); DEV.toggle(true); });
+    $('mReset').addEventListener('click', () => { SETTINGS.reset(); this.buildSettings(); });
+    for (const b of this.el.querySelectorAll('[data-tab]')) b.addEventListener('click', () => this.show(b.dataset.tab));
+    this.el.addEventListener('pointerdown', (e) => { if (e.target === this.el) this.close(); });
+    this.buildSettings();
+    SETTINGS.on('dev', (on) => { $('mDev').hidden = !on; });
+    SETTINGS.on('showFps', (on) => { $('fpsBox').hidden = !on; });
+    // leaving the tab pauses the game
+    document.addEventListener('visibilitychange', () => { if (document.hidden && !G.manual) this.show('game', true); });
+  },
+  toggle() { if (this.open) this.close(); else this.show('game', true); },
+  show(tab, openIt) {
+    if (openIt && !this.open) {
+      this.open = true; this.el.hidden = false;
+      INPUT.keys.clear(); FIST.up(); GUN.setAim(false);
+      try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (e) { /* ignore */ }
+      if (SFX.ctx && SFX.ctx.state === 'running') SFX.ctx.suspend();
+      this.note('');
+      document.getElementById('app').classList.add('paused');
+    }
+    this.tab = tab;
+    for (const b of this.el.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
+    for (const p of this.el.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== tab;
+    const first = this.el.querySelector(`[data-pane="${tab}"] button, [data-pane="${tab}"] input`);
+    if (first && openIt) first.focus({ preventScroll: true });
+  },
+  close() {
+    if (!this.open) return;
+    this.open = false; this.el.hidden = true;
+    document.getElementById('app').classList.remove('paused');
+    if (SFX.ctx && SFX.ctx.state === 'suspended' && SFX.on) SFX.ctx.resume();
+    document.getElementById('gl').focus({ preventScroll: true });
+  },
+  note(t) { document.getElementById('mNote').textContent = t; },
+  buildSettings() {
+    const box = document.getElementById('mSettings');
+    box.textContent = '';
+    for (const s of SETTINGS.SPEC) {
+      if (s.group) { const h = document.createElement('h3'); h.textContent = s.group; box.appendChild(h); continue; }
+      const row = document.createElement('div'); row.className = 'mRow';
+      const id = 'set_' + s.key, lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
+      const v = SETTINGS.v[s.key];
+      if (s.type === 'range') {
+        const inp = document.createElement('input'); inp.type = 'range'; inp.id = id; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = v;
+        const out = document.createElement('output'); out.htmlFor = id;
+        const fmt = (x) => (s.step < 1 ? (+x).toFixed(1) : String(Math.round(x))) + (s.unit || '');
+        out.textContent = fmt(v);
+        inp.addEventListener('input', () => { out.textContent = fmt(inp.value); SETTINGS.set(s.key, +inp.value); });
+        row.append(inp, out);
+      } else if (s.type === 'toggle') {
+        const inp = document.createElement('input'); inp.type = 'checkbox'; inp.id = id; inp.checked = v; inp.className = 'mSwitch';
+        inp.addEventListener('change', () => SETTINGS.set(s.key, inp.checked));
+        row.appendChild(inp);
+      } else if (s.type === 'choice') {
+        const grp = document.createElement('div'); grp.className = 'mSeg'; grp.setAttribute('role', 'radiogroup'); grp.setAttribute('aria-label', s.label);
+        for (const [val, text] of s.options) {
+          const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.setAttribute('role', 'radio');
+          b.setAttribute('aria-checked', val === v ? 'true' : 'false');
+          b.addEventListener('click', () => { SETTINGS.set(s.key, val); for (const o of grp.children) o.setAttribute('aria-checked', o === b ? 'true' : 'false'); });
+          grp.appendChild(b);
+        }
+        row.appendChild(grp);
+      }
+      box.appendChild(row);
+    }
+  }
+};
+
+// ==== dev/devtools.js ====
+/* ---------- developer tools (F2, or the pause menu once switched on in the settings) ----------
+   A small panel: where you are and what the renderer costs, teleport to any place, a free-flying camera,
+   slower or faster time, overlays for colliders / walkable platforms / seats / chunks, and a few shortcuts.
+   "Position kopieren" puts the spot on the clipboard, so a bug can be reported with its exact place. */
+const DEV = {
+  on: false, fly: false, flyPos: new THREE.Vector3(), flyYaw: 0, flyPitch: 0, overlays: {}, infoT: 0,
+  init() {
+    const $ = (id) => document.getElementById(id);
+    this.el = $('dev'); this.info = $('devInfo');
+    $('devClose').addEventListener('click', () => this.toggle(false));
+    $('devFly').addEventListener('click', () => this.setFly(!this.fly));
+    $('devHere').addEventListener('click', () => this.playerToCamera());
+    $('devCopy').addEventListener('click', () => this.copyPos());
+    $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
+    for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
+    for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
+    const sel = $('devPlace');
+    this.places = this.listPlaces();
+    for (const [i, p] of this.places.entries()) { const o = document.createElement('option'); o.value = i; o.textContent = p.name; sel.appendChild(o); }
+    sel.addEventListener('change', () => { if (sel.value !== '') this.teleport(this.places[+sel.value]); sel.value = ''; });
+    SETTINGS.on('dev', (on) => { if (!on) this.toggle(false); });
+    this.setSpeed(1);
+  },
+  toggle(on) {
+    if (on === undefined) on = !this.on;
+    if (on && !SETTINGS.v.dev) SETTINGS.set('dev', true);
+    this.on = on; this.el.hidden = !on;
+    if (!on) { this.setFly(false); for (const k of Object.keys(this.overlays)) this.setOverlay(k, false); }
+  },
+
+  /* ---- places to jump to: in front of every door, inside every room, and a few spots outdoors ---- */
+  listPlaces() {
+    const NAMES = { store: 'Gemischtwaren', saloon: 'Saloon', bank: 'Bank', hotel: 'Hotel', sheriff: 'Sheriff', livery: 'Mietstall', barber: 'Barbier',
+      gunsmith: 'Büchsenmacher', post: 'Post', apothecary: 'Apotheke', church: 'Kirche' };
+    const out = [{ name: 'Straße, Ortsmitte', x: -8, z: 2, yaw: Math.PI / 2 }];
+    for (const R of ROOMS) {
+      if (R.parent || R.doorZ === undefined) continue;
+      const n = NAMES[R.type] || R.type, front = rwp(R, 0, 0, R.doorZ + 2.6), inside = rwp(R, 0, R.floorY, R.doorZ - 2.2), yawIn = Math.atan2(-R.s, -R.c);
+      out.push({ name: n + ' (vor der Tür)', x: front.x, z: front.z, yaw: yawIn });
+      out.push({ name: n + ' (drinnen)', x: inside.x, z: inside.z, y: R.floorY, yaw: yawIn });
+    }
+    out.push({ name: 'Ortsausgang Ost', x: 52, z: roadZ(52), yaw: Math.PI / 2 }, { name: 'Am Bach', x: creekX(14) - 7, z: 14, yaw: Math.PI / 2 },
+      { name: 'Wüste Süd', x: -10, z: 70, yaw: 0 }, { name: 'Wüste Nord', x: 0, z: -70, yaw: Math.PI });
+    return out;
+  },
+  teleport(p) {
+    if (SIT.busy()) SIT.cancel();
+    const y = p.y !== undefined ? p.y : groundAt(p.x, p.z, 50);
+    PLAY.pos.set(p.x, y, p.z); PLAY.yaw = p.yaw; PLAY.camYaw = p.yaw + Math.PI; PLAY.vx = PLAY.vz = 0;
+    GAIT.init = false; G.lookAt = null; PLAY.softColl = 0;
+    if (this.fly) { this.flyPos.set(p.x, y + 2.2, p.z).addScaledVector(new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw)), 4); this.flyYaw = p.yaw + Math.PI; }
+  },
+
+  /* ---- free camera: WASD fly, mouse / right finger look, Space up, X down, Shift fast ---- */
+  setFly(on) {
+    this.fly = on;
+    document.getElementById('devFly').setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) {
+      this.flyPos.copy(G.cam.position);
+      const d = new THREE.Vector3(); G.cam.getWorldDirection(d);
+      this.flyYaw = Math.atan2(-d.x, -d.z); this.flyPitch = Math.asin(clamp(-d.y, -1, 1));
+      G.camHook = () => this.flyCam();
+    } else if (G.camHook) G.camHook = null;
+  },
+  look(dx, dy, touch) {
+    const k = touch ? 0.006 : 0.003;
+    this.flyYaw -= dx * k; this.flyPitch = clamp(this.flyPitch + dy * k, -1.45, 1.45);
+  },
+  flyCam() {
+    G.cam.position.copy(this.flyPos);
+    const cp = Math.cos(this.flyPitch);
+    G.cam.lookAt(this.flyPos.x - Math.sin(this.flyYaw) * cp, this.flyPos.y - Math.sin(this.flyPitch), this.flyPos.z - Math.cos(this.flyYaw) * cp);
+    G.cam.updateMatrixWorld();
+  },
+  playerToCamera() {
+    const p = this.fly ? this.flyPos : G.cam.position;
+    this.teleport({ x: p.x, z: p.z, yaw: this.fly ? this.flyYaw + Math.PI : PLAY.yaw, y: groundAt(p.x, p.z, p.y) });
+  },
+  update(dt) {
+    if (this.fly) {
+      const k = INPUT.keys, rdt = dt / (G.timeScale || 1) / (G.slow ? 0.25 : 1);   // the camera moves in real time
+      let f = 0, s = 0, u = 0;
+      if (k.has('w') || k.has('ArrowUp')) f++; if (k.has('s') || k.has('ArrowDown')) f--;
+      if (k.has('d') || k.has('ArrowRight')) s++; if (k.has('a') || k.has('ArrowLeft')) s--;
+      if (k.has(' ')) u++; if (k.has('x')) u--;
+      f += -INPUT.stickY - (INPUT.padY || 0); s += INPUT.stickX + (INPUT.padX || 0);
+      if (INPUT.padLookX || INPUT.padLookY) this.look(INPUT.padLookX * 12, INPUT.padLookY * 12, false);
+      const sp = (k.has('Shift') ? 22 : 7) * rdt, cy = Math.cos(this.flyYaw), sy = Math.sin(this.flyYaw), cp = Math.cos(this.flyPitch);
+      this.flyPos.x += (-sy * cp * f + cy * s) * sp; this.flyPos.z += (-cy * cp * f - sy * s) * sp;
+      this.flyPos.y += (-Math.sin(this.flyPitch) * f + u) * sp;
+    }
+    if (!this.on) return;
+    this.infoT -= dt / (G.timeScale || 1);
+    if (this.infoT > 0) return;
+    this.infoT = 0.25;
+    const p = PLAY.pos, d = G.drawInfo || { calls: 0, tris: 0 }, R = G.room;
+    const lines = [
+      `x ${p.x.toFixed(1)}  y ${p.y.toFixed(2)}  z ${p.z.toFixed(1)}  ↻ ${Math.round(((PLAY.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`,
+      `${R ? 'Raum: ' + R.type : 'draußen'}  ·  ${SIT.busy() ? 'sitzt (' + SIT.state + ')' : PLAY.moving ? 'läuft ' + PLAY.speed.toFixed(1) + ' m/s' : 'steht'}`,
+      `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
+      `Fokus: ${INTERACT.focus ? INTERACT.focus.kind + ' #' + INTERACT.focus.id : '–'}`,
+      `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`
+    ];
+    this.info.textContent = lines.join('\n');
+  },
+  setSpeed(v) {
+    G.timeScale = v;
+    for (const b of this.el.querySelectorAll('[data-speed]')) b.setAttribute('aria-pressed', +b.dataset.speed === v ? 'true' : 'false');
+  },
+  copyPos() {
+    const p = PLAY.pos, t = `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} (Blick ${PLAY.yaw.toFixed(2)}${G.room ? ', ' + G.room.type : ''})`;
+    const done = () => { const b = document.getElementById('devCopy'); b.textContent = 'Kopiert'; setTimeout(() => { b.textContent = 'Position kopieren'; }, 1500); };
+    try { navigator.clipboard.writeText(t).then(done, () => window.prompt('Position', t)); } catch (e) { window.prompt('Position', t); }
+  },
+
+  /* ---- overlays: built once as lines, drawn on top of everything ---- */
+  setOverlay(name, on) {
+    this.overlays[name] = on;
+    const b = this.el.querySelector(`[data-overlay="${name}"]`); if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (!this.lines) this.lines = {};
+    if (on && !this.lines[name]) this.lines[name] = this.buildOverlay(name);
+    if (this.lines[name]) this.lines[name].visible = on;
+  },
+  buildOverlay(name) {
+    const P = [], C = [];
+    const seg = (a, b, c) => { P.push(a[0], a[1], a[2], b[0], b[1], b[2]); C.push(c[0], c[1], c[2], c[0], c[1], c[2]); };
+    const rect = (cx, cz, hx, hz, a, y0, y1, c) => {
+      const ca = Math.cos(a), sa = Math.sin(a), pts = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([x, z]) => [cx + x * ca + z * sa, cz - x * sa + z * ca]);
+      for (let i = 0; i < 4; i++) { const p = pts[i], q = pts[(i + 1) % 4]; seg([p[0], y0, p[1]], [q[0], y0, q[1]], c); seg([p[0], y1, p[1]], [q[0], y1, q[1]], c); seg([p[0], y0, p[1]], [p[0], y1, p[1]], c); }
+    };
+    const circle = (cx, cz, r, y0, y1, c) => { for (let i = 0; i < 12; i++) { const a0 = (i / 12) * TAU, a1 = ((i + 1) / 12) * TAU; for (const y of [y0, y1]) seg([cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r], [cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r], c); } };
+    if (name === 'coll') for (const c of COLL) {
+      const y0 = (c.y0 !== undefined ? c.y0 + 0.5 : surfaceHeight(c.cx, c.cz)) + 0.02, y1 = c.top !== undefined ? c.top + 0.2 : y0 + Math.min(c.h || 1.5, 2.5);
+      if (c.r !== undefined) circle(c.cx, c.cz, c.r, y0, y1, [1, 0.3, 0.2]); else rect(c.cx, c.cz, c.hx, c.hz, c.a, y0, y1, [1, 0.3, 0.2]);
+    }
+    if (name === 'plats') for (const p of PLATS) rect(p.cx, p.cz, p.hx, p.hz, p.a, p.y + 0.03, p.y + 0.03, [0.3, 0.8, 1]);
+    if (name === 'seats') for (const it of INTERACT.items) {
+      const top = it.y + (it.k ? it.k.top : 0.5), c = [0.3, 1, 0.4];
+      seg([it.x, it.y, it.z], [it.x, top + 0.4, it.z], c);
+      seg([it.x, top, it.z], [it.x + it.fx * 0.4, top, it.z + it.fz * 0.4], c);
+      seg([it.sx, it.y + 0.02, it.sz], [it.sx, it.y + 0.3, it.sz], [1, 1, 0.3]);
+    }
+    if (name === 'chunks') for (const m of CHUNKS.cells.values()) {
+      const b = m.geometry.boundingBox; if (!b) continue;
+      rect((b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2, 0, Math.max(b.min.y, -2), Math.min(b.max.y, 25), [1, 0.4, 1]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.85 }));
+    m.renderOrder = 10; m.frustumCulled = false;
+    G.scene.add(m);
+    return m;
+  }
+};
+
 // ==== core/save.js ====
 /* ---------- save game ----------
    Each system that has something worth keeping registers a part: collect() returns plain data, apply(data) puts
@@ -5900,7 +6282,9 @@ const SAVE = {
   function layout() {
     const r = G.renderer;
     const cssW = Math.max(1, app.clientWidth), cssH = Math.max(1, app.clientHeight), dpr = window.devicePixelRatio || 1;
-    r.setPixelRatio(clamp(dpr, 1.5, 2));
+    // quality: high renders above the screen's resolution for crisp edges, low below it for weak phones
+    const q = SETTINGS.v.quality;
+    r.setPixelRatio(q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'mid' ? clamp(dpr, 1, 1.5) : clamp(dpr, 1.5, 2));
     r.setSize(cssW, cssH, true);
     const aspect = cssW / cssH;
     G.cam.aspect = aspect;
@@ -5936,8 +6320,8 @@ const SAVE = {
     if (!last) last = ts;
     const frameMs = Math.max(0.1, ts - last);
     last = ts;
-    if (G.manual) return;
-    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1), frameMs, ts);
+    if (G.manual || MENU.open) return;
+    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1) * (G.timeScale || 1), frameMs, ts);
   }
   G.stepFrame = (dt) => frame(dt, dt * 1000, performance.now());
   function frame(dt, frameMs, ts) {
@@ -5948,6 +6332,7 @@ const SAVE = {
     pollGamepad(onAction);
     GUN.update(dt);
     FIST.update(dt);
+    DEV.update(dt);
     updatePlayer(dt);
     updateRooms(dt);
     INTERACT.update();
@@ -5963,6 +6348,7 @@ const SAVE = {
     G.renderer.info.reset();
     G.renderer.setRenderTarget(null);
     G.renderer.render(G.scene, G.cam);
+    G.drawInfo = { calls: G.renderer.info.render.calls, tris: G.renderer.info.render.triangles };
     HUD.frame(frameMs, null, 0, 0, ts);
   }
 
@@ -5992,6 +6378,10 @@ const SAVE = {
     initGunPad(onAction);
     INTERACT.init();
     SAVE.init();
+    MENU.init();
+    DEV.init();
+    G.layout = layout;
+    SETTINGS.on('quality', () => layout());
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();

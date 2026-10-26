@@ -9,7 +9,9 @@
   function layout() {
     const r = G.renderer;
     const cssW = Math.max(1, app.clientWidth), cssH = Math.max(1, app.clientHeight), dpr = window.devicePixelRatio || 1;
-    r.setPixelRatio(clamp(dpr, 1.5, 2));
+    // quality: high renders above the screen's resolution for crisp edges, low below it for weak phones
+    const q = SETTINGS.v.quality;
+    r.setPixelRatio(q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'mid' ? clamp(dpr, 1, 1.5) : clamp(dpr, 1.5, 2));
     r.setSize(cssW, cssH, true);
     const aspect = cssW / cssH;
     G.cam.aspect = aspect;
@@ -45,8 +47,8 @@
     if (!last) last = ts;
     const frameMs = Math.max(0.1, ts - last);
     last = ts;
-    if (G.manual) return;
-    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1), frameMs, ts);
+    if (G.manual || MENU.open) return;
+    frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1) * (G.timeScale || 1), frameMs, ts);
   }
   G.stepFrame = (dt) => frame(dt, dt * 1000, performance.now());
   function frame(dt, frameMs, ts) {
@@ -57,6 +59,7 @@
     pollGamepad(onAction);
     GUN.update(dt);
     FIST.update(dt);
+    DEV.update(dt);
     updatePlayer(dt);
     updateRooms(dt);
     INTERACT.update();
@@ -72,6 +75,7 @@
     G.renderer.info.reset();
     G.renderer.setRenderTarget(null);
     G.renderer.render(G.scene, G.cam);
+    G.drawInfo = { calls: G.renderer.info.render.calls, tris: G.renderer.info.render.triangles };
     HUD.frame(frameMs, null, 0, 0, ts);
   }
 
@@ -101,6 +105,10 @@
     initGunPad(onAction);
     INTERACT.init();
     SAVE.init();
+    MENU.init();
+    DEV.init();
+    G.layout = layout;
+    SETTINGS.on('quality', () => layout());
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();

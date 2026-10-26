@@ -32,6 +32,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | Datei | Inhalt |
 |---|---|
 | `core/util.js` | Hilfsfunktionen (`clamp`, `lerp`, `smoothstep`, `rgb`, `mulberry32`) und `MB`: der Mesh-Baukasten (`box`, `cyl`, `beam`, `quad`, `geo`, `push`/`pop` von Matrizen, `build`) |
+| `core/settings.js` | `SETTINGS`: Einstellungen mit Standardwerten, gespeichert; Systeme hängen sich mit `SETTINGS.on(key, fn)` an |
 | `core/world.js` | Weltereignisse (`worldEvent`, `onWorldEvent`), `Grid` (räumliches Raster), `ACTORS` (Spieler, später NPCs und Pferde) |
 | `world/terrain.js` | Gelände (`heightAt`, `surfaceHeight`), Kollisionslisten `COLL`/`PLATS`/`CAMBLOCK`, Straße |
 | `world/town_data.js` | `BUILDINGS` (welches Haus wo, Fassade, Veranda), `SIGNS`, Farben `COL` |
@@ -63,6 +64,8 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest) |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
+| `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |
+| `dev/devtools.js` | Entwickler-Werkzeuge (F2): Infos, Teleport, freie Kamera, Zeitraffer, Overlays (Kollision, Böden, Plätze, Zellen), Position kopieren |
 | `core/save.js` | Spielstand: Teile melden `collect`/`apply` an, Format mit Version und `migrate()` |
 | `main.js` | Start und Hauptschleife (Reihenfolge der Updates pro Frame) |
 
@@ -77,11 +80,13 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - **Sitzplätze** melden sich selbst über `seatHere` an. `seat.occ` enthält die Akteur-ID; so finden später auch NPCs freie Plätze.
 - **Neue Aktionen** laufen über `INTERACT` (Eintrag mit `verb`, `label`, `score(p)` und `use()`), nicht über eigene Tastenabfragen.
 - **Was andere mitbekommen sollen** (Schuss, Schlag, Hinsetzen …): `worldEvent(type, x, y, z, {by, …})`.
+- **Neue Einstellung:** eine Zeile in `SETTINGS.SPEC`, dann `SETTINGS.on('key', fn)` im System; das Menü baut den Regler selbst.
+- **Neues Entwickler-Werkzeug:** Knopf in `#dev` (page.html) + Funktion in `DEV`. Bei Fehlermeldungen von Merkel nach „Position kopieren“ fragen.
 - **Was gespeichert werden soll:** `SAVE.part(name, collect, apply)`. Ändert sich das Format, wird `SAVE.V` erhöht und `migrate` ergänzt.
 - **Leistung:** Statische Dinge kommen in die Chunks. Pro Frame keine neuen Objekte anlegen (Vektoren wiederverwenden). Pro Raum ein Mesh. Am Handy höchstens etwa 70 Zeichenaufrufe.
 - Three.js **r159** (letzte Version mit `three.min.js`). Kein Modul-Build.
 
 ## Stand und Plan
-- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand.
+- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge.
 - **Als Nächstes:** Trinken und Betrunkenheit (Barhocker, Gegenstände/Inventar), danach Tag/Nacht mit Schlafen, dann der erste NPC, Pferd, Soziales/Duell und Wildnis.
-- Das NPC-Konzept steht in `docs/npc-konzept.md`.
+- Das NPC-Konzept steht in `docs/npc-konzept.md`. Spielidee (Leben im Westen, Ruf, Beziehungen, Überraschungen) und Sprachsteuerung per Mikrofon: `docs/spielidee.md`.

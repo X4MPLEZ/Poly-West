@@ -5,6 +5,7 @@ const PLAY = {
   inYaw: null, camPush: new THREE.Vector3()
 };
 const WALK = 1.7, RUN = 5.4;
+SETTINGS.on('camDist', (v) => { PLAY.camDist = v; });
 ACTORS.add({ id: 'player', kind: 'player', pos: PLAY.pos, get yaw() { return PLAY.yaw; }, get room() { return G.room || null; }, get seat() { return SIT.seat; } });
 
 function collide(px, pz, py) {
@@ -67,6 +68,7 @@ function updatePlayer(dt) {
   PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
   PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
   if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
+  if (DEV.fly) { PLAY.vx = PLAY.vz = 0; PLAY.speed = 0; PLAY.moving = false; PLAY.inYaw = null; return; }   // the keys fly the free camera
   const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
   const aiming = GUN.aiming();
   const run = !aiming && (k.has('Shift') || INPUT.padRun || touchRun);

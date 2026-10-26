@@ -10,7 +10,8 @@ const AMB = {
   ok() { return this.started && SFX.ready(); },
   start() {
     const c = SFX.ctx;
-    this.bus = c.createGain(); this.bus.gain.value = 1; this.bus.connect(SFX.master);
+    this.bus = c.createGain(); this.bus.gain.value = SETTINGS.v.ambient / 100; this.bus.connect(SFX.master);
+    SETTINGS.on('ambient', (v) => this.bus.gain.setTargetAtTime(v / 100, c.currentTime, 0.05));
     // a short, warm room for the saloon
     const len = Math.floor(c.sampleRate * 1.1), ir = c.createBuffer(2, len, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * 0.5; }
