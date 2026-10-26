@@ -75,7 +75,7 @@ const FIST = {
   fists: null, from: null, body: { ty: 0, tp: 0, pz: 0, dy: 0, roll: 0 }, bodyFrom: null, trail: [], trailT: 0,
   active() { return this.st !== 'idle' || this.fight > 0; },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.out) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;

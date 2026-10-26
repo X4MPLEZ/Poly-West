@@ -60,13 +60,17 @@
     GUN.update(dt);
     FIST.update(dt);
     DEV.update(dt);
+    DRUNK.update(dt);
+    DRINK.update(dt);
     updatePlayer(dt);
+    GLASS.update(dt);
     updateRooms(dt);
     INTERACT.update();
     updateCamera(dt);
     if (G.camHook) G.camHook();
     updateWorld(dt, G.time);
     updateCharacterVisual();
+    DRINK.late();
     GUN.late(dt);
     AMB.update(dt);
     SAVE.update(dt);
@@ -106,6 +110,7 @@
     INTERACT.init();
     SAVE.init();
     MENU.init();
+    SHOP.init();
     DEV.init();
     G.layout = layout;
     SETTINGS.on('quality', () => layout());

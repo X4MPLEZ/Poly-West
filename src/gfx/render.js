@@ -69,6 +69,7 @@ function assembleScene() {
   scene.add(W.ch.root);
   buildInteriors(scene);
   GUN.init(scene);
+  GLASS.init(scene);
   // blob shadow
   const blobGeo = new THREE.PlaneGeometry(1, 1); blobGeo.rotateX(-Math.PI / 2);
   W.blob = new THREE.Mesh(blobGeo, G.blobMat); W.blob.layers.enable(2); W.blob.renderOrder = 1; W.blob.frustumCulled = false;

@@ -37,6 +37,7 @@ const MENU = {
       document.getElementById('app').classList.add('paused');
     }
     this.tab = tab;
+    if (tab === 'bag') this.buildBag();
     for (const b of this.el.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
     for (const p of this.el.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== tab;
     const first = this.el.querySelector(`[data-pane="${tab}"] button, [data-pane="${tab}"] input`);
@@ -48,6 +49,20 @@ const MENU = {
     document.getElementById('app').classList.remove('paused');
     if (SFX.ctx && SFX.ctx.state === 'suspended' && SFX.on) SFX.ctx.resume();
     document.getElementById('gl').focus({ preventScroll: true });
+  },
+  buildBag() {
+    document.getElementById('mMoney').textContent = money(INV.money);
+    const box = document.getElementById('mBag'); box.textContent = '';
+    const ids = Object.keys(INV.items);
+    if (!ids.length) { const p = document.createElement('p'); p.className = 'mSmall'; p.textContent = 'Die Tasche ist leer. Im Saloon gibt es was zu trinken.'; box.appendChild(p); return; }
+    for (const id of ids) {
+      const it = ITEMS[id], row = document.createElement('div'); row.className = 'mItem';
+      const name = document.createElement('span'); name.textContent = (INV.items[id] > 1 ? INV.items[id] + '× ' : '') + it.name;
+      if (it.kind === 'carry') { const sm = document.createElement('small'); sm.textContent = ' ' + (INV.sips[id] ?? it.sips) + ' Schlucke übrig'; name.appendChild(sm); }
+      row.appendChild(name);
+      if (it.kind === 'carry') { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Trinken'; b.addEventListener('click', () => { this.close(); DRINK.start(id); }); row.appendChild(b); }
+      box.appendChild(row);
+    }
   },
   note(t) { document.getElementById('mNote').textContent = t; },
   buildSettings() {

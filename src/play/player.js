@@ -75,6 +75,8 @@ function updatePlayer(dt) {
   const yaw = PLAY.camYaw;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
+  [mx, mz] = DRUNK.steer(mx, mz);
+  if (DRUNK.out || SHOP.open) { mx = mz = 0; mag = 0; }
   const ml = Math.hypot(mx, mz);
   if (ml > 1e-4) { mx /= ml; mz /= ml; }
   PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
@@ -83,6 +85,8 @@ function updatePlayer(dt) {
   if (aiming) target = Math.min(target, WALK * 0.8);
   const punching = FIST.st !== 'idle';
   if (punching) target = Math.min(target, WALK * 0.5);
+  if (DRINK.busy()) target = Math.min(target, WALK * 0.55);
+  target *= DRUNK.maxSpeed();
   const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
   PLAY.vx += (mx * target - PLAY.vx) * a;
   PLAY.vz += (mz * target - PLAY.vz) * a;

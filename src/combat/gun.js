@@ -74,7 +74,7 @@ const GUN = {
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
   setAim(on) {
-    if (on && SIT.busy()) return;
+    if (on && (SIT.busy() || DRINK.busy() || DRUNK.out)) return;
     this.wantAim = on;
     if (on) {
       if (this.state === 'holster') this.startDraw();
@@ -83,7 +83,7 @@ const GUN = {
     }
   },
   pressFire() {
-    if (SIT.busy()) return;
+    if (SIT.busy() || DRINK.busy() || DRUNK.out) return;
     if (this.state === 'holster') { this.startDraw(); return; }
     if (this.state === 'holstering') return;
     if (this.reload) { if (this.ammo > 0) this.reload.stop = true; else return; }
@@ -213,7 +213,7 @@ const GUN = {
     const moveS = Math.hypot(PLAY.vx, PLAY.vz);
     if (this.camW > 0.8 && moveS < 0.3 && this.wantAim) this.steady = Math.min(1, this.steady + dt * 1.1);
     else this.steady = Math.max(0, this.steady - dt * 3);
-    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012;
+    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
     this.spread += (base - this.spread) * (1 - Math.exp(-dt * 7));
     const b = this.bestBottle(0.03, 60); this.aimDist = b ? b.dist : 25;
     let mz = null;

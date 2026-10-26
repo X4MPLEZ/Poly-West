@@ -112,7 +112,7 @@ function updateGait() {
     g.init = true;
   }
   // sitting: the seat has the whole pose
-  if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
+  if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   const sp = Math.hypot(PLAY.vx, PLAY.vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));
   const s = g.s;
@@ -250,6 +250,7 @@ function updateGait() {
     acc: clamp(g.acc * 0.03, -0.16, 0.2),
     smooth: 1 - Math.exp(-dt * lerp(13, 20, k))
   });
+  DRUNK.pose(P);
   // keep stance legs within reach: lower the pelvis if needed (downhill, long strides)
   const R = RIG.thigh + RIG.shin - 0.012;
   for (let i = 0; i < 2; i++) {
@@ -272,6 +273,6 @@ function updateGait() {
   }
   P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
   PLAY.phase = g.phase * TAU;
-  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); }
+  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
   applyPose(ch);
 }

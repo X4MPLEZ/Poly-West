@@ -43,7 +43,7 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('lostpointercapture', end);
   // mouse: right button aims (pointer lock if the page allows it), left button fires
   canvas.addEventListener('mousedown', (e) => {
-    if (SIT.busy() || DEV.fly || MENU.open) return;
+    if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || DRINK.busy() || DRUNK.out) return;
     if (e.button === 2) {
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
@@ -59,6 +59,8 @@ function initInput(app, canvas, onAction) {
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
+    if (DRUNK.out) return;
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
     if (MENU.open) return;
@@ -66,8 +68,10 @@ function initInput(app, canvas, onAction) {
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
-    if (k === 'e' && !e.repeat) { INTERACT.use(); onAction('use'); return; }
-    if (SIT.busy() && (k === 'q' || k === 'r' || k === 'f')) return;
+    if (k === 'e' && !e.repeat) { INTERACT.use(0); onAction('use'); return; }
+    if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
+    if (k === 't' && !e.repeat) { if (INV.has('bottle')) DRINK.start('bottle'); else TOAST.show('Du hast keine Flasche dabei.'); return; }
+    if ((SIT.busy() || DRINK.busy()) && (k === 'q' || k === 'r' || k === 'f')) return;
     if (k === 'q' && !e.repeat) { GUN.toggleHolster(); onAction('gun'); return; }
     if (k === 'r' && !e.repeat) { GUN.pressReload(); onAction('gun'); return; }
     if (k === 'f' && !e.repeat) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); onAction('fire'); return; }
@@ -115,7 +119,8 @@ function pollGamepad(onAction) {
   if (b(9) && !prev[9]) MENU.toggle();
   if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); return; }
   if (b(8) && !prev[8]) onAction('sound');
-  if (b(3) && !prev[3]) INTERACT.use();
+  if (b(3) && !prev[3]) INTERACT.use(0);
+  if (b(1) && !prev[1]) INTERACT.use(1);
   if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
   if (b(6) !== !!prev[6]) GUN.setAim(b(6));
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }

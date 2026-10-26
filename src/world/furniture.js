@@ -9,12 +9,24 @@ function at(mb, x, y, z, ry, fn) { mb.push(new THREE.Matrix4().makeTranslation(x
    x, z in the current building matrix; facing = the matrix' +z. kind decides the pose (see SIT_KINDS). */
 const SEATS = [];
 const SEATCTX = { R: null };
-function seatHere(mb, x, z, kind, opt) {
-  const v = new THREE.Vector3(x, 0, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
+// a point (x, y, z) of the piece being built, and its +z direction, in world space
+function builtToWorld(mb, x, y, z) {
+  const v = new THREE.Vector3(x, y, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
   const R = SEATCTX.R;
   let wx = v.x, wz = v.z, dx = d.x, dz = d.z;
   if (R) { const p = rwp(R, v.x, v.y, v.z); wx = p.x; wz = p.z; const ex = dx * R.c + dz * R.s, ez = -dx * R.s + dz * R.c; dx = ex; dz = ez; }
-  SEATS.push(Object.assign({ x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), kind, room: R }, opt || {}));
+  return { x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), room: R };
+}
+function seatHere(mb, x, z, kind, opt) {
+  const w = builtToWorld(mb, x, 0, z);
+  SEATS.push(Object.assign({ x: w.x, y: w.y, z: w.z, yaw: w.yaw, kind, room: w.room }, opt || {}));
+}
+/* a bar counter one can order at: its front edge from x0 to x1 at z (piece frame, customers on the -z side), top at y */
+const COUNTERS = [];
+function counterHere(mb, x0, x1, z, y, opt) {
+  const a = builtToWorld(mb, x0, 0, z), b = builtToWorld(mb, x1, 0, z), f = builtToWorld(mb, 0, 0, 0);
+  // f.yaw points into the bar (+z of the piece); customers face that way
+  COUNTERS.push(Object.assign({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y: a.y, top: y, yaw: f.yaw, room: a.room }, opt || {}));
 }
 function rot90(ry, hx, hz) { return Math.abs(Math.sin(ry)) > 0.5 ? [hz, hx] : [hx, hz]; }
 function chair(mb, col) {

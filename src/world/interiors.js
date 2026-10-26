@@ -35,6 +35,7 @@ const FURNISH = {
       mb.box(0, 0.12, -0.5, 7.4, 0.05, 0.05, IC.brass, 0);
       for (let i = 0; i < 6; i++) mb.box(-3.3 + i * 1.32, 0, -0.5, 0.04, 0.14, 0.04, IC.brass, 0);
       mb.box(0, 1.07, -0.5, 7.48, 0.06, 0.16, rgb(0x3e2416), 2);
+      counterHere(mb, -3.6, 3.6, -0.5, 1.13, { name: 'saloon' });   // customers stand on the -z side
     });
     rColl(R, 3.15, 4.05, -10.2, -2.8, 1.2);
     for (let i = 0; i < 7; i++) at(mb, 2.66, F, -3.45 - i * 0.92, Math.PI / 2, () => stool(mb, rgb(0x5a3422), { bar: { z: 0.44, y: 1.13 } }));
@@ -176,12 +177,14 @@ const FURNISH = {
     place(mb, R, [
       ['table', -1.6, -3.6, 0, { w: 1.5, box: [-2.4, -0.8, -4.0, -3.2, 0.8] }],                 // the sheriff's desk
       ['chair', -1.6, -4.3, 0],
-      ['bars', 1.9, -5.4, 0, { len: 3.9, box: [0, x1, -5.45, -5.35, 3] }],                      // jail cell
+      ['bars', 2.5, -5.4, 0, { len: 2.7, box: [1.15, x1, -5.45, -5.35, 3] }],                   // jail cell, its door stands open
       ['bars', 0.15, -6.9, Math.PI / 2, { len: 3.0, box: [0.1, 0.2, z0, -5.4, 3] }],
       ...[0, 1, 2, 3].map((i) => ['poster', x0 + 0.05, -1.6 - i * 0.7, Math.PI / 2, { y: 1.5 + (i % 2) * 0.1 }]),
       ['stove', -2.9, -6.8, 0, { circle: 0.38 }],
       ['lantern', -1.6, -3.6, 0, { len: 0.8 }], ['lantern', 2.0, -7.0, 0, { len: 0.8 }]
     ], rnd);
+    at(mb, 1.15, F, -5.4, 1.35, () => { at(mb, -0.45, 0, 0, 0, () => bars(mb, 0.9, 2.3, 0.05)); mb.box(-0.88, 1.0, 0, 0.06, 0.12, 0.08, IC.iron, 0); });
+    rCircle(R, 0.98, -4.5, 0.08);
     // one-offs: things on the desk, bunk and bucket in the cell, gun rack, coffee pot, filing cabinet
     at(mb, -1.6, F, -3.6, 0, () => { mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
     mb.box(2.9, F + 0.4, -7.9, 1.8, 0.08, 0.7, IC.oak, 2); mb.box(2.9, F + 0.48, -7.9, 1.7, 0.1, 0.6, rgb(0x6a6a5a), 9);

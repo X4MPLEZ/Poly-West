@@ -15,6 +15,15 @@ const SIT = {
     this.seat = seat; seat.occ = 'player'; this.state = 'approach'; this.t = 0;
     [this.sx, this.sz] = seat.spot(PLAY.pos);
   },
+  // put the player straight onto a seat, already sitting (waking up there, loading a game)
+  warp(seat) {
+    if (this.seat) this.seat.occ = null;
+    this.seat = seat; seat.occ = 'player'; [this.sx, this.sz] = seat.spot(PLAY.pos);
+    PLAY.pos.set(seat.x, seat.y, seat.z); PLAY.yaw = seat.yaw; PLAY.camYaw = seat.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; G.lookAt = null;
+    const k = seat.k;
+    for (let i = 0; i < 2; i++) { const s = i === 0 ? 1 : -1; this.seatW(s * k.footW, k.footY, k.foot, this.feetTo[i]); this.feetFrom[i].copy(this.feetTo[i]); }
+    this.state = 'sit'; this.t = 0; this.w = 1;
+  },
   cancel() { if (this.seat) this.seat.occ = null; this.seat = null; this.state = 'none'; this.w = 0; },
   stand() {
     if (this.state === 'approach') { this.cancel(); return; }

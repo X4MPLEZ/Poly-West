@@ -159,7 +159,7 @@ async def check_seats(g):
         while (SIT.state !== 'sit' && t < 6) { G.stepFrame(1/30); t += 1/30; }
         if (SIT.state !== 'sit') { bad.push(S.kind + '#' + S.id + ' stuck ' + SIT.state); SIT.cancel(); continue; }
         const d = Math.hypot(PLAY.pos.x - f.x, PLAY.pos.z - f.z);
-        INTERACT.use(); t = 0; while (SIT.state !== 'none' && t < 3) { G.stepFrame(1/30); t += 1/30; }
+        SIT.stand(); t = 0; while (SIT.state !== 'none' && t < 3) { G.stepFrame(1/30); t += 1/30; }
         if (SIT.state !== 'none' || f.occ || d > 0.01) bad.push(S.kind + '#' + S.id + ' up ' + SIT.state + ' d ' + d.toFixed(2));
         kinds[S.kind] = (kinds[S.kind] || 0) + 1; }
       return { n, ok: n - bad.length, bad: bad.slice(0, 8), kinds }; }''')
@@ -221,8 +221,46 @@ async def check_dev(g):
     ok = r['n'] >= 20 and r['room'] == 'saloon' and r['flew'] > 2 and r['stayed'] < 0.05 and min(r['segs']) > 10 and r['ts'] == 2
     return ok, json.dumps(r)
 
+async def check_drink(g):
+    """order at the bar standing and seated, drink, a bottle from the bag, getting drunk, passing out"""
+    await g.js(RESET)
+    r = await g.js('''() => { const out = {}; INV.money = 1000; INV.items = {}; INV.sips = {}; DRUNK.level = 0; DRUNK.stomach = 0; GLASS.clear();
+      const C = INTERACT.wide[0], mx = (C.ax + C.bx) / 2, mz = (C.az + C.bz) / 2;
+      // stand in front of the middle of the bar, facing it
+      PLAY.pos.set(mx - C.fx * 0.75, C.y, mz - C.fz * 0.75); PLAY.yaw = C.yaw; GAIT.init = false;
+      for (let k = 0; k < 10; k++) G.stepFrame(1/60); INTERACT.update(true);
+      out.offer = INTERACT.acts.map(a => a.label).join(',');
+      INTERACT.acts.find(a => a.label === 'Bestellen').run(); out.shop = SHOP.open; SHOP.key('2');
+      out.money = INV.money; for (let k = 0; k < 150; k++) G.stepFrame(1/60);
+      out.ready = GLASS.ready(); INTERACT.update(true); out.offer2 = INTERACT.acts.map(a => a.label).join(',');
+      INTERACT.use(0); let t = 0; const st = []; while ((DRINK.busy()) && t < 6) { G.stepFrame(1/60); t += 1/60; if (st[st.length - 1] !== DRINK.st) st.push(DRINK.st); }
+      out.phases = st.join('>'); out.stomach = +DRUNK.stomach.toFixed(3); out.left = GLASS.obj.left;
+      // a bottle: buy it, drink from it
+      SHOP.show(C, null); SHOP.buy('bottle'); out.bag = JSON.stringify(INV.items);
+      DRINK.start('bottle'); t = 0; while (DRINK.busy() && t < 6) { G.stepFrame(1/60); t += 1/60; } out.bottleSips = INV.sips.bottle;
+      // on a stool: a beer, three sips
+      const S = INTERACT.items.find(s => s.kind === 'stool'); SIT.warp(S); for (let k = 0; k < 5; k++) G.stepFrame(1/60); INTERACT.update(true);
+      out.seatOffer = INTERACT.acts.map(a => a.label).join(',');
+      INTERACT.use(0); SHOP.buy('beer'); for (let k = 0; k < 200; k++) G.stepFrame(1/60);
+      for (let i = 0; i < 3; i++) { INTERACT.update(true); INTERACT.use(0); t = 0; while (DRINK.busy() && t < 6) { G.stepFrame(1/60); t += 1/60; } }
+      out.beerLeft = GLASS.obj.left; out.stillSitting = SIT.state;
+      SIT.stand(); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      return out; }''')
+    ok = ('Bestellen' in r['offer'] and r['shop'] and r['money'] == 975 and r['ready'] and r['offer2'].startswith('Trinken')
+          and r['phases'] == 'reach>lift>sip>lower>back>idle' and r['stomach'] > 0.1 and r['left'] == 0 and 'bottle' in r['bag'] and r['bottleSips'] == 5
+          and r['seatOffer'] == 'Bestellen,Aufstehen' and r['beerLeft'] == 0 and r['stillSitting'] == 'sit')
+    # drunk walking and passing out
+    r2 = await g.js('''() => { DRUNK.level = 0.75; DRUNK.stomach = 0; PLAY.pos.set(-8, 0, 2); PLAY.yaw = 0; PLAY.camYaw = Math.PI; GAIT.init = false;
+      let maxSep = 0, x0 = PLAY.pos.x; INPUT.keys.add('w'); for (let k = 0; k < 300; k++) { PLAY.camYaw = Math.PI; G.stepFrame(1/60); const L = W.ch.pose.ank[0], R = W.ch.pose.ank[1]; maxSep = Math.max(maxSep, Math.hypot(L.x - R.x, L.z - R.z)); }
+      INPUT.keys.clear(); const drift = +Math.abs(PLAY.pos.x - x0).toFixed(2);
+      const m0 = INV.money, p0 = PLAY.pos.clone(); DRUNK.level = 1.05; for (let k = 0; k < 60 * 8; k++) G.stepFrame(1/60);
+      return { maxSep: +maxSep.toFixed(2), drift, out: !!DRUNK.out, level: +DRUNK.level.toFixed(2), moved: +p0.distanceTo(PLAY.pos).toFixed(1), poorer: INV.money < m0 || m0 === 0, black: document.getElementById('blackout').hidden }; }''')
+    ok = ok and r2['maxSep'] < 1.4 and r2['drift'] > 0.05 and not r2['out'] and r2['level'] < 0.35 and r2['moved'] > 3 and r2['black']
+    await g.js('() => { DRUNK.level = 0; DRUNK.stomach = 0; if (SIT.busy()) SIT.cancel(); GLASS.clear(); }')
+    return ok, json.dumps(r) + ' ' + json.dumps(r2)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

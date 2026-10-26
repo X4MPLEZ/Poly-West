@@ -113,14 +113,52 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
 #prompt { position: absolute; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none;
-  display: flex; align-items: center; gap: 8px; background: rgba(22, 15, 10, 0.66); border: 1px solid var(--edge); border-radius: 999px;
-  padding: 5px 13px 5px 5px; font-family: var(--f-ui); font-weight: 600; font-size: 13.5px; color: var(--bone); white-space: nowrap; }
-#prompt[hidden] { display: none; }
+  display: flex; gap: 8px; white-space: nowrap; }
+#prompt[hidden], .pa[hidden] { display: none; }
+.pa { display: flex; align-items: center; gap: 8px; background: rgba(22, 15, 10, 0.66); border: 1px solid var(--edge); border-radius: 999px;
+  padding: 5px 13px 5px 5px; font-family: var(--f-ui); font-weight: 600; font-size: 13.5px; color: var(--bone); }
 #prompt kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
   background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
 .touch #prompt { display: none; }
 #bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
-#bUse[hidden] { display: none; }
+#bUse[hidden], #bUse2[hidden] { display: none; }
+#bUse2 { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); font-size: 11px; }
+
+/* toasts: short news at the top */
+#toasts { position: absolute; left: 50%; top: 54px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(560px, calc(100% - 32px)); }
+.toast { background: rgba(22, 15, 10, 0.82); border: 1px solid var(--edge); border-radius: 10px; padding: 7px 13px; font-size: 14px; font-weight: 600; color: var(--bone); text-align: center; transition: opacity 0.6s ease, transform 0.6s ease; animation: toastIn 0.25s ease; }
+.toast.money { color: var(--brass); font-family: var(--f-mono); font-size: 13px; }
+.toast.long { font-size: 15px; }
+.toast.out { opacity: 0; transform: translateY(-6px); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
+.touch #toasts { top: 58px; }
+
+/* the order list at the bar */
+#shop { position: absolute; left: 50%; bottom: calc(14% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(320px, calc(100% - 32px)); pointer-events: auto;
+  background: rgba(28, 19, 13, 0.95); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 12px 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45); z-index: 3; }
+#shop[hidden] { display: none; }
+#shop header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+#shop header b { font-family: var(--f-display); font-weight: 400; font-size: 20px; color: var(--brass); flex: 1; }
+#shopMoney { font-family: var(--f-mono); font-size: 13px; color: var(--dust); }
+#shopClose { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; font-size: 18px; line-height: 1; }
+#shopList { display: flex; flex-direction: column; gap: 5px; }
+#shopList button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 15px; text-align: left; }
+#shopList button span { flex: 1; }
+#shopList button em { font-style: normal; font-family: var(--f-mono); font-size: 13px; color: var(--brass); }
+#shopList button kbd { font-family: var(--f-mono); font-size: 11px; min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 5px; background: rgba(243, 232, 214, 0.15); }
+#shopList button:disabled { opacity: 0.4; }
+.touch #shopList kbd { display: none; }
+
+/* drunk: the edges of the view darken and warm up; out cold: black */
+#drunkFx { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(60, 30, 10, 0) 45%, rgba(40, 18, 6, 0.55) 80%, rgba(20, 8, 2, 0.85) 100%); }
+#blackout { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 2; }
+#blackout[hidden] { display: none; }
+.mMoney { margin: 0 0 4px; font-size: 15px; }
+.mMoney b { font-family: var(--f-mono); color: var(--brass); }
+.mItem { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.mItem span { flex: 1; font-weight: 600; font-size: 15px; }
+.mItem small { color: var(--dust); }
+.mItem button { min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font-weight: 700; }
 .seated .pb:not(#bUse) { opacity: 0.3; pointer-events: none; }
 /* pause menu */
 #menu { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(12, 8, 5, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding: 12px; }
@@ -181,6 +219,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 
 <div id="app">
   <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
+  <div id="drunkFx" aria-hidden="true"></div>
+  <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
@@ -199,7 +239,12 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     </div>
     <div id="hint"></div>
     <div id="stam" aria-hidden="true"><i></i></div>
-    <div id="prompt" hidden role="status"><kbd>E</kbd><span id="promptTxt"></span></div>
+    <div id="prompt" hidden role="status"><span class="pa" id="prompt1"><kbd>E</kbd><span id="promptTxt"></span></span><span class="pa" id="prompt2" hidden><kbd>R</kbd><span id="promptTxt2"></span></span></div>
+    <div id="toasts" aria-live="polite"></div>
+    <section id="shop" hidden aria-labelledby="shopTitle">
+      <header><b id="shopTitle">Theke</b><span id="shopMoney"></span><button id="shopClose" type="button" aria-label="Schließen">×</button></header>
+      <div id="shopList"></div>
+    </section>
     <div id="xhair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="ammo" class="dim" role="status" aria-label="Munition">
       <svg id="cyl" viewBox="-17 -17 34 34" aria-hidden="true"><circle class="rim" r="16"/><circle class="ch" cx="0.00" cy="-10.50" r="4.6"/><circle class="ch" cx="9.09" cy="-5.25" r="4.6"/><circle class="ch" cx="9.09" cy="5.25" r="4.6"/><circle class="ch" cx="0.00" cy="10.50" r="4.6"/><circle class="ch" cx="-9.09" cy="5.25" r="4.6"/><circle class="ch" cx="-9.09" cy="-5.25" r="4.6"/><circle r="2.4" fill="#1b120b"/></svg>
@@ -211,6 +256,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bAim" class="pb" type="button" aria-pressed="false">Zielen</button>
       <button id="bFire" class="pb" type="button">Feuer</button>
       <button id="bUse" class="pb" type="button" hidden></button>
+      <button id="bUse2" class="pb" type="button" hidden></button>
     </div>
     <section id="dev" hidden aria-label="Entwickler-Werkzeuge">
       <header><b>Entwickler</b><button id="devClose" type="button" aria-label="Werkzeuge schließen">×</button></header>
@@ -220,13 +266,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow" role="group" aria-label="Zeit"><span>Zeit</span><button type="button" data-speed="0.25">¼×</button><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
       <div class="devRow" role="group" aria-label="Anzeigen"><button type="button" data-overlay="coll" aria-pressed="false">Kollision</button><button type="button" data-overlay="plats" aria-pressed="false">Böden</button><button type="button" data-overlay="seats" aria-pressed="false">Plätze</button><button type="button" data-overlay="chunks" aria-pressed="false">Zellen</button></div>
       <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
+      <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
     </section>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
   </div>
   <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
     <div class="mPanel">
       <header><b id="menuTitle">Pause</b><button id="mClose" type="button" aria-label="Weiterspielen">×</button></header>
-      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
+      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="bag">Tasche</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
       <section data-pane="game" class="mPane">
         <button id="mResume" type="button" class="mBig">Weiterspielen</button>
         <button id="mSave" type="button">Jetzt speichern</button>
@@ -235,6 +282,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
         <p id="mNote" class="mNote" role="status"></p>
         <p class="mSmall">Das Spiel speichert alle 20 Sekunden und beim Schließen von selbst, in diesem Browser.</p>
       </section>
+      <section data-pane="bag" class="mPane" hidden><p class="mMoney">Geld: <b id="mMoney"></b></p><div id="mBag"></div></section>
       <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
       <section data-pane="keys" class="mPane" hidden>
         <table class="mKeys">
@@ -242,7 +290,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
           <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
           <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
           <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Ziehen · Zielen · Feuer · Laden</td></tr>
-          <tr><th scope="row">Benutzen</th><td>E</td><td>Knopf, der an Orten erscheint</td></tr>
+          <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
+          <tr><th scope="row">Aus der Flasche trinken</th><td>T</td><td>Menü → Tasche</td></tr>
           <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
           <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
         </table>
@@ -554,6 +603,90 @@ const SETTINGS = {
   reset() { for (const s of this.SPEC) if (s.key) this.set(s.key, s.def); }
 };
 SETTINGS.load();
+
+// ==== core/save.js ====
+/* ---------- save game ----------
+   Each system that has something worth keeping registers a part: collect() returns plain data, apply(data) puts
+   it back. The whole save carries a format version; when the format changes, V goes up and migrate() converts
+   older saves step by step, so nobody loses their game with an update. Stored in this browser only. */
+const SAVE = {
+  KEY: 'polywest.save', V: 1, parts: {}, timer: 0,
+  part(name, collect, apply) { this.parts[name] = { collect, apply }; },
+  snapshot() {
+    const o = { v: this.V, at: Date.now(), parts: {} };
+    for (const [n, p] of Object.entries(this.parts)) { try { o.parts[n] = p.collect(); } catch (e) { /* skip a part that fails */ } }
+    return o;
+  },
+  raw() { return JSON.stringify(this.snapshot()); },
+  write() { try { localStorage.setItem(this.KEY, this.raw()); return true; } catch (e) { return false; } },
+  stored() { try { return localStorage.getItem(this.KEY); } catch (e) { return null; } },
+  clear() { try { localStorage.removeItem(this.KEY); } catch (e) { /* nothing to clear */ } },
+  load(raw) {
+    let o = null;
+    try { o = JSON.parse(raw); } catch (e) { return false; }
+    o = this.migrate(o);
+    if (!o) return false;
+    for (const [n, p] of Object.entries(this.parts)) if (o.parts[n] !== undefined) { try { p.apply(o.parts[n]); } catch (e) { /* keep the default */ } }
+    return true;
+  },
+  // old format -> new format, one version at a time (example for later: if (o.v === 1) { ...; o.v = 2; })
+  migrate(o) {
+    if (!o || typeof o.v !== 'number' || !o.parts || o.v > this.V) return null;
+    return o;
+  },
+  init() {
+    this.part('player', () => ({ pos: [PLAY.pos.x, PLAY.pos.y, PLAY.pos.z].map((v) => +v.toFixed(2)), yaw: +PLAY.yaw.toFixed(3), cam: +PLAY.camYaw.toFixed(3) }),
+      (d) => { PLAY.pos.set(d.pos[0], d.pos[1], d.pos[2]); PLAY.yaw = d.yaw; PLAY.camYaw = d.cam; GAIT.init = false; G.lookAt = null; });
+    this.part('gun', () => ({ ammo: GUN.ammo, reserve: GUN.reserve }), (d) => { GUN.ammo = clamp(d.ammo | 0, 0, 6); GUN.reserve = clamp(d.reserve | 0, 0, GUN.MAX); });
+    const raw = this.stored();
+    if (raw) this.load(raw);
+    // keep it fresh: now and then, and whenever the page is hidden or closed
+    const flush = () => { if (!SIT.busy()) this.write(); };
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+    window.addEventListener('pagehide', flush);
+  },
+  update(dt) { this.timer += dt; if (this.timer > 20) { this.timer = 0; if (!SIT.busy()) this.write(); } }
+};
+
+// ==== core/items.js ====
+/* ---------- things one can own, buy and use; the player's purse and bag ----------
+   Money is kept in cents. ITEMS describes each kind of thing once; INV holds what the player carries.
+   A drink is served in a vessel (glass, mug, bottle) and taken in sips; alc is what one sip adds to the blood. */
+const ITEMS = {
+  beer:    { name: 'Bier', price: 10, kind: 'drink', vessel: 'mug', sips: 3, alc: 0.045, sipT: 0.95 },
+  whiskey: { name: 'Whiskey', price: 25, kind: 'drink', vessel: 'shot', sips: 1, alc: 0.14, sipT: 0.45 },
+  water:   { name: 'Wasser', price: 5, kind: 'drink', vessel: 'glass', sips: 2, alc: -0.04, sipT: 0.8 },
+  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.1, sipT: 0.75 }
+};
+const MENU_BAR = ['beer', 'whiskey', 'water', 'bottle'];
+
+function money(c) { return '$' + (c / 100).toFixed(2); }
+function price(c) { return c < 100 ? c + ' ¢' : money(c); }
+
+const INV = {
+  money: 1000, items: {}, sips: {},     // sips: what is left in an opened bottle
+  has(id) { return (this.items[id] || 0) > 0; },
+  add(id, n) { this.items[id] = (this.items[id] || 0) + (n || 1); if (ITEMS[id].kind === 'carry' && this.sips[id] === undefined) this.sips[id] = ITEMS[id].sips; },
+  remove(id) { if (!this.has(id)) return false; this.items[id]--; if (!this.items[id]) { delete this.items[id]; delete this.sips[id]; } return true; },
+  pay(c) { if (this.money < c) return false; this.money -= c; TOAST.show('−' + price(c), 'money'); return true; },
+  // one sip from a carried bottle; the empty bottle is thrown away
+  sipFrom(id) { if (!this.has(id)) return false; this.sips[id] = (this.sips[id] ?? ITEMS[id].sips) - 1; if (this.sips[id] <= 0) { this.remove(id); TOAST.show('Die Flasche ist leer.'); } return true; }
+};
+SAVE.part('inv', () => ({ money: INV.money, items: INV.items, sips: INV.sips }),
+  (d) => { INV.money = Math.max(0, d.money | 0); INV.items = {}; INV.sips = {}; for (const k in d.items || {}) if (ITEMS[k]) INV.items[k] = d.items[k] | 0; for (const k in d.sips || {}) if (ITEMS[k]) INV.sips[k] = d.sips[k] | 0; });
+
+/* short messages at the top of the screen: money spent, a bottle empty, what happened while you were out */
+const TOAST = {
+  show(text, kind) {
+    const box = document.getElementById('toasts');
+    if (!box) return;
+    const el = document.createElement('div'); el.className = 'toast' + (kind ? ' ' + kind : ''); el.textContent = text;
+    box.appendChild(el);
+    while (box.children.length > 3) box.firstChild.remove();
+    setTimeout(() => el.classList.add('out'), kind === 'long' ? 5200 : 2400);
+    setTimeout(() => el.remove(), kind === 'long' ? 6000 : 3200);
+  }
+};
 
 // ==== world/terrain.js ====
 /* ---------- terrain: a stretched grid (4 m cells near town, growing towards the horizon) ---------- */
@@ -1767,12 +1900,24 @@ function at(mb, x, y, z, ry, fn) { mb.push(new THREE.Matrix4().makeTranslation(x
    x, z in the current building matrix; facing = the matrix' +z. kind decides the pose (see SIT_KINDS). */
 const SEATS = [];
 const SEATCTX = { R: null };
-function seatHere(mb, x, z, kind, opt) {
-  const v = new THREE.Vector3(x, 0, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
+// a point (x, y, z) of the piece being built, and its +z direction, in world space
+function builtToWorld(mb, x, y, z) {
+  const v = new THREE.Vector3(x, y, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
   const R = SEATCTX.R;
   let wx = v.x, wz = v.z, dx = d.x, dz = d.z;
   if (R) { const p = rwp(R, v.x, v.y, v.z); wx = p.x; wz = p.z; const ex = dx * R.c + dz * R.s, ez = -dx * R.s + dz * R.c; dx = ex; dz = ez; }
-  SEATS.push(Object.assign({ x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), kind, room: R }, opt || {}));
+  return { x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), room: R };
+}
+function seatHere(mb, x, z, kind, opt) {
+  const w = builtToWorld(mb, x, 0, z);
+  SEATS.push(Object.assign({ x: w.x, y: w.y, z: w.z, yaw: w.yaw, kind, room: w.room }, opt || {}));
+}
+/* a bar counter one can order at: its front edge from x0 to x1 at z (piece frame, customers on the -z side), top at y */
+const COUNTERS = [];
+function counterHere(mb, x0, x1, z, y, opt) {
+  const a = builtToWorld(mb, x0, 0, z), b = builtToWorld(mb, x1, 0, z), f = builtToWorld(mb, 0, 0, 0);
+  // f.yaw points into the bar (+z of the piece); customers face that way
+  COUNTERS.push(Object.assign({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y: a.y, top: y, yaw: f.yaw, room: a.room }, opt || {}));
 }
 function rot90(ry, hx, hz) { return Math.abs(Math.sin(ry)) > 0.5 ? [hz, hx] : [hx, hz]; }
 function chair(mb, col) {
@@ -1930,6 +2075,7 @@ const FURNISH = {
       mb.box(0, 0.12, -0.5, 7.4, 0.05, 0.05, IC.brass, 0);
       for (let i = 0; i < 6; i++) mb.box(-3.3 + i * 1.32, 0, -0.5, 0.04, 0.14, 0.04, IC.brass, 0);
       mb.box(0, 1.07, -0.5, 7.48, 0.06, 0.16, rgb(0x3e2416), 2);
+      counterHere(mb, -3.6, 3.6, -0.5, 1.13, { name: 'saloon' });   // customers stand on the -z side
     });
     rColl(R, 3.15, 4.05, -10.2, -2.8, 1.2);
     for (let i = 0; i < 7; i++) at(mb, 2.66, F, -3.45 - i * 0.92, Math.PI / 2, () => stool(mb, rgb(0x5a3422), { bar: { z: 0.44, y: 1.13 } }));
@@ -2071,12 +2217,14 @@ const FURNISH = {
     place(mb, R, [
       ['table', -1.6, -3.6, 0, { w: 1.5, box: [-2.4, -0.8, -4.0, -3.2, 0.8] }],                 // the sheriff's desk
       ['chair', -1.6, -4.3, 0],
-      ['bars', 1.9, -5.4, 0, { len: 3.9, box: [0, x1, -5.45, -5.35, 3] }],                      // jail cell
+      ['bars', 2.5, -5.4, 0, { len: 2.7, box: [1.15, x1, -5.45, -5.35, 3] }],                   // jail cell, its door stands open
       ['bars', 0.15, -6.9, Math.PI / 2, { len: 3.0, box: [0.1, 0.2, z0, -5.4, 3] }],
       ...[0, 1, 2, 3].map((i) => ['poster', x0 + 0.05, -1.6 - i * 0.7, Math.PI / 2, { y: 1.5 + (i % 2) * 0.1 }]),
       ['stove', -2.9, -6.8, 0, { circle: 0.38 }],
       ['lantern', -1.6, -3.6, 0, { len: 0.8 }], ['lantern', 2.0, -7.0, 0, { len: 0.8 }]
     ], rnd);
+    at(mb, 1.15, F, -5.4, 1.35, () => { at(mb, -0.45, 0, 0, 0, () => bars(mb, 0.9, 2.3, 0.05)); mb.box(-0.88, 1.0, 0, 0.06, 0.12, 0.08, IC.iron, 0); });
+    rCircle(R, 0.98, -4.5, 0.08);
     // one-offs: things on the desk, bunk and bucket in the cell, gun rack, coffee pot, filing cabinet
     at(mb, -1.6, F, -3.6, 0, () => { mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
     mb.box(2.9, F + 0.4, -7.9, 1.8, 0.08, 0.7, IC.oak, 2); mb.box(2.9, F + 0.48, -7.9, 1.7, 0.1, 0.6, rgb(0x6a6a5a), 9);
@@ -2879,7 +3027,7 @@ function updateGait() {
     g.init = true;
   }
   // sitting: the seat has the whole pose
-  if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
+  if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   const sp = Math.hypot(PLAY.vx, PLAY.vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));
   const s = g.s;
@@ -3017,6 +3165,7 @@ function updateGait() {
     acc: clamp(g.acc * 0.03, -0.16, 0.2),
     smooth: 1 - Math.exp(-dt * lerp(13, 20, k))
   });
+  DRUNK.pose(P);
   // keep stance legs within reach: lower the pelvis if needed (downhill, long strides)
   const R = RIG.thigh + RIG.shin - 0.012;
   for (let i = 0; i < 2; i++) {
@@ -3039,7 +3188,7 @@ function updateGait() {
   }
   P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
   PLAY.phase = g.phase * TAU;
-  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); }
+  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
   applyPose(ch);
 }
 
@@ -3350,6 +3499,7 @@ function assembleScene() {
   scene.add(W.ch.root);
   buildInteriors(scene);
   GUN.init(scene);
+  GLASS.init(scene);
   // blob shadow
   const blobGeo = new THREE.PlaneGeometry(1, 1); blobGeo.rotateX(-Math.PI / 2);
   W.blob = new THREE.Mesh(blobGeo, G.blobMat); W.blob.layers.enable(2); W.blob.renderOrder = 1; W.blob.frustumCulled = false;
@@ -3491,6 +3641,8 @@ function updatePlayer(dt) {
   const yaw = PLAY.camYaw;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
+  [mx, mz] = DRUNK.steer(mx, mz);
+  if (DRUNK.out || SHOP.open) { mx = mz = 0; mag = 0; }
   const ml = Math.hypot(mx, mz);
   if (ml > 1e-4) { mx /= ml; mz /= ml; }
   PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
@@ -3499,6 +3651,8 @@ function updatePlayer(dt) {
   if (aiming) target = Math.min(target, WALK * 0.8);
   const punching = FIST.st !== 'idle';
   if (punching) target = Math.min(target, WALK * 0.5);
+  if (DRINK.busy()) target = Math.min(target, WALK * 0.55);
+  target *= DRUNK.maxSpeed();
   const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
   PLAY.vx += (mx * target - PLAY.vx) * a;
   PLAY.vz += (mz * target - PLAY.vz) * a;
@@ -3607,7 +3761,7 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('lostpointercapture', end);
   // mouse: right button aims (pointer lock if the page allows it), left button fires
   canvas.addEventListener('mousedown', (e) => {
-    if (SIT.busy() || DEV.fly || MENU.open) return;
+    if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || DRINK.busy() || DRUNK.out) return;
     if (e.button === 2) {
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
@@ -3623,6 +3777,8 @@ function initInput(app, canvas, onAction) {
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
+    if (DRUNK.out) return;
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
     if (MENU.open) return;
@@ -3630,8 +3786,10 @@ function initInput(app, canvas, onAction) {
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
-    if (k === 'e' && !e.repeat) { INTERACT.use(); onAction('use'); return; }
-    if (SIT.busy() && (k === 'q' || k === 'r' || k === 'f')) return;
+    if (k === 'e' && !e.repeat) { INTERACT.use(0); onAction('use'); return; }
+    if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
+    if (k === 't' && !e.repeat) { if (INV.has('bottle')) DRINK.start('bottle'); else TOAST.show('Du hast keine Flasche dabei.'); return; }
+    if ((SIT.busy() || DRINK.busy()) && (k === 'q' || k === 'r' || k === 'f')) return;
     if (k === 'q' && !e.repeat) { GUN.toggleHolster(); onAction('gun'); return; }
     if (k === 'r' && !e.repeat) { GUN.pressReload(); onAction('gun'); return; }
     if (k === 'f' && !e.repeat) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); onAction('fire'); return; }
@@ -3679,7 +3837,8 @@ function pollGamepad(onAction) {
   if (b(9) && !prev[9]) MENU.toggle();
   if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); return; }
   if (b(8) && !prev[8]) onAction('sound');
-  if (b(3) && !prev[3]) INTERACT.use();
+  if (b(3) && !prev[3]) INTERACT.use(0);
+  if (b(1) && !prev[1]) INTERACT.use(1);
   if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
   if (b(6) !== !!prev[6]) GUN.setAim(b(6));
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
@@ -3771,6 +3930,7 @@ function updateCamera(dt) {
     PLAY.camPush.multiplyScalar(Math.exp(-dt * 11));
   }
   cam.lookAt(lookT);
+  DRUNK.camera(cam);
   const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) : cam.fov;
   if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
   cam.updateMatrixWorld();
@@ -3801,6 +3961,135 @@ function aimCamera(R) {
   if (pos.y < gy) pos.y = gy;
   return { pos, look: piv.clone().addScaledVector(v, 20) };
 }
+
+// ==== play/drunk.js ====
+/* ---------- drunkenness ----------
+   A sip puts alcohol in the stomach; from there it goes into the blood over half a minute and leaves it slowly
+   (one whiskey takes a couple of minutes). The level in the blood (0 sober, 0.3 tipsy, 0.6 drunk, 1 out cold)
+   sways the body, the view and the aim, lets the feet wander and stumble, and brings the hiccups.
+   At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
+const DRUNK = {
+  level: 0, stomach: 0, t: 0, hicT: 12, stumbleT: 4, out: null, sway: new THREE.Vector2(),
+  drink(alc) {
+    if (alc < 0) { this.level = Math.max(0, this.level + alc); return; }   // water helps a little
+    this.stomach += alc;
+  },
+  update(dt) {
+    this.t += dt;
+    // stomach -> blood (half of it within ~20 s), blood -> gone (slowly, faster when it is a lot)
+    const absorb = this.stomach * (1 - Math.exp(-dt / 28));
+    this.stomach -= absorb; this.level += absorb;
+    this.level = Math.max(0, this.level - dt * (0.0011 + this.level * 0.0009));
+    const L = this.level, t = this.t;
+    // a slow wandering sway the body and camera share
+    this.sway.set(Math.sin(t * 0.83) * 0.7 + Math.sin(t * 2.1 + 1) * 0.3, Math.sin(t * 0.61 + 2) * 0.6 + Math.sin(t * 1.7) * 0.4);
+    if (L > 0.25 && !SIT.busy() && !MENU.open) {
+      // hiccups
+      this.hicT -= dt;
+      if (this.hicT <= 0) { this.hicT = 5 + Math.random() * 14 / L; this.hiccup(); }
+      // now and then the legs do not quite do what they should
+      if (PLAY.speed > 0.6 && L > 0.4) {
+        this.stumbleT -= dt * (L - 0.3);
+        if (this.stumbleT <= 0) {
+          this.stumbleT = 1.5 + Math.random() * 3;
+          const a = PLAY.yaw + (Math.random() < 0.5 ? 1 : -1) * (0.9 + Math.random() * 0.8), f = 1.2 + L * 1.6;
+          PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
+          FSFX.cloth();
+        }
+      }
+    }
+    // a drunk hand does not hold the revolver still
+    if (L > 0.05 && GUN.camW > 0.3) {
+      PLAY.camYaw += Math.cos(t * 0.9) * L * 0.18 * dt + Math.cos(t * 2.3) * L * 0.08 * dt;
+      PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.1 * dt;
+    }
+    const v = document.getElementById('drunkFx');
+    if (v) { const o = clamp((L - 0.15) * 0.9, 0, 0.6); if (Math.abs(o - (this.fxO || 0)) > 0.01) { this.fxO = o; v.style.opacity = o.toFixed(2); } }
+    if (L >= 1 && !this.out) this.blackout();
+    if (this.out) this.updateBlackout(dt);
+  },
+  // steering: the way you want to go, turned a little this way and that
+  steer(mx, mz) {
+    const L = this.level;
+    if (L < 0.05) return [mx, mz];
+    const a = this.sway.x * L * 0.55, c = Math.cos(a), s = Math.sin(a);
+    return [mx * c + mz * s, -mx * s + mz * c];
+  },
+  maxSpeed() { return 1 - clamp(this.level - 0.3, 0, 0.6) * 0.45; },
+  // the body: sway, a heavy head, loose shoulders (called after the gait or the seat has posed it)
+  pose(P) {
+    const L = Math.min(this.level, 1);
+    if (L < 0.02) return;
+    const sx = this.sway.x, sy = this.sway.y, seated = SIT.owns();
+    P.spRoll += sx * 0.09 * L * (seated ? 0.7 : 1);
+    P.pelRoll += sx * 0.03 * L * (seated ? 0 : 1);
+    if (!seated) P.pel.x += sx * 0.035 * L;
+    P.spPitch += (0.04 + sy * 0.03) * L;
+    P.hdPitch += (0.12 + Math.sin(this.t * 0.4) * 0.06) * L;
+    P.hdRoll = (P.hdRoll || 0) - sx * 0.14 * L;
+    P.hdYaw += sy * 0.12 * L;
+  },
+  // the view: the horizon tilts and the camera lags and drifts
+  camera(cam) {
+    const L = Math.min(this.level, 1);
+    if (L < 0.02) return;
+    cam.position.x += this.sway.y * 0.12 * L; cam.position.y += this.sway.x * 0.06 * L;
+    cam.rotateZ(this.sway.x * 0.07 * L);
+  },
+  hiccup() {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.4, PLAY.pos);
+      const o = c.createOscillator(), og = c.createGain();
+      o.type = 'triangle'; o.frequency.setValueAtTime(260, t); o.frequency.exponentialRampToValueAtTime(620, t + 0.06); o.frequency.exponentialRampToValueAtTime(380, t + 0.13);
+      og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.18, t + 0.015); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.connect(og); og.connect(g); o.start(t); o.stop(t + 0.18);
+      SFX.noiseHit(t, g, { freq: 1400, q: 1.2, gain: 0.12, attack: 0.005, decay: 0.05 });
+    });
+    PLAY.camShake = Math.max(PLAY.camShake, 0.03);
+    this.hicPose = 0.25;
+  },
+
+  /* ---- out cold: fade to black, wake up somewhere ---- */
+  blackout() {
+    this.out = { t: 0, phase: 'fade', where: null };
+    GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
+    DRINK.cancel();
+    worldEvent('passout', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
+  },
+  updateBlackout(dt) {
+    const O = this.out, el = document.getElementById('blackout');
+    O.t += dt;
+    if (O.phase === 'fade') {
+      el.hidden = false; el.style.opacity = clamp(O.t / 1.6, 0, 1).toFixed(2);
+      PLAY.vx *= Math.exp(-dt * 3); PLAY.vz *= Math.exp(-dt * 3);
+      if (O.t >= 2.2) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
+    } else if (O.phase === 'dark') {
+      if (O.t >= 1.4) { O.phase = 'wake'; O.t = 0; }
+    } else {
+      el.style.opacity = clamp(1 - O.t / 2.5, 0, 1).toFixed(2);
+      if (O.t >= 2.5) { el.hidden = true; this.out = null; }
+    }
+  },
+  wakeSomewhere() {
+    if (SIT.busy()) SIT.cancel();
+    const R = (type) => ROOMS.find((r) => r.type === type);
+    const spots = [
+      { text: 'Du wachst in der Zelle des Sheriffs auf. Die Tür steht offen. Zum Glück.', go: () => { const r = R('sheriff'), p = rwp(r, 1.9, r.floorY, -6.9); return { p, yaw: r.ry }; } },
+      { text: 'Du wachst im Heu des Mietstalls auf. Es riecht nach Pferd.', go: () => { const r = R('livery'), p = rwp(r, 0.2, r.floorY, -9.2); return { p, yaw: r.ry + Math.PI }; } },
+      { text: 'Du wachst auf der Bank vor dem Saloon auf.', seat: () => INTERACT.items.find((s) => s.verb === 'sit' && !s.room && s.x < -18 && s.x > -26) },
+      { text: 'Du wachst in einer Kirchenbank auf. Der Herr sieht alles.', seat: () => INTERACT.items.find((s) => s.kind === 'pew' && !s.occ) }
+    ];
+    const w = spots[Math.floor(Math.random() * spots.length)];
+    if (w.seat && w.seat()) SIT.warp(w.seat());
+    else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; }
+    this.level = 0.3; this.stomach = 0;
+    const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
+    INV.money -= lost;
+    TOAST.show(w.text, 'long');
+    if (lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(lost) + ').', 'long'), 1800);
+  }
+};
+SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.95); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); });
 
 // ==== audio/sfx.js ====
 /* ---------- footstep sounds, synthesised with Web Audio (no sound files) ----------
@@ -4415,7 +4704,7 @@ const GUN = {
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
   setAim(on) {
-    if (on && SIT.busy()) return;
+    if (on && (SIT.busy() || DRINK.busy() || DRUNK.out)) return;
     this.wantAim = on;
     if (on) {
       if (this.state === 'holster') this.startDraw();
@@ -4424,7 +4713,7 @@ const GUN = {
     }
   },
   pressFire() {
-    if (SIT.busy()) return;
+    if (SIT.busy() || DRINK.busy() || DRUNK.out) return;
     if (this.state === 'holster') { this.startDraw(); return; }
     if (this.state === 'holstering') return;
     if (this.reload) { if (this.ammo > 0) this.reload.stop = true; else return; }
@@ -4554,7 +4843,7 @@ const GUN = {
     const moveS = Math.hypot(PLAY.vx, PLAY.vz);
     if (this.camW > 0.8 && moveS < 0.3 && this.wantAim) this.steady = Math.min(1, this.steady + dt * 1.1);
     else this.steady = Math.max(0, this.steady - dt * 3);
-    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012;
+    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
     this.spread += (base - this.spread) * (1 - Math.exp(-dt * 7));
     const b = this.bestBottle(0.03, 60); this.aimDist = b ? b.dist : 25;
     let mz = null;
@@ -4934,7 +5223,7 @@ const FIST = {
   fists: null, from: null, body: { ty: 0, tp: 0, pz: 0, dy: 0, roll: 0 }, bodyFrom: null, trail: [], trailT: 0,
   active() { return this.st !== 'idle' || this.fight > 0; },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.out) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;
@@ -5216,7 +5505,7 @@ const SIT_KINDS = {
 };
 
 const INTERACT = {
-  items: [], grid: new Grid(4), focus: null, label: '',
+  items: [], wide: [], grid: new Grid(4), focus: null, acts: [], key: '',
   add(it) { it.id = this.items.length; this.items.push(it); return this.grid.add(it); },
   near(x, z, r) { return this.grid.near(x, z, r); },
   init() {
@@ -5233,13 +5522,20 @@ const INTERACT = {
         if (sides.length) { it.sides = sides; it.sideD = 0.45; it.sx = it.x - it.fx * 0.02; it.sz = it.z - it.fz * 0.02; }
       } else { it.sides = [1, -1]; it.sideD = it.k.side; }
     }
-    this.el = document.getElementById('prompt'); this.txt = document.getElementById('promptTxt'); this.btn = document.getElementById('bUse');
-    this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.btn.classList.add('down'); this.use(); });
-    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.btn.addEventListener(ev, () => this.btn.classList.remove('down'));
+    // long things (bar counters) are checked by distance to their whole length, not through the grid
+    for (const C of COUNTERS) this.wide.push(Object.assign(makeCounter(C), { id: 'bar' + this.wide.length }));
+    const $ = (id) => document.getElementById(id);
+    this.ui = [{ row: $('prompt1'), txt: $('promptTxt'), btn: $('bUse') }, { row: $('prompt2'), txt: $('promptTxt2'), btn: $('bUse2') }];
+    this.ui.forEach((u, i) => {
+      u.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); u.btn.classList.add('down'); this.use(i); });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) u.btn.addEventListener(ev, () => u.btn.classList.remove('down'));
+    });
   },
-  use() {
-    if (SIT.state === 'sit') { SIT.stand(); return; }
-    if (SIT.state === 'none' && this.focus) this.focus.use();
+  // E (pad Y, the first button) does the first thing on offer, R (pad B, the second button) the second
+  use(i) {
+    const a = this.acts[i || 0];
+    if (a) { a.run(); this.update(true); return true; }
+    return false;
   },
   // a straight walk from a to b must not lead through furniture (tables between you and a chair, say)
   clear(ax, az, bx, bz, y) {
@@ -5250,26 +5546,36 @@ const INTERACT = {
     }
     return true;
   },
-  update() {
+  update(force) {
     if (this.seated !== SIT.busy()) { this.seated = SIT.busy(); document.getElementById('app').classList.toggle('seated', this.seated); }
-    let best = null, label = '';
-    if (SIT.state === 'sit') { best = SIT.seat; label = 'Aufstehen'; }
-    else if (SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && this.focus.verb && !this.focus.occ) return;   // the search runs every third frame
-    else if (SIT.state === 'none' && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
+    let best = null, acts = [];
+    const free = !DRINK.busy() && !SHOP.open && !DRUNK.out;
+    if (SIT.state === 'sit') {
+      best = SIT.seat;
+      if (free) acts = (best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best) : []).concat([{ label: 'Aufstehen', run: () => SIT.stand() }]);
+    } else if (!force && SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && !this.focus.occ && free) return;   // the search runs every third frame
+    else if (SIT.state === 'none' && free && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
       const p = PLAY.pos, room = ROOMSTATE.cur;
-      let bs = 1e9;
-      for (const it of this.near(p.x, p.z, 2.2)) {
+      const cand = [];
+      for (const it of this.near(p.x, p.z, 2.2).concat(this.wide)) {
         if (it.room !== room || it.occ || Math.abs(it.y - p.y) > 0.6) continue;
         const s = it.score(p);
-        if (s < bs) { bs = s; best = it; }
+        if (s < 1e8) cand.push([s, it]);
       }
-      if (best) label = best.label;
+      cand.sort((a, b) => a[0] - b[0]);
+      best = cand.length ? cand[0][1] : null;
+      const sc = best && cand.find((c) => c[1].verb !== best.verb), second = sc ? sc[1] : null;
+      const of = (it) => (it.actions ? it.actions(p) : [{ label: it.label, run: () => it.use() }]);
+      if (best) acts = of(best);
+      // something else of another kind close by (the bar, while a stool is in focus) gets the second key
+      if (second && acts.length < 2 && second.verb !== best.verb) acts = acts.concat(of(second).slice(0, 1));
     }
-    this.focus = best;
-    if (label !== this.label) {
-      this.label = label;
-      this.el.hidden = !label; this.txt.textContent = label;
-      this.btn.hidden = !label; this.btn.textContent = label;
+    this.focus = best; this.acts = acts;
+    const key = acts.map((a) => a.label).join('|');
+    if (key !== this.key) {
+      this.key = key;
+      this.ui.forEach((u, i) => { const a = acts[i]; u.row.hidden = !a; u.btn.hidden = !a; if (a) { u.txt.textContent = a.label; u.btn.textContent = a.label; } });
+      document.getElementById('prompt').hidden = !acts.length;
     }
   }
 };
@@ -5318,6 +5624,15 @@ const SIT = {
     FIST.fight = 0; FIST.queued = false; FIST.holding = false;
     this.seat = seat; seat.occ = 'player'; this.state = 'approach'; this.t = 0;
     [this.sx, this.sz] = seat.spot(PLAY.pos);
+  },
+  // put the player straight onto a seat, already sitting (waking up there, loading a game)
+  warp(seat) {
+    if (this.seat) this.seat.occ = null;
+    this.seat = seat; seat.occ = 'player'; [this.sx, this.sz] = seat.spot(PLAY.pos);
+    PLAY.pos.set(seat.x, seat.y, seat.z); PLAY.yaw = seat.yaw; PLAY.camYaw = seat.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; G.lookAt = null;
+    const k = seat.k;
+    for (let i = 0; i < 2; i++) { const s = i === 0 ? 1 : -1; this.seatW(s * k.footW, k.footY, k.foot, this.feetTo[i]); this.feetFrom[i].copy(this.feetTo[i]); }
+    this.state = 'sit'; this.t = 0; this.w = 1;
   },
   cancel() { if (this.seat) this.seat.occ = null; this.seat = null; this.state = 'none'; this.w = 0; },
   stand() {
@@ -5479,6 +5794,278 @@ function legKnee(H, A, out) {
   _lp.set(0, 0, 1).addScaledVector(_lk, -_lk.z).normalize();
   return out.copy(H).addScaledVector(_lk, cosA * L1).addScaledVector(_lp, sinA * L1);
 }
+
+// ==== interact/drink.js ====
+/* ---------- drinking: ordering at a bar, the glass sliding along the counter, taking a sip ----------
+   GLASS is the one drink served to the player (on the counter, or in the hand). DRINK animates the right arm:
+   reach for the glass (or the bottle at the hip), lift it to the mouth, tip it, put it back, let go.
+   Bars are COUNTERS registered by the interiors; SHOP is the little order list. */
+
+/* vessels: built once, origin at the bottom centre; full and empty versions */
+const VESSEL = {
+  shot:   { h: 0.062, grip: 0.03, tilt: 1.9 },
+  mug:    { h: 0.125, grip: 0.06, tilt: 1.25 },
+  glass:  { h: 0.105, grip: 0.05, tilt: 1.15 },
+  bottle: { h: 0.263, grip: 0.08, tilt: 1.75 },
+  geo: {},
+  build() {
+    const G0 = rgb(0xc9dcdc), whisky = rgb(0xb8762a), beer = rgb(0xd99a2c), foam = rgb(0xf3ead6), water = rgb(0xa9cdd8);
+    const make = (fn) => { const mb = new MB(); fn(mb); return mb.build(); };
+    for (const full of [true, false]) {
+      this.geo['shot' + full] = make((mb) => { mb.cyl(0, 0, 0, 0.026, 0.031, 0.062, 8, G0, 0, { bottom: true }); if (full) mb.cyl(0, 0.006, 0, 0.027, 0.029, 0.042, 8, whisky, 0); });
+      this.geo['mug' + full] = make((mb) => {
+        mb.cyl(0, 0, 0, 0.042, 0.044, 0.125, 9, G0, 0, { bottom: true });
+        mb.box(0.052, 0.025, 0, 0.018, 0.075, 0.016, G0, 0); mb.box(0.042, 0.095, 0, 0.03, 0.014, 0.016, G0, 0); mb.box(0.042, 0.022, 0, 0.03, 0.014, 0.016, G0, 0);
+        if (full) { mb.cyl(0, 0.008, 0, 0.043, 0.044, 0.095, 9, beer, 0); mb.cyl(0, 0.103, 0, 0.045, 0.046, 0.026, 9, foam, 0); }
+      });
+      this.geo['glass' + full] = make((mb) => { mb.cyl(0, 0, 0, 0.03, 0.035, 0.105, 8, G0, 0, { bottom: true }); if (full) mb.cyl(0, 0.006, 0, 0.031, 0.034, 0.075, 8, water, 0); });
+      this.geo['bottle' + full] = make((mb) => {
+        const glassC = rgb(0x5a3e1c);
+        mb.cyl(0, 0, 0, 0.036, 0.036, 0.15, 8, glassC, 0, { bottom: true });
+        mb.cyl(0, 0.15, 0, 0.036, 0.015, 0.045, 8, glassC, 0, { noTop: true });
+        mb.cyl(0, 0.195, 0, 0.015, 0.015, 0.05, 6, glassC, 0);
+        mb.cyl(0, 0.245, 0, 0.012, 0.012, 0.018, 6, rgb(0xb89a6a), 0);
+        mb.box(0, 0.04, 0.03, 0.05, 0.07, 0.012, rgb(0xeee2c6), 0);
+      });
+    }
+  }
+};
+
+const GLASS = {
+  obj: null, mesh: null, bottle: null, m: new THREE.Matrix4(), bm: new THREE.Matrix4(), q: new THREE.Matrix4(), farT: 0,
+  init(scene) {
+    VESSEL.build();
+    const mk = (geo) => { const m = new THREE.Mesh(geo, G.litMat); m.matrixAutoUpdate = false; m.visible = false; m.frustumCulled = false; m.layers.enable(2); scene.add(m); return m; };
+    this.mesh = mk(VESSEL.geo.shottrue);       // the served drink
+    this.bottle = mk(VESSEL.geo.bottletrue);   // a bottle from the bag, only while drinking from it
+  },
+  // a fresh drink slides along the counter from its far end to `to`
+  serve(id, counter, to) {
+    const it = ITEMS[id], ax = counter.ax, az = counter.az, bx = counter.bx, bz = counter.bz;
+    const da = Math.hypot(to.x - ax, to.z - az), db = Math.hypot(to.x - bx, to.z - bz);
+    const [sx, sz] = da > db ? [ax, az] : [bx, bz], L = Math.max(da, db) || 1;
+    const fx = Math.sin(counter.yaw), fz = Math.cos(counter.yaw);
+    const from = new THREE.Vector3(sx + ((to.x - sx) / L) * 0.3 + fx * 0.1, to.y, sz + ((to.z - sz) / L) * 0.3 + fz * 0.1);
+    this.obj = { id, it, left: it.sips, from, pos: from.clone(), to: to.clone(), slideT: 0, slideDur: 0.4 + from.distanceTo(to) / 3.2, held: false, tilt: 0, yaw: counter.yaw + Math.PI, room: counter.room };
+    this.mesh.geometry = VESSEL.geo[it.vessel + 'true'];
+    this.mesh.visible = true; this.farT = 0;
+    this.slideSound(this.obj.slideDur);
+  },
+  ready() { const o = this.obj; return o && !o.held && o.slideT >= o.slideDur && o.left > 0; },
+  clear() { if (DRINK.src === 'glass' && DRINK.st !== 'idle') DRINK.cancel(); this.obj = null; this.mesh.visible = false; },
+  update(dt) {
+    const o = this.obj;
+    if (!o) return;
+    if (o.slideT < o.slideDur) {
+      o.slideT = Math.min(o.slideDur, o.slideT + dt);
+      const u = 1 - Math.pow(1 - o.slideT / o.slideDur, 2.2);
+      o.pos.lerpVectors(o.from, o.to, u);
+      if (o.slideT >= o.slideDur) this.clink(0.6);
+    }
+    // left behind: gone after a while (taken away)
+    const d = Math.hypot(PLAY.pos.x - o.to.x, PLAY.pos.z - o.to.z);
+    this.farT = d > 5 ? this.farT + dt : 0;
+    if (this.farT > 6) { this.clear(); return; }
+    if (!o.held) { this.m.makeRotationY(o.yaw); this.m.setPosition(o.pos); }
+    this.mesh.matrix.copy(this.m); this.mesh.matrixWorldNeedsUpdate = true;
+    this.mesh.material = W.ch.parts[0].material;
+    this.mesh.visible = !o.room || o.room.mesh.visible;
+  },
+  slideSound(dur) {
+    GSFX.run(() => { const { g, t } = GSFX.out(0.35, this.obj.from); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.6, gain: 0.05, attack: 0.05, decay: dur * 0.8 }); });
+  },
+  clink(k) {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.35 * k, this.obj ? this.obj.pos : PLAY.pos);
+      for (const f of [2350, 3720]) { const o = c.createOscillator(), og = c.createGain(); o.frequency.value = f * (0.97 + Math.random() * 0.06); og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.06, t + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(og); og.connect(g); o.start(t); o.stop(t + 0.2); }
+      SFX.noiseHit(t, g, { type: 'highpass', freq: 3000, q: 0.7, gain: 0.04, attack: 0.001, decay: 0.02 });
+    });
+  }
+};
+
+/* ---- the drinking arm ---- */
+const DRINK = {
+  st: 'idle', t: 0, src: null, it: null, w: 0, from: new THREE.Vector3(), hand: new THREE.Vector3(), tip: 0, queued: null,
+  _a: new THREE.Vector3(), _b: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
+  PH: { reach: 0.42, lift: 0.45, lower: 0.42, back: 0.35 },
+  busy() { return this.st !== 'idle' || !!this.queued; },
+  // src: 'glass' (the served one) or 'bottle' (from the bag)
+  start(src) {
+    if (this.busy() || DRUNK.out) return false;
+    if (src === 'glass' && !GLASS.ready()) return false;
+    if (src === 'bottle' && !INV.has('bottle')) return false;
+    FIST.fight = 0; FIST.queued = false;
+    if (GUN.state !== 'holster') { if (GUN.state === 'drawn' || GUN.state === 'reload') GUN.toggleHolster(); this.queued = src; return true; }
+    this.src = src; this.it = src === 'glass' ? GLASS.obj.it : ITEMS.bottle;
+    this.st = 'reach'; this.t = 0; this.tip = 0; this.fromSet = false;
+    return true;
+  },
+  cancel() { if (this.src === 'glass' && GLASS.obj) { GLASS.obj.held = false; } this.st = 'idle'; this.queued = null; this.w = 0; this.bottleOut = false; },
+  update(dt) {
+    if (this.queued && GUN.state === 'holster') { const s = this.queued; this.queued = null; this.start(s); }
+    if (this.st === 'idle') return;
+    if (this.src === 'glass' && !GLASS.obj) { this.cancel(); return; }
+    this.t += dt;
+    const dur = this.st === 'sip' ? this.it.sipT : this.PH[this.st];
+    if (this.t < dur) return;
+    this.t -= dur;
+    if (this.st === 'reach') { this.st = 'lift'; if (this.src === 'glass') GLASS.obj.held = true; else this.bottleOut = true; }
+    else if (this.st === 'lift') { this.st = 'sip'; this.gulp(); }
+    else if (this.st === 'sip') {
+      this.st = 'lower';
+      DRUNK.drink(this.it.alc);
+      worldEvent('drink', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: this.src === 'glass' ? GLASS.obj.id : 'bottle' });
+      if (this.src === 'glass') { GLASS.obj.left--; if (GLASS.obj.left <= 0) GLASS.mesh.geometry = VESSEL.geo[GLASS.obj.it.vessel + 'false']; }
+      else INV.sipFrom('bottle');
+      if (this.it.alc > 0.1) this.exhale();
+    } else if (this.st === 'lower') { this.st = 'back'; if (this.src === 'glass') { GLASS.obj.held = false; GLASS.clink(1); } else this.bottleOut = false; }
+    else { this.st = 'idle'; this.w = 0; }
+  },
+  // where things are, in character space
+  restSpot(out) {
+    if (this.src === 'glass') return SIT.toChar(this._p.copy(GLASS.obj.pos).setY(GLASS.obj.pos.y + VESSEL[GLASS.obj.it.vessel].grip), out);
+    return out.set(-0.24, W.ch.pose.pel.y - 0.04, 0.12);   // the bottle comes from the right hip
+  },
+  // the hand, so that the rim of the tipped vessel touches the lips
+  mouth(out, V) {
+    out.set(0, RIG.neckY + 0.085, 0.16).applyMatrix4(AIK.tor);
+    const up = V.h - V.grip;
+    return out.set(out.x, out.y - up * Math.cos(this.tip), out.z + up * Math.sin(this.tip));
+  },
+  /* called after the body is posed: the right hand follows the drink */
+  pose(P, dt) {
+    if (this.st === 'idle') return;
+    if (this.src === 'glass' && !GLASS.obj) { this.cancel(); return; }
+    if (!this.fromSet) { this.from.set(0, -0.3, 0.02).applyMatrix4(W.ch.p.fArmR.matrix); this.fromSet = true; }
+    torsoInverse(P); AIK.ready = true;
+    const e = (x) => x * x * (3 - 2 * x), u = e(clamp(this.t / (this.st === 'sip' ? this.it.sipT : this.PH[this.st]), 0, 1));
+    const V = VESSEL[this.it.vessel], rest = this.restSpot(this._a), mouth = this.mouth(this._b, V);
+    let w = 1, tipGoal = 0, headBack = 0;
+    if (this.st === 'reach') { this.hand.lerpVectors(this.from, rest, u); w = u; }
+    else if (this.st === 'lift') { this.hand.lerpVectors(rest, mouth, u); tipGoal = 0.25 * u; }
+    else if (this.st === 'sip') { this.hand.copy(mouth); this.hand.y += 0.02 * Math.sin(Math.PI * u); tipGoal = 0.25 + (V.tilt - 0.25) * Math.sin(Math.PI * Math.min(1, u * 1.15)); headBack = Math.sin(Math.PI * u); }
+    else if (this.st === 'lower') { this.hand.lerpVectors(mouth, rest, u); tipGoal = 0.25 * (1 - u); }
+    else { this.hand.lerpVectors(rest, this.from, u); w = 1 - u; }
+    this.tip += (tipGoal - this.tip) * (1 - Math.exp(-dt * 14));
+    this.w = w;
+    P.hdPitch -= headBack * (V.tilt > 1.6 ? 0.42 : 0.28);
+    P.spPitch -= headBack * 0.07;
+    torsoInverse(P);
+    const up = this.st === 'sip' || this.st === 'lift';
+    // the elbow hangs down and a little out; with the hand at the mouth "out" alone would point it forwards
+    const pole = this._q.set(up ? -0.45 : -0.8, -1, up ? -0.15 : -0.25);
+    const r = armIK(1, this.hand, pole);
+    const base = P.armOv[1];
+    // blend from whatever the arm was doing (sitting at the bar, hanging) to the drinking arm
+    if (base && base.w > 0.001) P.armOv[1] = { w: lerp(base.w, 1, w), sw: lerp(base.sw, r.sw, w), yw: lerp(base.yw, r.yw, w), out: lerp(base.out, r.out, w), el: lerp(base.el, r.el, w) };
+    else P.armOv[1] = { w, sw: r.sw, yw: r.yw, out: r.out, el: r.el };
+  },
+  // after the pose is applied: put the vessel in the hand
+  late() {
+    const bottle = this.src === 'bottle' && this.bottleOut && this.st !== 'idle';
+    GLASS.bottle.visible = bottle;
+    const held = bottle || (this.st !== 'idle' && this.src === 'glass' && GLASS.obj && GLASS.obj.held);
+    if (!held) return;
+    const V = VESSEL[this.it.vessel], ch = W.ch, mesh = bottle ? GLASS.bottle : GLASS.mesh, M = bottle ? GLASS.bm : GLASS.m;
+    ch.root.updateMatrixWorld();
+    // the grip point of the vessel sits in the fist; the vessel turns with the body and tips towards the mouth
+    const h = this._p.set(0, -0.31, 0.045).applyMatrix4(ch.p.fArmR.matrix).applyMatrix4(ch.root.matrixWorld);
+    M.makeRotationY(PLAY.yaw).multiply(GLASS.q.makeRotationX(-this.tip));
+    const off = this._a.set(0, -V.grip, 0).transformDirection(M).multiplyScalar(V.grip);
+    M.setPosition(h.x + off.x, h.y + off.y, h.z + off.z);
+    mesh.matrix.copy(M); mesh.matrixWorldNeedsUpdate = true;
+    mesh.material = ch.parts[0].material;
+  },
+  gulp() {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.4, PLAY.pos), n = this.it.sipT > 0.7 ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        const t0 = t + 0.12 + i * 0.26, o = c.createOscillator(), og = c.createGain();
+        o.frequency.setValueAtTime(170, t0); o.frequency.exponentialRampToValueAtTime(85, t0 + 0.09);
+        og.gain.setValueAtTime(0.0001, t0); og.gain.linearRampToValueAtTime(0.16, t0 + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+        o.connect(og); og.connect(g); o.start(t0); o.stop(t0 + 0.14);
+      }
+    });
+  },
+  exhale() { GSFX.run(() => { const { g, t } = GSFX.out(0.35, PLAY.pos); SFX.noiseHit(t + 0.15, g, { type: 'lowpass', freq: 700, q: 0.6, gain: 0.07, attack: 0.08, decay: 0.45 }); }); }
+};
+
+/* ---- bars: an entry per counter for the interaction system ---- */
+function makeCounter(C) {
+  const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw), ux = C.bx - C.ax, uz = C.bz - C.az, L = Math.hypot(ux, uz);
+  return Object.assign(C, {
+    fx, fz, L, verb: 'bar', wide: true, x: (C.ax + C.bx) / 2, z: (C.az + C.bz) / 2,
+    // the nearest point on the front edge, and how far p is from it (on the customers' side only)
+    near(p) {
+      const t = clamp(((p.x - C.ax) * ux + (p.z - C.az) * uz) / (L * L), 0.05, 0.95);
+      const qx = C.ax + ux * t, qz = C.az + uz * t, side = (qx - p.x) * fx + (qz - p.z) * fz;
+      return { qx, qz, d: Math.hypot(p.x - qx, p.z - qz), side };
+    },
+    score(p) {
+      const n = this.near(p);
+      if (n.side < 0 || n.d > 1.25) return 1e9;
+      const a = Math.abs(wrapA(C.yaw - PLAY.yaw));
+      if (a > 1.7) return 1e9;
+      // a drink waiting in front of you makes the bar the first thing on offer
+      const waiting = GLASS.ready() && Math.hypot(GLASS.obj.pos.x - p.x, GLASS.obj.pos.z - p.z) < 1.1;
+      return n.d + a * 0.4 - (waiting ? 1 : 0);
+    },
+    // where a drink goes for someone standing at p
+    // (a little to the right, where the right hand reaches it)
+    spot(p) { const n = this.near(p), rx = -Math.cos(C.yaw), rz = Math.sin(C.yaw); return new THREE.Vector3(n.qx + fx * 0.14 + rx * 0.15, C.y + C.top, n.qz + fz * 0.14 + rz * 0.15); },
+    actions() { return barActions(this, null); }
+  });
+}
+function barActions(counter, seat) {
+  const out = [];
+  if (GLASS.ready() && Math.hypot(GLASS.obj.pos.x - PLAY.pos.x, GLASS.obj.pos.z - PLAY.pos.z) < 1.1) out.push({ label: 'Trinken (' + GLASS.obj.it.name + ')', run: () => DRINK.start('glass') });
+  out.push({ label: 'Bestellen', run: () => SHOP.show(counter, seat) });
+  return out;
+}
+
+/* ---- the order list ---- */
+const SHOP = {
+  open: false, counter: null, seat: null,
+  init() {
+    this.el = document.getElementById('shop'); this.list = document.getElementById('shopList');
+    document.getElementById('shopClose').addEventListener('click', () => this.close());
+  },
+  show(counter, seat) {
+    this.counter = counter; this.seat = seat; this.open = true;
+    INPUT.keys.clear();
+    document.getElementById('shopMoney').textContent = money(INV.money);
+    this.list.textContent = '';
+    MENU_BAR.forEach((id, i) => {
+      const it = ITEMS[id], b = document.createElement('button'); b.type = 'button';
+      const can = INV.money >= it.price;
+      b.innerHTML = `<kbd>${i + 1}</kbd><span></span><em></em>`;
+      b.querySelector('span').textContent = it.name; b.querySelector('em').textContent = price(it.price);
+      b.disabled = !can; if (!can) b.title = 'Nicht genug Geld';
+      b.addEventListener('click', () => this.buy(id));
+      this.list.appendChild(b);
+    });
+    this.el.hidden = false;
+    const first = this.list.querySelector('button:not([disabled])'); if (first) first.focus({ preventScroll: true });
+  },
+  close() { this.open = false; this.el.hidden = true; document.getElementById('gl').focus({ preventScroll: true }); },
+  key(k) {
+    if (k === 'Escape' || k === 'e') { this.close(); return true; }
+    const n = parseInt(k, 10);
+    if (n >= 1 && n <= MENU_BAR.length) { this.buy(MENU_BAR[n - 1]); return true; }
+    return false;
+  },
+  buy(id) {
+    const it = ITEMS[id];
+    if (!INV.pay(it.price)) { TOAST.show('Nicht genug Geld.'); return; }
+    this.close();
+    worldEvent('buy', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: id, price: it.price });
+    if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
+    const C = this.counter, to = this.seat ? this.seatSpot(this.seat) : C.spot(PLAY.pos);
+    GLASS.serve(id, C, to);
+  },
+  // the glass for someone on a bar stool: a hand's width right of the middle, on the counter
+  seatSpot(seat) { const v = new THREE.Vector3(); SIT.seatW(-0.17, seat.bar.y, seat.bar.z + 0.02, v); return v; }
+};
 
 // ==== audio/ambient.js ====
 /* ---------- ambience: everything synthesised, everything placed in the world ----------
@@ -6022,6 +6609,7 @@ const MENU = {
       document.getElementById('app').classList.add('paused');
     }
     this.tab = tab;
+    if (tab === 'bag') this.buildBag();
     for (const b of this.el.querySelectorAll('[data-tab]')) b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false');
     for (const p of this.el.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== tab;
     const first = this.el.querySelector(`[data-pane="${tab}"] button, [data-pane="${tab}"] input`);
@@ -6033,6 +6621,20 @@ const MENU = {
     document.getElementById('app').classList.remove('paused');
     if (SFX.ctx && SFX.ctx.state === 'suspended' && SFX.on) SFX.ctx.resume();
     document.getElementById('gl').focus({ preventScroll: true });
+  },
+  buildBag() {
+    document.getElementById('mMoney').textContent = money(INV.money);
+    const box = document.getElementById('mBag'); box.textContent = '';
+    const ids = Object.keys(INV.items);
+    if (!ids.length) { const p = document.createElement('p'); p.className = 'mSmall'; p.textContent = 'Die Tasche ist leer. Im Saloon gibt es was zu trinken.'; box.appendChild(p); return; }
+    for (const id of ids) {
+      const it = ITEMS[id], row = document.createElement('div'); row.className = 'mItem';
+      const name = document.createElement('span'); name.textContent = (INV.items[id] > 1 ? INV.items[id] + '× ' : '') + it.name;
+      if (it.kind === 'carry') { const sm = document.createElement('small'); sm.textContent = ' ' + (INV.sips[id] ?? it.sips) + ' Schlucke übrig'; name.appendChild(sm); }
+      row.appendChild(name);
+      if (it.kind === 'carry') { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Trinken'; b.addEventListener('click', () => { this.close(); DRINK.start(id); }); row.appendChild(b); }
+      box.appendChild(row);
+    }
   },
   note(t) { document.getElementById('mNote').textContent = t; },
   buildSettings() {
@@ -6084,6 +6686,9 @@ const DEV = {
     $('devHere').addEventListener('click', () => this.playerToCamera());
     $('devCopy').addEventListener('click', () => this.copyPos());
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
+    $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
+    $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
+    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');
@@ -6170,7 +6775,8 @@ const DEV = {
       `x ${p.x.toFixed(1)}  y ${p.y.toFixed(2)}  z ${p.z.toFixed(1)}  ↻ ${Math.round(((PLAY.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`,
       `${R ? 'Raum: ' + R.type : 'draußen'}  ·  ${SIT.busy() ? 'sitzt (' + SIT.state + ')' : PLAY.moving ? 'läuft ' + PLAY.speed.toFixed(1) + ' m/s' : 'steht'}`,
       `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
-      `Fokus: ${INTERACT.focus ? INTERACT.focus.kind + ' #' + INTERACT.focus.id : '–'}`,
+      `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
+      `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
       `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`
     ];
     this.info.textContent = lines.join('\n');
@@ -6224,50 +6830,6 @@ const DEV = {
     G.scene.add(m);
     return m;
   }
-};
-
-// ==== core/save.js ====
-/* ---------- save game ----------
-   Each system that has something worth keeping registers a part: collect() returns plain data, apply(data) puts
-   it back. The whole save carries a format version; when the format changes, V goes up and migrate() converts
-   older saves step by step, so nobody loses their game with an update. Stored in this browser only. */
-const SAVE = {
-  KEY: 'polywest.save', V: 1, parts: {}, timer: 0,
-  part(name, collect, apply) { this.parts[name] = { collect, apply }; },
-  snapshot() {
-    const o = { v: this.V, at: Date.now(), parts: {} };
-    for (const [n, p] of Object.entries(this.parts)) { try { o.parts[n] = p.collect(); } catch (e) { /* skip a part that fails */ } }
-    return o;
-  },
-  raw() { return JSON.stringify(this.snapshot()); },
-  write() { try { localStorage.setItem(this.KEY, this.raw()); return true; } catch (e) { return false; } },
-  stored() { try { return localStorage.getItem(this.KEY); } catch (e) { return null; } },
-  clear() { try { localStorage.removeItem(this.KEY); } catch (e) { /* nothing to clear */ } },
-  load(raw) {
-    let o = null;
-    try { o = JSON.parse(raw); } catch (e) { return false; }
-    o = this.migrate(o);
-    if (!o) return false;
-    for (const [n, p] of Object.entries(this.parts)) if (o.parts[n] !== undefined) { try { p.apply(o.parts[n]); } catch (e) { /* keep the default */ } }
-    return true;
-  },
-  // old format -> new format, one version at a time (example for later: if (o.v === 1) { ...; o.v = 2; })
-  migrate(o) {
-    if (!o || typeof o.v !== 'number' || !o.parts || o.v > this.V) return null;
-    return o;
-  },
-  init() {
-    this.part('player', () => ({ pos: [PLAY.pos.x, PLAY.pos.y, PLAY.pos.z].map((v) => +v.toFixed(2)), yaw: +PLAY.yaw.toFixed(3), cam: +PLAY.camYaw.toFixed(3) }),
-      (d) => { PLAY.pos.set(d.pos[0], d.pos[1], d.pos[2]); PLAY.yaw = d.yaw; PLAY.camYaw = d.cam; GAIT.init = false; G.lookAt = null; });
-    this.part('gun', () => ({ ammo: GUN.ammo, reserve: GUN.reserve }), (d) => { GUN.ammo = clamp(d.ammo | 0, 0, 6); GUN.reserve = clamp(d.reserve | 0, 0, GUN.MAX); });
-    const raw = this.stored();
-    if (raw) this.load(raw);
-    // keep it fresh: now and then, and whenever the page is hidden or closed
-    const flush = () => { if (!SIT.busy()) this.write(); };
-    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
-    window.addEventListener('pagehide', flush);
-  },
-  update(dt) { this.timer += dt; if (this.timer > 20) { this.timer = 0; if (!SIT.busy()) this.write(); } }
 };
 
 // ==== main.js ====
@@ -6333,13 +6895,17 @@ const SAVE = {
     GUN.update(dt);
     FIST.update(dt);
     DEV.update(dt);
+    DRUNK.update(dt);
+    DRINK.update(dt);
     updatePlayer(dt);
+    GLASS.update(dt);
     updateRooms(dt);
     INTERACT.update();
     updateCamera(dt);
     if (G.camHook) G.camHook();
     updateWorld(dt, G.time);
     updateCharacterVisual();
+    DRINK.late();
     GUN.late(dt);
     AMB.update(dt);
     SAVE.update(dt);
@@ -6379,6 +6945,7 @@ const SAVE = {
     INTERACT.init();
     SAVE.init();
     MENU.init();
+    SHOP.init();
     DEV.init();
     G.layout = layout;
     SETTINGS.on('quality', () => layout());

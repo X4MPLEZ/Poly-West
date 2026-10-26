@@ -61,7 +61,10 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `combat/dummy.js` | Übungspuppe |
 | `combat/fist.js` | Faustkampf: Schläge als Faustbahnen mit Arm-IK, Overhand, Deckung, Ausdauer |
 | `interact/interact.js` | **ein System für alles Benutzbare**: Einträge mit Ort, Raum, Belegung, Verb; Fokus und Hinweis „E …“ |
-| `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest) |
+| `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest), `SIT.warp(seat)` |
+| `interact/drink.js` | Trinken: `GLASS` (serviertes Getränk, rutscht über die Theke), `DRINK` (Arm-Animation greifen → heben → Schluck → abstellen), Theken (`makeCounter`, `barActions`), `SHOP` (Bestellliste) |
+| `play/drunk.js` | `DRUNK`: Magen → Blut, Schwanken von Körper/Kamera/Ziel, Kurs-Drift, Stolpern, Schluckauf, Filmriss mit Aufwachen woanders |
+| `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
 | `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |
@@ -78,7 +81,9 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - **Neue Räume und Möbel:** als Liste mit `place(mb, R, [[prefab, x, z, ry, {opts}], …], rnd)` (siehe `world/furniture.js`). Einzelstücke wie Klavier oder Tresor bleiben Code direkt daneben. Ältere Räume werden umgestellt, sobald man sie ohnehin anfasst. Sheriff und Post sind bereits umgestellt und können als Vorbild dienen.
 - **Zufall:** Die Welt wird mit `mulberry32(seed)` gebaut, damit sie bei jedem Start gleich ist. Die Reihenfolge der `rnd()`-Aufrufe darf sich bei Umbauten nicht ändern, sonst ändert sich die Welt (fingerprint).
 - **Sitzplätze** melden sich selbst über `seatHere` an. `seat.occ` enthält die Akteur-ID; so finden später auch NPCs freie Plätze.
-- **Neue Aktionen** laufen über `INTERACT` (Eintrag mit `verb`, `label`, `score(p)` und `use()`), nicht über eigene Tastenabfragen.
+- **Neue Aktionen** laufen über `INTERACT` (Eintrag mit `verb`, `score(p)` und entweder `label`+`use()` oder `actions(p)` → bis zu zwei `{label, run}`), nicht über eigene Tastenabfragen. Erste Aktion: E / Y / Knopf 1, zweite: R / B / Knopf 2. Lange Dinge (Theken) stehen in `INTERACT.wide` statt im Raster.
+- **Theken:** `counterHere(mb, x0, x1, z, topY)` beim Bauen eines Tresens (Kunden auf der −z-Seite).
+- **Arm-Animationen mit Gegenstand:** wie `DRINK.pose` – nach dem Körper `torsoInverse(P)`, Ziel im Charakterraum, `armIK`, in `P.armOv[i]` mischen; der Gegenstand folgt in einer `late()`-Funktion der Hand.
 - **Was andere mitbekommen sollen** (Schuss, Schlag, Hinsetzen …): `worldEvent(type, x, y, z, {by, …})`.
 - **Neue Einstellung:** eine Zeile in `SETTINGS.SPEC`, dann `SETTINGS.on('key', fn)` im System; das Menü baut den Regler selbst.
 - **Neues Entwickler-Werkzeug:** Knopf in `#dev` (page.html) + Funktion in `DEV`. Bei Fehlermeldungen von Merkel nach „Position kopieren“ fragen.
@@ -87,6 +92,6 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - Three.js **r159** (letzte Version mit `three.min.js`). Kein Modul-Build.
 
 ## Stand und Plan
-- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge.
-- **Als Nächstes:** Trinken und Betrunkenheit (Barhocker, Gegenstände/Inventar), danach Tag/Nacht mit Schlafen, dann der erste NPC, Pferd, Soziales/Duell und Wildnis.
+- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit mit Filmriss.
+- **Als Nächstes:** Tag/Nacht mit Schlafen, dann der erste NPC (Barkeeper bietet sich an), Pferd, Soziales/Duell und Wildnis.
 - Das NPC-Konzept steht in `docs/npc-konzept.md`. Spielidee (Leben im Westen, Ruf, Beziehungen, Überraschungen) und Sprachsteuerung per Mikrofon: `docs/spielidee.md`.

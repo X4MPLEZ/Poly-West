@@ -12,6 +12,9 @@ const DEV = {
     $('devHere').addEventListener('click', () => this.playerToCamera());
     $('devCopy').addEventListener('click', () => this.copyPos());
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
+    $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
+    $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
+    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');
@@ -98,7 +101,8 @@ const DEV = {
       `x ${p.x.toFixed(1)}  y ${p.y.toFixed(2)}  z ${p.z.toFixed(1)}  ↻ ${Math.round(((PLAY.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`,
       `${R ? 'Raum: ' + R.type : 'draußen'}  ·  ${SIT.busy() ? 'sitzt (' + SIT.state + ')' : PLAY.moving ? 'läuft ' + PLAY.speed.toFixed(1) + ' m/s' : 'steht'}`,
       `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
-      `Fokus: ${INTERACT.focus ? INTERACT.focus.kind + ' #' + INTERACT.focus.id : '–'}`,
+      `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
+      `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
       `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`
     ];
     this.info.textContent = lines.join('\n');

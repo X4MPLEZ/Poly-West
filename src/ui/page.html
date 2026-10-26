@@ -113,14 +113,52 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
 #prompt { position: absolute; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none;
-  display: flex; align-items: center; gap: 8px; background: rgba(22, 15, 10, 0.66); border: 1px solid var(--edge); border-radius: 999px;
-  padding: 5px 13px 5px 5px; font-family: var(--f-ui); font-weight: 600; font-size: 13.5px; color: var(--bone); white-space: nowrap; }
-#prompt[hidden] { display: none; }
+  display: flex; gap: 8px; white-space: nowrap; }
+#prompt[hidden], .pa[hidden] { display: none; }
+.pa { display: flex; align-items: center; gap: 8px; background: rgba(22, 15, 10, 0.66); border: 1px solid var(--edge); border-radius: 999px;
+  padding: 5px 13px 5px 5px; font-family: var(--f-ui); font-weight: 600; font-size: 13.5px; color: var(--bone); }
 #prompt kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
   background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
 .touch #prompt { display: none; }
 #bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
-#bUse[hidden] { display: none; }
+#bUse[hidden], #bUse2[hidden] { display: none; }
+#bUse2 { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); font-size: 11px; }
+
+/* toasts: short news at the top */
+#toasts { position: absolute; left: 50%; top: 54px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(560px, calc(100% - 32px)); }
+.toast { background: rgba(22, 15, 10, 0.82); border: 1px solid var(--edge); border-radius: 10px; padding: 7px 13px; font-size: 14px; font-weight: 600; color: var(--bone); text-align: center; transition: opacity 0.6s ease, transform 0.6s ease; animation: toastIn 0.25s ease; }
+.toast.money { color: var(--brass); font-family: var(--f-mono); font-size: 13px; }
+.toast.long { font-size: 15px; }
+.toast.out { opacity: 0; transform: translateY(-6px); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
+.touch #toasts { top: 58px; }
+
+/* the order list at the bar */
+#shop { position: absolute; left: 50%; bottom: calc(14% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(320px, calc(100% - 32px)); pointer-events: auto;
+  background: rgba(28, 19, 13, 0.95); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 12px 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45); z-index: 3; }
+#shop[hidden] { display: none; }
+#shop header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+#shop header b { font-family: var(--f-display); font-weight: 400; font-size: 20px; color: var(--brass); flex: 1; }
+#shopMoney { font-family: var(--f-mono); font-size: 13px; color: var(--dust); }
+#shopClose { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; font-size: 18px; line-height: 1; }
+#shopList { display: flex; flex-direction: column; gap: 5px; }
+#shopList button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.06); color: var(--bone); font-weight: 700; font-size: 15px; text-align: left; }
+#shopList button span { flex: 1; }
+#shopList button em { font-style: normal; font-family: var(--f-mono); font-size: 13px; color: var(--brass); }
+#shopList button kbd { font-family: var(--f-mono); font-size: 11px; min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 5px; background: rgba(243, 232, 214, 0.15); }
+#shopList button:disabled { opacity: 0.4; }
+.touch #shopList kbd { display: none; }
+
+/* drunk: the edges of the view darken and warm up; out cold: black */
+#drunkFx { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(60, 30, 10, 0) 45%, rgba(40, 18, 6, 0.55) 80%, rgba(20, 8, 2, 0.85) 100%); }
+#blackout { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 2; }
+#blackout[hidden] { display: none; }
+.mMoney { margin: 0 0 4px; font-size: 15px; }
+.mMoney b { font-family: var(--f-mono); color: var(--brass); }
+.mItem { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid rgba(242, 226, 200, 0.07); }
+.mItem span { flex: 1; font-weight: 600; font-size: 15px; }
+.mItem small { color: var(--dust); }
+.mItem button { min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font-weight: 700; }
 .seated .pb:not(#bUse) { opacity: 0.3; pointer-events: none; }
 /* pause menu */
 #menu { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(12, 8, 5, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding: 12px; }
@@ -181,6 +219,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 
 <div id="app">
   <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
+  <div id="drunkFx" aria-hidden="true"></div>
+  <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
@@ -199,7 +239,12 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     </div>
     <div id="hint"></div>
     <div id="stam" aria-hidden="true"><i></i></div>
-    <div id="prompt" hidden role="status"><kbd>E</kbd><span id="promptTxt"></span></div>
+    <div id="prompt" hidden role="status"><span class="pa" id="prompt1"><kbd>E</kbd><span id="promptTxt"></span></span><span class="pa" id="prompt2" hidden><kbd>R</kbd><span id="promptTxt2"></span></span></div>
+    <div id="toasts" aria-live="polite"></div>
+    <section id="shop" hidden aria-labelledby="shopTitle">
+      <header><b id="shopTitle">Theke</b><span id="shopMoney"></span><button id="shopClose" type="button" aria-label="Schließen">×</button></header>
+      <div id="shopList"></div>
+    </section>
     <div id="xhair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="ammo" class="dim" role="status" aria-label="Munition">
       <svg id="cyl" viewBox="-17 -17 34 34" aria-hidden="true"><circle class="rim" r="16"/><circle class="ch" cx="0.00" cy="-10.50" r="4.6"/><circle class="ch" cx="9.09" cy="-5.25" r="4.6"/><circle class="ch" cx="9.09" cy="5.25" r="4.6"/><circle class="ch" cx="0.00" cy="10.50" r="4.6"/><circle class="ch" cx="-9.09" cy="5.25" r="4.6"/><circle class="ch" cx="-9.09" cy="-5.25" r="4.6"/><circle r="2.4" fill="#1b120b"/></svg>
@@ -211,6 +256,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bAim" class="pb" type="button" aria-pressed="false">Zielen</button>
       <button id="bFire" class="pb" type="button">Feuer</button>
       <button id="bUse" class="pb" type="button" hidden></button>
+      <button id="bUse2" class="pb" type="button" hidden></button>
     </div>
     <section id="dev" hidden aria-label="Entwickler-Werkzeuge">
       <header><b>Entwickler</b><button id="devClose" type="button" aria-label="Werkzeuge schließen">×</button></header>
@@ -220,13 +266,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow" role="group" aria-label="Zeit"><span>Zeit</span><button type="button" data-speed="0.25">¼×</button><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
       <div class="devRow" role="group" aria-label="Anzeigen"><button type="button" data-overlay="coll" aria-pressed="false">Kollision</button><button type="button" data-overlay="plats" aria-pressed="false">Böden</button><button type="button" data-overlay="seats" aria-pressed="false">Plätze</button><button type="button" data-overlay="chunks" aria-pressed="false">Zellen</button></div>
       <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
+      <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
     </section>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
   </div>
   <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
     <div class="mPanel">
       <header><b id="menuTitle">Pause</b><button id="mClose" type="button" aria-label="Weiterspielen">×</button></header>
-      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
+      <nav class="mTabs" role="tablist"><button type="button" role="tab" data-tab="game">Spiel</button><button type="button" role="tab" data-tab="bag">Tasche</button><button type="button" role="tab" data-tab="set">Einstellungen</button><button type="button" role="tab" data-tab="keys">Steuerung</button></nav>
       <section data-pane="game" class="mPane">
         <button id="mResume" type="button" class="mBig">Weiterspielen</button>
         <button id="mSave" type="button">Jetzt speichern</button>
@@ -235,6 +282,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
         <p id="mNote" class="mNote" role="status"></p>
         <p class="mSmall">Das Spiel speichert alle 20 Sekunden und beim Schließen von selbst, in diesem Browser.</p>
       </section>
+      <section data-pane="bag" class="mPane" hidden><p class="mMoney">Geld: <b id="mMoney"></b></p><div id="mBag"></div></section>
       <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
       <section data-pane="keys" class="mPane" hidden>
         <table class="mKeys">
@@ -242,7 +290,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
           <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
           <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
           <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Ziehen · Zielen · Feuer · Laden</td></tr>
-          <tr><th scope="row">Benutzen</th><td>E</td><td>Knopf, der an Orten erscheint</td></tr>
+          <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
+          <tr><th scope="row">Aus der Flasche trinken</th><td>T</td><td>Menü → Tasche</td></tr>
           <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
           <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
         </table>

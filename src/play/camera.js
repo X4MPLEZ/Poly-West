@@ -77,6 +77,7 @@ function updateCamera(dt) {
     PLAY.camPush.multiplyScalar(Math.exp(-dt * 11));
   }
   cam.lookAt(lookT);
+  DRUNK.camera(cam);
   const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) : cam.fov;
   if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
   cam.updateMatrixWorld();

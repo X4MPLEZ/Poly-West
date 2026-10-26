@@ -2,6 +2,8 @@
 core/util.js
 core/world.js
 core/settings.js
+core/save.js
+core/items.js
 world/terrain.js
 world/town_data.js
 world/facades.js
@@ -21,6 +23,7 @@ gfx/render.js
 play/player.js
 play/input.js
 play/camera.js
+play/drunk.js
 audio/sfx.js
 audio/samples.js
 combat/fx.js
@@ -30,9 +33,9 @@ combat/dummy.js
 combat/fist.js
 interact/interact.js
 interact/sit.js
+interact/drink.js
 audio/ambient.js
 ui/hud.js
 ui/menu.js
 dev/devtools.js
-core/save.js
 main.js

@@ -17,7 +17,7 @@ const SIT_KINDS = {
 };
 
 const INTERACT = {
-  items: [], grid: new Grid(4), focus: null, label: '',
+  items: [], wide: [], grid: new Grid(4), focus: null, acts: [], key: '',
   add(it) { it.id = this.items.length; this.items.push(it); return this.grid.add(it); },
   near(x, z, r) { return this.grid.near(x, z, r); },
   init() {
@@ -34,13 +34,20 @@ const INTERACT = {
         if (sides.length) { it.sides = sides; it.sideD = 0.45; it.sx = it.x - it.fx * 0.02; it.sz = it.z - it.fz * 0.02; }
       } else { it.sides = [1, -1]; it.sideD = it.k.side; }
     }
-    this.el = document.getElementById('prompt'); this.txt = document.getElementById('promptTxt'); this.btn = document.getElementById('bUse');
-    this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.btn.classList.add('down'); this.use(); });
-    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.btn.addEventListener(ev, () => this.btn.classList.remove('down'));
+    // long things (bar counters) are checked by distance to their whole length, not through the grid
+    for (const C of COUNTERS) this.wide.push(Object.assign(makeCounter(C), { id: 'bar' + this.wide.length }));
+    const $ = (id) => document.getElementById(id);
+    this.ui = [{ row: $('prompt1'), txt: $('promptTxt'), btn: $('bUse') }, { row: $('prompt2'), txt: $('promptTxt2'), btn: $('bUse2') }];
+    this.ui.forEach((u, i) => {
+      u.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); u.btn.classList.add('down'); this.use(i); });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) u.btn.addEventListener(ev, () => u.btn.classList.remove('down'));
+    });
   },
-  use() {
-    if (SIT.state === 'sit') { SIT.stand(); return; }
-    if (SIT.state === 'none' && this.focus) this.focus.use();
+  // E (pad Y, the first button) does the first thing on offer, R (pad B, the second button) the second
+  use(i) {
+    const a = this.acts[i || 0];
+    if (a) { a.run(); this.update(true); return true; }
+    return false;
   },
   // a straight walk from a to b must not lead through furniture (tables between you and a chair, say)
   clear(ax, az, bx, bz, y) {
@@ -51,26 +58,36 @@ const INTERACT = {
     }
     return true;
   },
-  update() {
+  update(force) {
     if (this.seated !== SIT.busy()) { this.seated = SIT.busy(); document.getElementById('app').classList.toggle('seated', this.seated); }
-    let best = null, label = '';
-    if (SIT.state === 'sit') { best = SIT.seat; label = 'Aufstehen'; }
-    else if (SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && this.focus.verb && !this.focus.occ) return;   // the search runs every third frame
-    else if (SIT.state === 'none' && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
+    let best = null, acts = [];
+    const free = !DRINK.busy() && !SHOP.open && !DRUNK.out;
+    if (SIT.state === 'sit') {
+      best = SIT.seat;
+      if (free) acts = (best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best) : []).concat([{ label: 'Aufstehen', run: () => SIT.stand() }]);
+    } else if (!force && SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && !this.focus.occ && free) return;   // the search runs every third frame
+    else if (SIT.state === 'none' && free && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
       const p = PLAY.pos, room = ROOMSTATE.cur;
-      let bs = 1e9;
-      for (const it of this.near(p.x, p.z, 2.2)) {
+      const cand = [];
+      for (const it of this.near(p.x, p.z, 2.2).concat(this.wide)) {
         if (it.room !== room || it.occ || Math.abs(it.y - p.y) > 0.6) continue;
         const s = it.score(p);
-        if (s < bs) { bs = s; best = it; }
+        if (s < 1e8) cand.push([s, it]);
       }
-      if (best) label = best.label;
+      cand.sort((a, b) => a[0] - b[0]);
+      best = cand.length ? cand[0][1] : null;
+      const sc = best && cand.find((c) => c[1].verb !== best.verb), second = sc ? sc[1] : null;
+      const of = (it) => (it.actions ? it.actions(p) : [{ label: it.label, run: () => it.use() }]);
+      if (best) acts = of(best);
+      // something else of another kind close by (the bar, while a stool is in focus) gets the second key
+      if (second && acts.length < 2 && second.verb !== best.verb) acts = acts.concat(of(second).slice(0, 1));
     }
-    this.focus = best;
-    if (label !== this.label) {
-      this.label = label;
-      this.el.hidden = !label; this.txt.textContent = label;
-      this.btn.hidden = !label; this.btn.textContent = label;
+    this.focus = best; this.acts = acts;
+    const key = acts.map((a) => a.label).join('|');
+    if (key !== this.key) {
+      this.key = key;
+      this.ui.forEach((u, i) => { const a = acts[i]; u.row.hidden = !a; u.btn.hidden = !a; if (a) { u.txt.textContent = a.label; u.btn.textContent = a.label; } });
+      document.getElementById('prompt').hidden = !acts.length;
     }
   }
 };
