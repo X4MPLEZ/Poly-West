@@ -146,6 +146,11 @@ const FIST = {
   targets() {
     const out = [{ kind: 'dummy', x: DUMMY.x, z: DUMMY.z, y0: 0.8, y1: 2.0, r: 0.3 }];
     for (const b of BOTTLES) if (b.alive) out.push({ kind: 'bottle', b, x: b.x, z: b.z, y0: b.y, y1: b.y + 0.3, r: 0.06 });
+    // glass in the room you are in (bar, tables, shelves) and the drink in front of you: from table height to above the head
+    const L = G.room && BREAK.byRoom.get(G.room);
+    if (L) for (const g of L) if (g.alive && Math.abs(g.x - PLAY.pos.x) < 2 && Math.abs(g.z - PLAY.pos.z) < 2) out.push({ kind: 'glass', g, x: g.x, z: g.z, y0: g.y0, y1: g.y0 + g.h, r: Math.max(g.r, 0.05), low: true });
+    const S = GLASS.obj;
+    if (S && !S.held && GLASS.mesh.visible) out.push({ kind: 'glass', g: { served: true, kind: 'served', x: S.pos.x, y0: S.pos.y, z: S.pos.z, h: 0.12, r: 0.04, col: rgb(0xb8d0d0), R: S.room }, x: S.pos.x, z: S.pos.z, y0: S.pos.y, y1: S.pos.y + 0.13, r: 0.06, low: true });
     return out;
   },
   /* ---- per frame ---- */
@@ -203,7 +208,8 @@ const FIST = {
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
-      if (d > reach + T.r + 0.36 || fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35) continue;
+      if (d > reach + T.r + 0.36) continue;
+      if (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35)) continue;
       if (Math.abs(wrapA(Math.atan2(dx, dz) - yaw)) > 0.95) continue;
       if (d < hd) { hd = d; hit = T; }
     }
@@ -226,6 +232,14 @@ const FIST = {
       FSFX.bag(p, power, big || kind === 'hook');
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
+    } else if (hit.kind === 'glass') {
+      // the fist sweeps through: an overhand takes the glasses next to it along (up to three)
+      const dir = new THREE.Vector3(fx, 0.2, fz);
+      BREAK.shatter(hit.g, dir);
+      if (big) {
+        let n = 0;
+        for (const T of this.targets()) if (T.kind === 'glass' && n < 2 && Math.hypot(T.x - hit.x, T.z - hit.z) < 0.45 && Math.abs(T.y0 - hit.y0) < 0.25) { BREAK.shatter(T.g, dir); n++; }
+      }
     }
     worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: hit.kind, kind, heavy: big });
   },

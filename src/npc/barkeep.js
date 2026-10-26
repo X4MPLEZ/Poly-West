@@ -13,7 +13,7 @@ const BARKEEP = {
   cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0, sc: null, damage: { holes: 0, glass: 0 },
   // in which mood each kind of line is said (see VOICE.MOODS)
   MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
-    leave: 'amused', shot: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
+    leave: 'amused', shot: 'angry', smash: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
     hello: ['Howdy, Fremder.', 'Willkommen im Saloon.', 'Na, wieder Durst?', 'Komm rein, setz dich.'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
@@ -30,7 +30,8 @@ const BARKEEP = {
     fall: ['Hoppla! Alles noch dran?', 'Steh auf, der Boden ist dreckig.'],
     behind: ['He! Hinter die Theke gehört nur einer.', 'Raus aus meinem Revier.'],
     broke: ['Erst Geld, dann Whiskey.', 'Anschreiben gibt’s nicht.'],
-    cheers: ['Prost.', 'Wohl bekomm’s.']
+    cheers: ['Prost.', 'Wohl bekomm’s.'],
+    smash: ['Das zahlst du.', 'Hände weg von meinem Glas!', 'Noch eins, und du fliegst raus.']
   },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
@@ -68,10 +69,11 @@ const BARKEEP = {
     this.say(kind);
   },
   // what a burst of shooting did, collected while he is ducking
-  scene() { return this.sc || (this.sc = { shots: 0, outside: 0, ceiling: 0, wall: 0, floor: 0, glass: {} }); },
+  scene() { const sc = this.sc || (this.sc = { shots: 0, outside: 0, ceiling: 0, wall: 0, floor: 0, glass: {} }); sc.lastT = G.time; return sc; },
   describe(sc) {
     const n = (k, one, many) => (k === 1 ? one : k + ' ' + many), out = [];
-    out.push('Der Fremde hat gerade ' + (sc.shots === 1 ? 'einmal' : sc.shots === 2 ? 'zweimal' : sc.shots + '-mal') + (sc.outside >= sc.shots ? ' draußen vor deinem Saloon' : ' in deinem Saloon') + ' mit dem Revolver geschossen, du hast dich hinter der Theke weggeduckt.');
+    if (!sc.shots) out.push('Der Fremde hat gerade in deinem Saloon mit der bloßen Faust Glas zerschlagen.');
+    else out.push('Der Fremde hat gerade ' + (sc.shots === 1 ? 'einmal' : sc.shots === 2 ? 'zweimal' : sc.shots + '-mal') + (sc.outside >= sc.shots ? ' draußen vor deinem Saloon' : ' in deinem Saloon') + ' mit dem Revolver geschossen, du hast dich hinter der Theke weggeduckt.');
     const holes = [];
     if (sc.ceiling) holes.push(n(sc.ceiling, 'ein Loch', 'Löcher') + ' in deiner Decke');
     if (sc.wall) holes.push(n(sc.wall, 'eins', 'Löcher') + ' in den Wänden oder Möbeln');
@@ -85,6 +87,7 @@ const BARKEEP = {
   memo(sc) {
     const holes = sc.ceiling + sc.wall + sc.floor, gl = Object.values(sc.glass).reduce((a, b) => a + b, 0);
     this.damage.holes += holes; this.damage.glass += gl;
+    if (!sc.shots) { this.remember('Er hat in deinem Saloon mit der Faust ' + (gl === 1 ? 'ein Glas' : gl + ' Gläser und Flaschen') + ' zerschlagen.'); return; }
     const bits = [sc.shots + (sc.shots === 1 ? ' Schuss' : ' Schüsse')];
     const pl = (k, one, many) => k + ' ' + (k === 1 ? one : many);
     if (sc.ceiling) bits.push(pl(sc.ceiling, 'Loch', 'Löcher') + ' in der Decke');
@@ -234,6 +237,11 @@ const BARKEEP = {
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (inside && dP < 9) N.lookAt(head, 1); else N.lookTW = 0;
     if (this.playerBehind()) this.say('behind', 12);
+    // glass smashed with the fist (no shots, so no ducking): once it is quiet for a moment he says something about it
+    if (this.sc && !this.sc.shots && this.st !== 'duck' && G.time - this.sc.lastT > 1.2) {
+      const sc = this.sc; this.sc = null; this.memo(sc);
+      if (!TALK.remark(N, this.describe(sc), () => this.say('smash'), 'angry', 0.85)) this.say('smash');
+    }
     // a gun pointed at him: hands up
     const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
     this.aimedT = aimed ? Math.min(this.aimedT + dt, 3) : Math.max(0, this.aimedT - dt);

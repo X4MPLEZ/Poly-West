@@ -49,7 +49,8 @@ const TALK = {
   },
   // who could be talked to right now
   target() {
-    let best = null, bd = 4.2;
+    // seated you can call him from further away (across the room)
+    let best = null, bd = SIT.state === 'sit' ? 12 : 5;
     for (const n of NPCS.list) {
       if (!n.persona || !n.ch.root.visible || (n.room && n.room !== G.room)) continue;
       const d = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z);
@@ -130,15 +131,15 @@ const TALK = {
     if (n) { n.thinking = false; VOICE.stop(n); SAY.hide && SAY.hide(n); n.aiAt = G.time; }
     if (this.open) this.setState('Abgebrochen \u00b7 ' + (this.micOff ? 'schreib weiter oder Ende' : 'V: weiterreden'), 'idle');
   },
+  /* "Ende" / Esc / walking off: only the strip goes; an answer on its way still comes (talking is something you do
+     on the side, not a mode). Only "Stopp" takes an answer back. */
   close() {
     if (!this.open) return;
-    if (this.busy || (this.npc && VOICE.speaking(this.npc))) this.abort();
+    if (this.inp.value.trim() && !this.busy) this.sendTyped();   // what was typed (or dictated) still goes to him
     this.stopListen(true);
-    this.userAbort = true;
-    if (this.ctl) { this.ctl.abort(); this.ctl = null; }
     this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
-    if (this.npc) { this.npc.talking = false; this.npc.thinking = false; }
-    this.npc = null; this.busy = false; this.seq++;
+    if (this.npc) this.npc.talking = false;
+    this.npc = null;
     try { this.inp.blur(); document.getElementById('gl').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
   },
   // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on

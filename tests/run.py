@@ -412,6 +412,11 @@ async def check_glass(g):
       GLASS.serve('whiskey', B.C, rwp(R, 3.2, R.floorY + 1.13, -5), null); for (let k = 0; k < 120; k++) G.stepFrame(1/60);
       const S = GLASS.obj.pos, o2 = new THREE.Vector3(S.x - 1.2, S.y + 0.06, S.z), h2 = GUN.trace(o2, new THREE.Vector3(1, 0, 0), 0, 5);
       out.served = !!h2 && !!h2.glass && h2.glass.served; if (h2 && h2.glass) GUN.hitResult(h2, new THREE.Vector3(1, 0, 0), 0); out.drinkGone = !GLASS.obj;
+      // the fist: a glass on the bar in front of you
+      const g2 = BREAK.byRoom.get(R).find((x) => x.alive && x.kind === 'bottle' && x.y0 > R.floorY + 1.0 && x.y0 < R.floorY + 1.3);
+      out.fistTarget = !!g2;
+      if (g2) { const [gx, gz] = rLocal(R, g2.x, g2.z), st = rwp(R, gx - 0.75, R.floorY, gz); PLAY.pos.set(st.x, st.y, st.z); PLAY.yaw = Math.atan2(g2.x - st.x, g2.z - st.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+        FIST.stamina = 1; FIST.down(false); G.stepFrame(1/60); FIST.up(); for (let k = 0; k < 60 && g2.alive; k++) G.stepFrame(1/60); for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.fistBroke = !g2.alive; }
       return out; }''')
     # Hank: three shots into his ceiling; Claude is replaced by a stand-in that records the prompt
     h = await g.js('''async () => { const out = {}, B = BARKEEP, R = B.R; B.forget(); B.st = 'idle'; B.cool = {}; B.sc = null;
@@ -438,7 +443,7 @@ async def check_glass(g):
       PLAY.pos.set(-8, 0, 2); GAIT.init = false; for (const b of BREAK.broken) b.back = 0; for (let k = 0; k < 5; k++) G.stepFrame(1/60);
       out.back = !!it && it.alive && BREAK.broken.length === 0 && R.mesh.geometry.attributes.position.array[it.v0 * 3] === it.orig[0];
       return out; }''')
-    ok = (r['hitIt'] and r['broken'] and r['collapsed'] and r['through'] and r['served'] and r['drinkGone'] and r['kinds'].get('bottle', 0) > 50 and r['rooms'] >= 5
+    ok = (r['hitIt'] and r['broken'] and r['collapsed'] and r['through'] and r['served'] and r['drinkGone'] and r['fistBroke'] and r['kinds'].get('bottle', 0) > 50 and r['rooms'] >= 5
           and h['asked'] and h['said'] and h['said']['text'] == 'Drei Löcher in meiner Decke!' and 'in deinem Saloon herumgeschossen (3 Schüsse, 3 Löcher in der Decke)' in (h['mem'] or '') and h['holes'] == 3
           and h['noWhisperRule'] and h['aimedMood'] != 'whisper' and h['canned'] and h['panel'] and h['deleted'] and h['back'])
     return ok, json.dumps([r, h], ensure_ascii=False)
@@ -462,7 +467,14 @@ async def check_manners(g):
       SETTINGS.v.aiTalk = true; TALK.start(false); const sent = TALK.send('Erzähl mal was.'); await new Promise((x) => setTimeout(x, 30));
       out.busy = TALK.busy; out.stopShown = (G.stepFrame(1/60), !document.getElementById('talkStop').hidden);
       TALK.abort(); await sent; out.aborted = aborted && !TALK.busy && TALK.open && !N.thinking; TALK.close();
+      // closing the strip does not take the answer back; typed text still goes out; seated he hears you from the table
+      TALK.ai = (p, o) => new Promise((res) => setTimeout(() => { o.onText({ text: '[nod, neutral] Klar doch.' }); res({ text: '[nod, neutral] Klar doch.' }); }), 80);
+      TALK.start(false); TALK.inp.value = 'Noch einen Whiskey, bitte.'; TALK.close(); out.closedBusy = TALK.busy && !TALK.open;
+      await new Promise((x) => setTimeout(x, 200)); const last = N.talkLog.slice(-2); out.answered = last[0].text === 'Noch einen Whiskey, bitte.' && last[1].text === 'Klar doch.';
       TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1];
+      // seated at any table in the saloon you can talk to him
+      out.seatTalk = SEATS.filter((x) => x.room === R && x.kind === 'chair').map((x) => { SIT.warp(x); G.stepFrame(1/60); const ok = TALK.target() === N; return ok ? 1 : +Math.hypot(x.x - N.pos.x, x.z - N.pos.z).toFixed(1); });
+      if (SIT.busy()) SIT.cancel(); for (let k = 0; k < 30; k++) G.stepFrame(1/60);
       // too drunk inside: out through the door, then he is yours again (and may go back in)
       const seat = rwp(R, -3.6, R.floorY, -3.6); PLAY.pos.set(seat.x, seat.y, seat.z); GAIT.init = false; DRUNK.leftAt = -999; for (let k = 0; k < 5; k++) G.stepFrame(1/60);
       DRUNK.level = 0.92; DRUNK.stomach = 0; DRUNK.gut = 0; let started = false, t = 0;
@@ -474,7 +486,7 @@ async def check_manners(g):
       PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.noAgain = !DRUNK.leave;
       DRUNK.level = 0; DRUNK.edge = null; DRUNK.leave = null; if (FALL.busy()) FALL.st = null;
       return out; }''')
-    ok = (r['blocked'] and r['later'] and r['mood'] == 'angry' and r['moodAmused'] == 'angry' and r['outside'] and r['busy'] and r['stopShown'] and r['aborted']
+    ok = (r['blocked'] and r['later'] and r['mood'] == 'angry' and r['moodAmused'] == 'angry' and r['outside'] and r['busy'] and r['stopShown'] and r['aborted'] and r['closedBusy'] and r['answered'] and all(v == 1 for v in r['seatTalk'])
           and r['leave'] and r['secs'] < 17 and r['outRoom'] is None and r['local'][1] > 0 and r['local'][1] < 3.5 and abs(r['local'][0]) < 2.5 and r['noAgain'])
     return ok, json.dumps(r, ensure_ascii=False)
 

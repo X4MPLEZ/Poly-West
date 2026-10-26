@@ -6283,6 +6283,11 @@ const FIST = {
   targets() {
     const out = [{ kind: 'dummy', x: DUMMY.x, z: DUMMY.z, y0: 0.8, y1: 2.0, r: 0.3 }];
     for (const b of BOTTLES) if (b.alive) out.push({ kind: 'bottle', b, x: b.x, z: b.z, y0: b.y, y1: b.y + 0.3, r: 0.06 });
+    // glass in the room you are in (bar, tables, shelves) and the drink in front of you: from table height to above the head
+    const L = G.room && BREAK.byRoom.get(G.room);
+    if (L) for (const g of L) if (g.alive && Math.abs(g.x - PLAY.pos.x) < 2 && Math.abs(g.z - PLAY.pos.z) < 2) out.push({ kind: 'glass', g, x: g.x, z: g.z, y0: g.y0, y1: g.y0 + g.h, r: Math.max(g.r, 0.05), low: true });
+    const S = GLASS.obj;
+    if (S && !S.held && GLASS.mesh.visible) out.push({ kind: 'glass', g: { served: true, kind: 'served', x: S.pos.x, y0: S.pos.y, z: S.pos.z, h: 0.12, r: 0.04, col: rgb(0xb8d0d0), R: S.room }, x: S.pos.x, z: S.pos.z, y0: S.pos.y, y1: S.pos.y + 0.13, r: 0.06, low: true });
     return out;
   },
   /* ---- per frame ---- */
@@ -6340,7 +6345,8 @@ const FIST = {
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
-      if (d > reach + T.r + 0.36 || fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35) continue;
+      if (d > reach + T.r + 0.36) continue;
+      if (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35)) continue;
       if (Math.abs(wrapA(Math.atan2(dx, dz) - yaw)) > 0.95) continue;
       if (d < hd) { hd = d; hit = T; }
     }
@@ -6363,6 +6369,14 @@ const FIST = {
       FSFX.bag(p, power, big || kind === 'hook');
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
+    } else if (hit.kind === 'glass') {
+      // the fist sweeps through: an overhand takes the glasses next to it along (up to three)
+      const dir = new THREE.Vector3(fx, 0.2, fz);
+      BREAK.shatter(hit.g, dir);
+      if (big) {
+        let n = 0;
+        for (const T of this.targets()) if (T.kind === 'glass' && n < 2 && Math.hypot(T.x - hit.x, T.z - hit.z) < 0.45 && Math.abs(T.y0 - hit.y0) < 0.25) { BREAK.shatter(T.g, dir); n++; }
+      }
     }
     worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: hit.kind, kind, heavy: big });
   },
@@ -7467,7 +7481,7 @@ const BARKEEP = {
   cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0, sc: null, damage: { holes: 0, glass: 0 },
   // in which mood each kind of line is said (see VOICE.MOODS)
   MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
-    leave: 'amused', shot: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
+    leave: 'amused', shot: 'angry', smash: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
     hello: ['Howdy, Fremder.', 'Willkommen im Saloon.', 'Na, wieder Durst?', 'Komm rein, setz dich.'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
@@ -7484,7 +7498,8 @@ const BARKEEP = {
     fall: ['Hoppla! Alles noch dran?', 'Steh auf, der Boden ist dreckig.'],
     behind: ['He! Hinter die Theke gehört nur einer.', 'Raus aus meinem Revier.'],
     broke: ['Erst Geld, dann Whiskey.', 'Anschreiben gibt’s nicht.'],
-    cheers: ['Prost.', 'Wohl bekomm’s.']
+    cheers: ['Prost.', 'Wohl bekomm’s.'],
+    smash: ['Das zahlst du.', 'Hände weg von meinem Glas!', 'Noch eins, und du fliegst raus.']
   },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
@@ -7522,10 +7537,11 @@ const BARKEEP = {
     this.say(kind);
   },
   // what a burst of shooting did, collected while he is ducking
-  scene() { return this.sc || (this.sc = { shots: 0, outside: 0, ceiling: 0, wall: 0, floor: 0, glass: {} }); },
+  scene() { const sc = this.sc || (this.sc = { shots: 0, outside: 0, ceiling: 0, wall: 0, floor: 0, glass: {} }); sc.lastT = G.time; return sc; },
   describe(sc) {
     const n = (k, one, many) => (k === 1 ? one : k + ' ' + many), out = [];
-    out.push('Der Fremde hat gerade ' + (sc.shots === 1 ? 'einmal' : sc.shots === 2 ? 'zweimal' : sc.shots + '-mal') + (sc.outside >= sc.shots ? ' draußen vor deinem Saloon' : ' in deinem Saloon') + ' mit dem Revolver geschossen, du hast dich hinter der Theke weggeduckt.');
+    if (!sc.shots) out.push('Der Fremde hat gerade in deinem Saloon mit der bloßen Faust Glas zerschlagen.');
+    else out.push('Der Fremde hat gerade ' + (sc.shots === 1 ? 'einmal' : sc.shots === 2 ? 'zweimal' : sc.shots + '-mal') + (sc.outside >= sc.shots ? ' draußen vor deinem Saloon' : ' in deinem Saloon') + ' mit dem Revolver geschossen, du hast dich hinter der Theke weggeduckt.');
     const holes = [];
     if (sc.ceiling) holes.push(n(sc.ceiling, 'ein Loch', 'Löcher') + ' in deiner Decke');
     if (sc.wall) holes.push(n(sc.wall, 'eins', 'Löcher') + ' in den Wänden oder Möbeln');
@@ -7539,6 +7555,7 @@ const BARKEEP = {
   memo(sc) {
     const holes = sc.ceiling + sc.wall + sc.floor, gl = Object.values(sc.glass).reduce((a, b) => a + b, 0);
     this.damage.holes += holes; this.damage.glass += gl;
+    if (!sc.shots) { this.remember('Er hat in deinem Saloon mit der Faust ' + (gl === 1 ? 'ein Glas' : gl + ' Gläser und Flaschen') + ' zerschlagen.'); return; }
     const bits = [sc.shots + (sc.shots === 1 ? ' Schuss' : ' Schüsse')];
     const pl = (k, one, many) => k + ' ' + (k === 1 ? one : many);
     if (sc.ceiling) bits.push(pl(sc.ceiling, 'Loch', 'Löcher') + ' in der Decke');
@@ -7688,6 +7705,11 @@ const BARKEEP = {
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (inside && dP < 9) N.lookAt(head, 1); else N.lookTW = 0;
     if (this.playerBehind()) this.say('behind', 12);
+    // glass smashed with the fist (no shots, so no ducking): once it is quiet for a moment he says something about it
+    if (this.sc && !this.sc.shots && this.st !== 'duck' && G.time - this.sc.lastT > 1.2) {
+      const sc = this.sc; this.sc = null; this.memo(sc);
+      if (!TALK.remark(N, this.describe(sc), () => this.say('smash'), 'angry', 0.85)) this.say('smash');
+    }
     // a gun pointed at him: hands up
     const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
     this.aimedT = aimed ? Math.min(this.aimedT + dt, 3) : Math.max(0, this.aimedT - dt);
@@ -7969,7 +7991,8 @@ const TALK = {
   },
   // who could be talked to right now
   target() {
-    let best = null, bd = 4.2;
+    // seated you can call him from further away (across the room)
+    let best = null, bd = SIT.state === 'sit' ? 12 : 5;
     for (const n of NPCS.list) {
       if (!n.persona || !n.ch.root.visible || (n.room && n.room !== G.room)) continue;
       const d = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z);
@@ -8050,15 +8073,15 @@ const TALK = {
     if (n) { n.thinking = false; VOICE.stop(n); SAY.hide && SAY.hide(n); n.aiAt = G.time; }
     if (this.open) this.setState('Abgebrochen \u00b7 ' + (this.micOff ? 'schreib weiter oder Ende' : 'V: weiterreden'), 'idle');
   },
+  /* "Ende" / Esc / walking off: only the strip goes; an answer on its way still comes (talking is something you do
+     on the side, not a mode). Only "Stopp" takes an answer back. */
   close() {
     if (!this.open) return;
-    if (this.busy || (this.npc && VOICE.speaking(this.npc))) this.abort();
+    if (this.inp.value.trim() && !this.busy) this.sendTyped();   // what was typed (or dictated) still goes to him
     this.stopListen(true);
-    this.userAbort = true;
-    if (this.ctl) { this.ctl.abort(); this.ctl = null; }
     this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
-    if (this.npc) { this.npc.talking = false; this.npc.thinking = false; }
-    this.npc = null; this.busy = false; this.seq++;
+    if (this.npc) this.npc.talking = false;
+    this.npc = null;
     try { this.inp.blur(); document.getElementById('gl').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
   },
   // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on
