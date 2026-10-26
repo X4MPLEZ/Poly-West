@@ -69,6 +69,7 @@ const GUN = {
   /* ---- requests from input ---- */
   toggleHolster() {
     if (SIT.owns()) return;
+    if (this.state !== 'holster') this.reloadThenHolster = false;
     if (this.state === 'holster') this.startDraw();
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
@@ -91,8 +92,11 @@ const GUN = {
     if (this.aimW < 0.6) { this.hipT = 0.9; if (this.camW < 0.05) PLAY.aimPitch = clamp(PLAY.camPitch - 0.25, -0.3, 0.55); }
   },
   pressReload() {
-    if (SIT.busy()) return;
-    if (this.state !== 'drawn' || this.reload || this.ammo >= 6 || this.reserve <= 0) return;
+    if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return;
+    if (this.ammo >= 6 || this.reserve <= 0) return;
+    // holstered: draw, reload, put it away again
+    if (this.state === 'holster') { this.startDraw(); this.reloadThenHolster = true; return; }
+    if (this.state !== 'drawn' || this.reload) return;
     this.state = 'reload'; this.reload = { t: 0, phase: 'open', n: 0, stop: false };
     GSFX.gate();
   },
@@ -108,7 +112,7 @@ const GUN = {
     else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
-      if (this.t > 0.42) this.state = 'drawn';
+      if (this.t > 0.42) { this.state = 'drawn'; if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
     } else if (this.state === 'holstering') {
       if (this.inHand && this.t > 0.26) { this.inHand = false; GSFX.leather(); }
       if (this.t > 0.45) this.state = 'holster';
@@ -132,7 +136,10 @@ const GUN = {
       R.t = 0;
       if (this.ammo < 6 && this.reserve > 0) { this.ammo++; this.reserve--; R.n++; GSFX.round(); }
       if (this.ammo >= 6 || this.reserve <= 0 || R.stop) { R.phase = 'close'; }
-    } else if (R.phase === 'close' && R.t > 0.26) { GSFX.gate(); this.reload = null; this.state = 'drawn'; }
+    } else if (R.phase === 'close' && R.t > 0.26) {
+      GSFX.gate(); this.reload = null; this.state = 'drawn';
+      if (this.reloadThenHolster) { this.reloadThenHolster = false; if (!this.wantAim) this.toggleHolster(); }
+    }
   },
 
   /* ---- character pose (called by the gait just before the pose is applied) ---- */

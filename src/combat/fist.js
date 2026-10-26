@@ -131,7 +131,7 @@ const FIST = {
   /* where to punch: the way you are steering, or the way you face; then pulled onto anything hittable close by */
   aimYaw() {
     const L = Math.min(DRUNK.level, 1);
-    const base = (PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw) + (Math.random() - 0.5) * L * 0.9;
+    const base = (PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw) + (Math.random() - 0.5) * L * 0.5;
     if (Math.random() < L * 0.6) return base;   // drunk: often not even close
     let best = null, bestS = 1e9;
     for (const T of this.targets()) {
@@ -171,6 +171,8 @@ const FIST = {
     }
     if (this.st === 'idle' && this.queued) { this.queued = false; this.start(false); }
     if (this.st === 'idle') this.faceYaw = null;   // the punch direction is forgotten once the punch is over
+    // a drunk miss keeps turning him for a moment after the punch
+    if (this.spin && this.st === 'idle') { const d = this.spin * (1 - Math.exp(-dt * 5)); PLAY.yaw += d; this.spin -= d; if (Math.abs(this.spin) < 0.01) this.spin = 0; }
     this.rest -= dt;
     if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * 0.4);
     this.fight = Math.max(0, this.fight - dt);
@@ -189,9 +191,8 @@ const FIST = {
   drunkFollow() {
     const L = Math.min(DRUNK.level, 1), yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, rel = wrapA(yaw - PLAY.yaw);
     const side = this.side * (this.clipName === 'hook' || this.heavy ? 1.6 : 0.8);
-    DRUNK.bodyV.x += (side * 1.8 - Math.sin(rel) * 1.5) * L; DRUNK.bodyV.y += 2.2 * L;
-    DRUNK.headV.x += side * 2.6 * L; DRUNK.headV.y += 2.4 * L;
-    if (!this.landed && Math.random() < L * 0.7) PLAY.yaw += this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
+    DRUNK.push((side * 0.25 - Math.sin(rel) * 0.15) * L, 0.3 * L);
+    if (!this.landed && Math.random() < L * 0.7) this.spin = this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
     if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
   },
   connect() {

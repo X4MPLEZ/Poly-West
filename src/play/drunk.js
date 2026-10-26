@@ -8,7 +8,8 @@
    - the view (camera sway and roll, double vision in POST), the aim, the fists, the hiccups
    At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
 const DRUNK = {
-  level: 0, stomach: 0, t: 0, hicT: 12, stumbleT: 4, out: null,
+  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, bumpT: 0,
+  lurch: new THREE.Vector2(),
   // the balance chain, angles in radians: x = to the side (+ = his right), y = forwards
   head: new THREE.Vector2(), headV: new THREE.Vector2(), body: new THREE.Vector2(), bodyV: new THREE.Vector2(),
   goal: new THREE.Vector2(), goalT: 0, drift: new THREE.Vector2(), sway: new THREE.Vector2(),
@@ -16,12 +17,13 @@ const DRUNK = {
     if (alc < 0) { this.level = Math.max(0, this.level + alc); return; }   // water helps a little
     this.stomach += alc;
   },
-  blocked() { return !!this.out || FALL.busy(); },
+  blocked() { return !!this.out || FALL.busy() || !!this.leave; },
   update(dt) {
     this.t += dt;
-    // stomach -> blood (half of it within ~8 s), blood -> gone (slowly, faster when it is a lot)
-    const absorb = this.stomach * (1 - Math.exp(-dt / 11));
-    this.stomach -= absorb; this.level += absorb;
+    // stomach -> gut -> blood: nothing for a few seconds, then it creeps up for half a minute;
+    // blood -> gone (slowly, faster when it is a lot)
+    const s2g = this.stomach * (1 - Math.exp(-dt / 9)), g2b = this.gut * (1 - Math.exp(-dt / 14));
+    this.stomach -= s2g; this.gut += s2g - g2b; this.level += g2b;
     this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
     const L = Math.min(this.level, 1), t = this.t;
     // the camera's slow sway
@@ -41,7 +43,11 @@ const DRUNK = {
       PLAY.camYaw += (Math.cos(t * 0.9) * 0.22 + Math.cos(t * 2.3) * 0.1) * L * dt;
       PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.12 * dt;
     }
-    if (this.level >= 1 && !this.out) this.blackout();
+    this.bumpT = Math.max(0, this.bumpT - dt);
+    // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
+    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
+    if (this.leave) this.updateLeave(dt);
+    if (this.level >= 1 && !this.out && !this.leave) this.blackout();
     if (this.out) this.updateBlackout(dt);
   },
   /* the head chases a wandering goal, the body chases the head (later, heavier), the hips chase the body */
@@ -53,11 +59,15 @@ const DRUNK = {
       const a = Math.random() * TAU, m = (0.12 + Math.random() * 0.22) * L;
       this.goal.set(Math.cos(a) * m, Math.sin(a) * m * 0.7 + 0.03 * L);
     }
+    // a lurch (a stumble, a wild swing) adds to the goal for a moment and dies away smoothly
+    this.lurch.multiplyScalar(Math.exp(-dt * 2.2));
+    const tgt = this._tg || (this._tg = new THREE.Vector2());
+    tgt.copy(this.goal).add(this.lurch);
     const sp = (pos, vel, target, k, c) => {
       vel.x += ((target.x - pos.x) * k - vel.x * c) * dt; vel.y += ((target.y - pos.y) * k - vel.y * c) * dt;
       pos.x += vel.x * dt; pos.y += vel.y * dt;
     };
-    sp(this.head, this.headV, this.goal, 22, 4.5);       // quick and bouncy
+    sp(this.head, this.headV, tgt, 22, 5.5);             // quick and bouncy
     sp(this.body, this.bodyV, this.head, 7, 2.6);        // follows, overshoots
     // the leaning body pulls the feet after it: the root drifts the way the body leans
     const k = (SIT.busy() || FALL.busy()) ? 0 : L * 1.7;
@@ -83,13 +93,54 @@ const DRUNK = {
     const f = (0.9 + L * 1.6) * (big ? 1.35 : 1);
     PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
     const rel = wrapA(a - PLAY.yaw);
-    this.bodyV.x += -Math.sin(rel) * 1.4 * f; this.bodyV.y += Math.cos(rel) * 2.4 * f;
-    this.headV.x += -Math.sin(rel) * 2.0 * f; this.headV.y += Math.cos(rel) * 3.2 * f;
+    this.push(-Math.sin(rel) * 0.22 * f, Math.cos(rel) * 0.3 * f);
     this.flail = 0.6;
     FSFX.cloth(); this.scuff();
     // very drunk: sometimes it ends on the floor
-    const p = fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
     if (Math.random() < p) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 220);
+  },
+  // push the balance: lean that way for a moment (x: to his right, y: forwards), smoothly through the springs
+  push(x, y) { this.lurch.x = clamp(this.lurch.x + x, -0.5, 0.5); this.lurch.y = clamp(this.lurch.y + y, -0.5, 0.5); },
+  // walked into something solid (the push-out from collide): drunk, he bounces off and reels back
+  bump(dx, dz) {
+    const L = Math.min(this.level, 1), n = Math.hypot(dx, dz);
+    if (L < 0.2 || n < 0.004 || this.bumpT > 0 || FALL.busy() || SIT.busy()) return;
+    const nx = dx / n, nz = dz / n, vn = PLAY.vx * nx + PLAY.vz * nz;   // vn < 0: moving into it
+    if (vn > -0.7) return;
+    this.bumpT = 0.8;
+    const e = 0.5 + L * 0.6;
+    PLAY.vx -= (1 + e) * vn * nx; PLAY.vz -= (1 + e) * vn * nz;
+    const rel = wrapA(Math.atan2(nx, nz) - PLAY.yaw);
+    this.push(-Math.sin(rel) * 0.35 * L, Math.cos(rel) * 0.4 * L - 0.15 * L);
+    this.flail = 0.6;
+    PLAY.camShake = Math.max(PLAY.camShake, 0.06);
+    GSFX.run(() => { const { g, t } = GSFX.out(0.5, PLAY.pos); SFX.thump(t, g, 120, 60, 0.5, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.25, attack: 0.002, decay: 0.08 }); });
+    FSFX.cloth();
+    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 300);
+  },
+  /* had enough indoors: stand up, stagger out of the door, go down in the street */
+  startLeave() {
+    const R = ROOMSTATE.cur, F = R.floorY;
+    this.leave = { R, t: 0, i: 0, done: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 2.2), rwp(R, (Math.random() - 0.5) * 3, 0, R.doorZ + 5.5)] };
+    DRINK.cancel(); SHOP.open && SHOP.close();
+    if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
+    TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
+  },
+  autoDir() {
+    const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;
+    const w = Lv.way[Lv.i], dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
+    return d > 1e-3 ? [dx / d, dz / d] : null;
+  },
+  updateLeave(dt) {
+    const Lv = this.leave;
+    Lv.t += dt;
+    this.level = Math.min(this.level, 0.97);   // not before he is out
+    if (Lv.i < Lv.way.length) {
+      const w = Lv.way[Lv.i];
+      if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
+    } else Lv.done += dt;
+    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 1); this.stomach += 0.05; this.blackout(); }
   },
   // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
   ground(g, dt) {
@@ -185,11 +236,11 @@ const DRUNK = {
     const w = spots[Math.floor(Math.random() * spots.length)];
     if (w.seat && w.seat()) SIT.warp(w.seat());
     else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; }
-    this.level = 0.3; this.stomach = 0;
+    this.level = 0.3; this.stomach = 0; this.gut = 0;
     const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
     INV.money -= lost;
     TOAST.show(w.text, 'long');
     if (lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(lost) + ').', 'long'), 1800);
   }
 };
-SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.95); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); });
+SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3), gut: +DRUNK.gut.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.85); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); DRUNK.gut = clamp(+d.gut || 0, 0, 1); });

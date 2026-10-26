@@ -77,6 +77,8 @@ function updatePlayer(dt) {
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
   [mx, mz] = DRUNK.steer(mx, mz);
   if (DRUNK.blocked() || SHOP.open) { mx = mz = 0; mag = 0; }
+  // had enough: the feet find the way out by themselves
+  if (DRUNK.leave && !SIT.busy()) { const d = DRUNK.autoDir(); if (d) { [mx, mz] = DRUNK.steer(d[0], d[1]); mag = 1; } }
   const ml = Math.hypot(mx, mz);
   if (ml > 1e-4) { mx /= ml; mz /= ml; }
   PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
@@ -95,7 +97,7 @@ function updatePlayer(dt) {
   PLAY.moving = PLAY.speed > 0.35;
   if (punching && FIST.faceYaw !== null) {
     let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-    PLAY.yaw += d * (1 - Math.exp(-dt * 22));
+    PLAY.yaw += d * (1 - Math.exp(-dt * (22 - 15 * Math.min(DRUNK.level, 1))));   // drunk: turns into the punch slowly, no snapping
   } else if (aiming) {
     // aiming: the body turns side-on to the target, right shoulder forward
     const ty = PLAY.camYaw + Math.PI + 0.35;
@@ -108,6 +110,7 @@ function updatePlayer(dt) {
   }
   let px = PLAY.pos.x + PLAY.vx * dt, pz = PLAY.pos.z + PLAY.vz * dt;
   const [cx, cz] = collide(px, pz, PLAY.pos.y);
+  DRUNK.bump(cx - px, cz - pz);   // drunk into a wall or a post: bounce off it
   // just up from a seat that stands close to furniture: ease out of it instead of popping
   if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
   const g = groundAt(px, pz, PLAY.pos.y);

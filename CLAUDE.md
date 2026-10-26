@@ -62,8 +62,8 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `combat/fist.js` | Faustkampf: Schläge als Faustbahnen mit Arm-IK, Overhand, Deckung, Ausdauer |
 | `interact/interact.js` | **ein System für alles Benutzbare**: Einträge mit Ort, Raum, Belegung, Verb; Fokus und Hinweis „E …“ |
 | `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest), `SIT.warp(seat)` |
-| `interact/drink.js` | Trinken: `GLASS` (serviertes Getränk, rutscht über die Theke), `DRINK` (Arm-Animation greifen → heben → Schluck → abstellen), Theken (`makeCounter`, `barActions`), `SHOP` (Bestellliste) |
-| `play/drunk.js` | `DRUNK`: Magen → Blut; Gleichgewicht als Federkette (Kopf führt, Oberkörper folgt, Hüfte/Füße werden mitgezogen → `drift`), Kurs-Drift, Stolpern, Schluckauf, Kamera, Filmriss mit Aufwachen woanders |
+| `interact/drink.js` | Trinken: `GLASS` (serviertes Getränk, rutscht über die Theke), `DRINK` (Arm-Animation greifen → heben → Schluck → abstellen), Theken (`makeCounter`, `barActions`), `SHOP` (Bestellliste), Glas-Geräusche (Rutschen, Anheben, Abstellen) |
+| `play/drunk.js` | `DRUNK`: Magen → Blut; Gleichgewicht als Federkette (Kopf führt, Oberkörper folgt, Hüfte/Füße werden mitgezogen → `drift`), Kurs-Drift, Stolpern, Schluckauf, Kamera, Abprallen an Wänden (`bump`), wirkt verzögert (Magen → Darm → Blut), bei zu viel drinnen allein rausgehen (`leave`), dann Filmriss mit Aufwachen woanders |
 | `play/fall.js` | `FALL`: Hinfallen und Aufstehen als Schlüsselposen (`FALL_KEYS`/`FALL_STEPS`), übernimmt die Pose wie das Sitzen |
 | `gfx/post.js` | `POST`: Doppeltsehen + Wabern + warme Farbe, nur wenn betrunken (sonst direkt auf den Bildschirm) |
 | `ui/wheel.js` | `WHEEL`: Schnellrad für die Tasche (Tab halten / Taschen-Knopf / Steuerkreuz hoch), Zeit läuft langsamer |

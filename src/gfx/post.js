@@ -35,10 +35,9 @@ const POST = {
           vec2 off = vec2(sin(uTime * 0.7), cos(uTime * 0.9) * 0.35) * 0.028 * uAmt * sep;
           vec3 b = soft(uv + off, r + 0.002 * uAmt);
           vec3 c = mix(a, b, 0.45 * clamp(uAmt * 1.4, 0.0, 1.0));
-          // warm and too rich, darker towards the edges
+          // warm and too rich
           float l = dot(c, vec3(0.3, 0.59, 0.11));
           c = mix(vec3(l), c, 1.0 + 0.35 * uAmt) * vec3(1.0 + 0.08 * uAmt, 1.0, 1.0 - 0.1 * uAmt);
-          c *= 1.0 - smoothstep(0.35, 1.25, d) * (0.35 + 0.45 * uAmt) * uAmt;
           // eyelids: an opening that narrows from above and below, curved
           float open = 0.5 * (1.0 - uLid) * sqrt(max(0.0, 1.0 - (uv.x - 0.5) * (uv.x - 0.5) * 1.6));
           float lid = smoothstep(open, open + 0.06, abs(vUv.y - 0.5 + 0.03 * uLid));
@@ -55,8 +54,19 @@ const POST = {
   // how drunk the picture looks, and how far the eyes are shut
   update(dt) {
     const L = Math.min(DRUNK.level, 1.05);
-    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 3));
-    let lid = smoothstep(0.82, 1.0, L) * (0.45 + 0.4 * Math.max(0, Math.sin(G.time * 1.6)));   // heavy eyes falling shut
+    // the picture follows the level slowly, it creeps in
+    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 0.6));
+    // close to the end: now and then a slow, heavy blink (shut, hold, open again), wide open in between
+    this.blinkT = (this.blinkT ?? 3) - dt;
+    if (L > 0.8 && this.blinkT <= 0 && !this.blink) { this.blink = 0.001; this.blinkT = 2.5 + Math.random() * 3.5 * (1.1 - L); }
+    let lid = 0;
+    if (this.blink) {
+      this.blink += dt;
+      const b = this.blink, close = 0.45, hold = 0.25 + L * 0.2, open = 0.7;
+      lid = b < close ? smoothstep(0, close, b) : b < close + hold ? 1 : 1 - smoothstep(close + hold, close + hold + open, b);
+      lid *= 0.75 + 0.25 * smoothstep(0.85, 1, L);
+      if (b > close + hold + open) this.blink = 0;
+    }
     const O = DRUNK.out;
     if (O) lid = O.phase === 'fade' ? Math.max(lid, clamp(O.t / 2.0, 0, 1)) : O.phase === 'dark' ? 1 : clamp(1 - O.t / 2.2, 0, 1) * (0.8 + 0.2 * Math.sin(O.t * 9));
     this.lid = lid;

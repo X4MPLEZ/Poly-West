@@ -3624,10 +3624,9 @@ const POST = {
           vec2 off = vec2(sin(uTime * 0.7), cos(uTime * 0.9) * 0.35) * 0.028 * uAmt * sep;
           vec3 b = soft(uv + off, r + 0.002 * uAmt);
           vec3 c = mix(a, b, 0.45 * clamp(uAmt * 1.4, 0.0, 1.0));
-          // warm and too rich, darker towards the edges
+          // warm and too rich
           float l = dot(c, vec3(0.3, 0.59, 0.11));
           c = mix(vec3(l), c, 1.0 + 0.35 * uAmt) * vec3(1.0 + 0.08 * uAmt, 1.0, 1.0 - 0.1 * uAmt);
-          c *= 1.0 - smoothstep(0.35, 1.25, d) * (0.35 + 0.45 * uAmt) * uAmt;
           // eyelids: an opening that narrows from above and below, curved
           float open = 0.5 * (1.0 - uLid) * sqrt(max(0.0, 1.0 - (uv.x - 0.5) * (uv.x - 0.5) * 1.6));
           float lid = smoothstep(open, open + 0.06, abs(vUv.y - 0.5 + 0.03 * uLid));
@@ -3644,8 +3643,19 @@ const POST = {
   // how drunk the picture looks, and how far the eyes are shut
   update(dt) {
     const L = Math.min(DRUNK.level, 1.05);
-    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 3));
-    let lid = smoothstep(0.82, 1.0, L) * (0.45 + 0.4 * Math.max(0, Math.sin(G.time * 1.6)));   // heavy eyes falling shut
+    // the picture follows the level slowly, it creeps in
+    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 0.6));
+    // close to the end: now and then a slow, heavy blink (shut, hold, open again), wide open in between
+    this.blinkT = (this.blinkT ?? 3) - dt;
+    if (L > 0.8 && this.blinkT <= 0 && !this.blink) { this.blink = 0.001; this.blinkT = 2.5 + Math.random() * 3.5 * (1.1 - L); }
+    let lid = 0;
+    if (this.blink) {
+      this.blink += dt;
+      const b = this.blink, close = 0.45, hold = 0.25 + L * 0.2, open = 0.7;
+      lid = b < close ? smoothstep(0, close, b) : b < close + hold ? 1 : 1 - smoothstep(close + hold, close + hold + open, b);
+      lid *= 0.75 + 0.25 * smoothstep(0.85, 1, L);
+      if (b > close + hold + open) this.blink = 0;
+    }
     const O = DRUNK.out;
     if (O) lid = O.phase === 'fade' ? Math.max(lid, clamp(O.t / 2.0, 0, 1)) : O.phase === 'dark' ? 1 : clamp(1 - O.t / 2.2, 0, 1) * (0.8 + 0.2 * Math.sin(O.t * 9));
     this.lid = lid;
@@ -3744,6 +3754,8 @@ function updatePlayer(dt) {
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
   [mx, mz] = DRUNK.steer(mx, mz);
   if (DRUNK.blocked() || SHOP.open) { mx = mz = 0; mag = 0; }
+  // had enough: the feet find the way out by themselves
+  if (DRUNK.leave && !SIT.busy()) { const d = DRUNK.autoDir(); if (d) { [mx, mz] = DRUNK.steer(d[0], d[1]); mag = 1; } }
   const ml = Math.hypot(mx, mz);
   if (ml > 1e-4) { mx /= ml; mz /= ml; }
   PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
@@ -3762,7 +3774,7 @@ function updatePlayer(dt) {
   PLAY.moving = PLAY.speed > 0.35;
   if (punching && FIST.faceYaw !== null) {
     let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-    PLAY.yaw += d * (1 - Math.exp(-dt * 22));
+    PLAY.yaw += d * (1 - Math.exp(-dt * (22 - 15 * Math.min(DRUNK.level, 1))));   // drunk: turns into the punch slowly, no snapping
   } else if (aiming) {
     // aiming: the body turns side-on to the target, right shoulder forward
     const ty = PLAY.camYaw + Math.PI + 0.35;
@@ -3775,6 +3787,7 @@ function updatePlayer(dt) {
   }
   let px = PLAY.pos.x + PLAY.vx * dt, pz = PLAY.pos.z + PLAY.vz * dt;
   const [cx, cz] = collide(px, pz, PLAY.pos.y);
+  DRUNK.bump(cx - px, cz - pz);   // drunk into a wall or a post: bounce off it
   // just up from a seat that stands close to furniture: ease out of it instead of popping
   if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
   const g = groundAt(px, pz, PLAY.pos.y);
@@ -4083,7 +4096,8 @@ function aimCamera(R) {
    - the view (camera sway and roll, double vision in POST), the aim, the fists, the hiccups
    At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
 const DRUNK = {
-  level: 0, stomach: 0, t: 0, hicT: 12, stumbleT: 4, out: null,
+  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, bumpT: 0,
+  lurch: new THREE.Vector2(),
   // the balance chain, angles in radians: x = to the side (+ = his right), y = forwards
   head: new THREE.Vector2(), headV: new THREE.Vector2(), body: new THREE.Vector2(), bodyV: new THREE.Vector2(),
   goal: new THREE.Vector2(), goalT: 0, drift: new THREE.Vector2(), sway: new THREE.Vector2(),
@@ -4091,12 +4105,13 @@ const DRUNK = {
     if (alc < 0) { this.level = Math.max(0, this.level + alc); return; }   // water helps a little
     this.stomach += alc;
   },
-  blocked() { return !!this.out || FALL.busy(); },
+  blocked() { return !!this.out || FALL.busy() || !!this.leave; },
   update(dt) {
     this.t += dt;
-    // stomach -> blood (half of it within ~8 s), blood -> gone (slowly, faster when it is a lot)
-    const absorb = this.stomach * (1 - Math.exp(-dt / 11));
-    this.stomach -= absorb; this.level += absorb;
+    // stomach -> gut -> blood: nothing for a few seconds, then it creeps up for half a minute;
+    // blood -> gone (slowly, faster when it is a lot)
+    const s2g = this.stomach * (1 - Math.exp(-dt / 9)), g2b = this.gut * (1 - Math.exp(-dt / 14));
+    this.stomach -= s2g; this.gut += s2g - g2b; this.level += g2b;
     this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
     const L = Math.min(this.level, 1), t = this.t;
     // the camera's slow sway
@@ -4116,7 +4131,11 @@ const DRUNK = {
       PLAY.camYaw += (Math.cos(t * 0.9) * 0.22 + Math.cos(t * 2.3) * 0.1) * L * dt;
       PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.12 * dt;
     }
-    if (this.level >= 1 && !this.out) this.blackout();
+    this.bumpT = Math.max(0, this.bumpT - dt);
+    // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
+    if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
+    if (this.leave) this.updateLeave(dt);
+    if (this.level >= 1 && !this.out && !this.leave) this.blackout();
     if (this.out) this.updateBlackout(dt);
   },
   /* the head chases a wandering goal, the body chases the head (later, heavier), the hips chase the body */
@@ -4128,11 +4147,15 @@ const DRUNK = {
       const a = Math.random() * TAU, m = (0.12 + Math.random() * 0.22) * L;
       this.goal.set(Math.cos(a) * m, Math.sin(a) * m * 0.7 + 0.03 * L);
     }
+    // a lurch (a stumble, a wild swing) adds to the goal for a moment and dies away smoothly
+    this.lurch.multiplyScalar(Math.exp(-dt * 2.2));
+    const tgt = this._tg || (this._tg = new THREE.Vector2());
+    tgt.copy(this.goal).add(this.lurch);
     const sp = (pos, vel, target, k, c) => {
       vel.x += ((target.x - pos.x) * k - vel.x * c) * dt; vel.y += ((target.y - pos.y) * k - vel.y * c) * dt;
       pos.x += vel.x * dt; pos.y += vel.y * dt;
     };
-    sp(this.head, this.headV, this.goal, 22, 4.5);       // quick and bouncy
+    sp(this.head, this.headV, tgt, 22, 5.5);             // quick and bouncy
     sp(this.body, this.bodyV, this.head, 7, 2.6);        // follows, overshoots
     // the leaning body pulls the feet after it: the root drifts the way the body leans
     const k = (SIT.busy() || FALL.busy()) ? 0 : L * 1.7;
@@ -4158,13 +4181,54 @@ const DRUNK = {
     const f = (0.9 + L * 1.6) * (big ? 1.35 : 1);
     PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
     const rel = wrapA(a - PLAY.yaw);
-    this.bodyV.x += -Math.sin(rel) * 1.4 * f; this.bodyV.y += Math.cos(rel) * 2.4 * f;
-    this.headV.x += -Math.sin(rel) * 2.0 * f; this.headV.y += Math.cos(rel) * 3.2 * f;
+    this.push(-Math.sin(rel) * 0.22 * f, Math.cos(rel) * 0.3 * f);
     this.flail = 0.6;
     FSFX.cloth(); this.scuff();
     // very drunk: sometimes it ends on the floor
-    const p = fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
     if (Math.random() < p) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 220);
+  },
+  // push the balance: lean that way for a moment (x: to his right, y: forwards), smoothly through the springs
+  push(x, y) { this.lurch.x = clamp(this.lurch.x + x, -0.5, 0.5); this.lurch.y = clamp(this.lurch.y + y, -0.5, 0.5); },
+  // walked into something solid (the push-out from collide): drunk, he bounces off and reels back
+  bump(dx, dz) {
+    const L = Math.min(this.level, 1), n = Math.hypot(dx, dz);
+    if (L < 0.2 || n < 0.004 || this.bumpT > 0 || FALL.busy() || SIT.busy()) return;
+    const nx = dx / n, nz = dz / n, vn = PLAY.vx * nx + PLAY.vz * nz;   // vn < 0: moving into it
+    if (vn > -0.7) return;
+    this.bumpT = 0.8;
+    const e = 0.5 + L * 0.6;
+    PLAY.vx -= (1 + e) * vn * nx; PLAY.vz -= (1 + e) * vn * nz;
+    const rel = wrapA(Math.atan2(nx, nz) - PLAY.yaw);
+    this.push(-Math.sin(rel) * 0.35 * L, Math.cos(rel) * 0.4 * L - 0.15 * L);
+    this.flail = 0.6;
+    PLAY.camShake = Math.max(PLAY.camShake, 0.06);
+    GSFX.run(() => { const { g, t } = GSFX.out(0.5, PLAY.pos); SFX.thump(t, g, 120, 60, 0.5, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.25, attack: 0.002, decay: 0.08 }); });
+    FSFX.cloth();
+    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 300);
+  },
+  /* had enough indoors: stand up, stagger out of the door, go down in the street */
+  startLeave() {
+    const R = ROOMSTATE.cur, F = R.floorY;
+    this.leave = { R, t: 0, i: 0, done: 0, way: [rwp(R, 0, F, R.doorZ - 1.2), rwp(R, 0, F, R.doorZ + 2.2), rwp(R, (Math.random() - 0.5) * 3, 0, R.doorZ + 5.5)] };
+    DRINK.cancel(); SHOP.open && SHOP.close();
+    if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
+    TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
+  },
+  autoDir() {
+    const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;
+    const w = Lv.way[Lv.i], dx = w.x - PLAY.pos.x, dz = w.z - PLAY.pos.z, d = Math.hypot(dx, dz);
+    return d > 1e-3 ? [dx / d, dz / d] : null;
+  },
+  updateLeave(dt) {
+    const Lv = this.leave;
+    Lv.t += dt;
+    this.level = Math.min(this.level, 0.97);   // not before he is out
+    if (Lv.i < Lv.way.length) {
+      const w = Lv.way[Lv.i];
+      if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
+    } else Lv.done += dt;
+    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 1); this.stomach += 0.05; this.blackout(); }
   },
   // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
   ground(g, dt) {
@@ -4260,14 +4324,14 @@ const DRUNK = {
     const w = spots[Math.floor(Math.random() * spots.length)];
     if (w.seat && w.seat()) SIT.warp(w.seat());
     else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; }
-    this.level = 0.3; this.stomach = 0;
+    this.level = 0.3; this.stomach = 0; this.gut = 0;
     const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
     INV.money -= lost;
     TOAST.show(w.text, 'long');
     if (lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(lost) + ').', 'long'), 1800);
   }
 };
-SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.95); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); });
+SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3), gut: +DRUNK.gut.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.85); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); DRUNK.gut = clamp(+d.gut || 0, 0, 1); });
 
 // ==== play/fall.js ====
 /* ---------- falling over (drunk) and getting back up ----------
@@ -4973,6 +5037,7 @@ const GUN = {
   /* ---- requests from input ---- */
   toggleHolster() {
     if (SIT.owns()) return;
+    if (this.state !== 'holster') this.reloadThenHolster = false;
     if (this.state === 'holster') this.startDraw();
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
@@ -4995,8 +5060,11 @@ const GUN = {
     if (this.aimW < 0.6) { this.hipT = 0.9; if (this.camW < 0.05) PLAY.aimPitch = clamp(PLAY.camPitch - 0.25, -0.3, 0.55); }
   },
   pressReload() {
-    if (SIT.busy()) return;
-    if (this.state !== 'drawn' || this.reload || this.ammo >= 6 || this.reserve <= 0) return;
+    if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return;
+    if (this.ammo >= 6 || this.reserve <= 0) return;
+    // holstered: draw, reload, put it away again
+    if (this.state === 'holster') { this.startDraw(); this.reloadThenHolster = true; return; }
+    if (this.state !== 'drawn' || this.reload) return;
     this.state = 'reload'; this.reload = { t: 0, phase: 'open', n: 0, stop: false };
     GSFX.gate();
   },
@@ -5012,7 +5080,7 @@ const GUN = {
     else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
-      if (this.t > 0.42) this.state = 'drawn';
+      if (this.t > 0.42) { this.state = 'drawn'; if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
     } else if (this.state === 'holstering') {
       if (this.inHand && this.t > 0.26) { this.inHand = false; GSFX.leather(); }
       if (this.t > 0.45) this.state = 'holster';
@@ -5036,7 +5104,10 @@ const GUN = {
       R.t = 0;
       if (this.ammo < 6 && this.reserve > 0) { this.ammo++; this.reserve--; R.n++; GSFX.round(); }
       if (this.ammo >= 6 || this.reserve <= 0 || R.stop) { R.phase = 'close'; }
-    } else if (R.phase === 'close' && R.t > 0.26) { GSFX.gate(); this.reload = null; this.state = 'drawn'; }
+    } else if (R.phase === 'close' && R.t > 0.26) {
+      GSFX.gate(); this.reload = null; this.state = 'drawn';
+      if (this.reloadThenHolster) { this.reloadThenHolster = false; if (!this.wantAim) this.toggleHolster(); }
+    }
   },
 
   /* ---- character pose (called by the gait just before the pose is applied) ---- */
@@ -5555,7 +5626,7 @@ const FIST = {
   /* where to punch: the way you are steering, or the way you face; then pulled onto anything hittable close by */
   aimYaw() {
     const L = Math.min(DRUNK.level, 1);
-    const base = (PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw) + (Math.random() - 0.5) * L * 0.9;
+    const base = (PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw) + (Math.random() - 0.5) * L * 0.5;
     if (Math.random() < L * 0.6) return base;   // drunk: often not even close
     let best = null, bestS = 1e9;
     for (const T of this.targets()) {
@@ -5595,6 +5666,8 @@ const FIST = {
     }
     if (this.st === 'idle' && this.queued) { this.queued = false; this.start(false); }
     if (this.st === 'idle') this.faceYaw = null;   // the punch direction is forgotten once the punch is over
+    // a drunk miss keeps turning him for a moment after the punch
+    if (this.spin && this.st === 'idle') { const d = this.spin * (1 - Math.exp(-dt * 5)); PLAY.yaw += d; this.spin -= d; if (Math.abs(this.spin) < 0.01) this.spin = 0; }
     this.rest -= dt;
     if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * 0.4);
     this.fight = Math.max(0, this.fight - dt);
@@ -5613,9 +5686,8 @@ const FIST = {
   drunkFollow() {
     const L = Math.min(DRUNK.level, 1), yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, rel = wrapA(yaw - PLAY.yaw);
     const side = this.side * (this.clipName === 'hook' || this.heavy ? 1.6 : 0.8);
-    DRUNK.bodyV.x += (side * 1.8 - Math.sin(rel) * 1.5) * L; DRUNK.bodyV.y += 2.2 * L;
-    DRUNK.headV.x += side * 2.6 * L; DRUNK.headV.y += 2.4 * L;
-    if (!this.landed && Math.random() < L * 0.7) PLAY.yaw += this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
+    DRUNK.push((side * 0.25 - Math.sin(rel) * 0.15) * L, 0.3 * L);
+    if (!this.landed && Math.random() < L * 0.7) this.spin = this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
     if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
   },
   connect() {
@@ -6156,7 +6228,7 @@ const GLASS = {
       o.slideT = Math.min(o.slideDur, o.slideT + dt);
       const u = 1 - Math.pow(1 - o.slideT / o.slideDur, 2.2);
       o.pos.lerpVectors(o.from, o.to, u);
-      if (o.slideT >= o.slideDur) this.clink(0.6);
+      // (the knock at the end is part of slideSound)
     }
     // left behind: gone after a while (taken away)
     const d = Math.hypot(PLAY.pos.x - o.to.x, PLAY.pos.z - o.to.z);
@@ -6167,14 +6239,47 @@ const GLASS = {
     this.mesh.material = W.ch.parts[0].material;
     this.mesh.visible = !o.room || o.room.mesh.visible;
   },
-  slideSound(dur) {
-    GSFX.run(() => { const { g, t } = GSFX.out(0.35, this.obj.from); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.6, gain: 0.05, attack: 0.05, decay: dur * 0.8 }); });
+  /* sounds of a glass on a wooden counter, synthesised: the ring of the glass depends on the vessel */
+  ring(c, g, t, k, vessel) {
+    const fs = vessel === 'mug' ? [1150, 1930, 3100] : vessel === 'shot' ? [2650, 4300, 6100] : vessel === 'bottle' ? [900, 1700, 2900] : [2100, 3500, 5200];
+    fs.forEach((f, i) => {
+      const o = c.createOscillator(), og = c.createGain(), d = 0.22 - i * 0.05;
+      o.frequency.value = f * (0.97 + Math.random() * 0.06);
+      og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.09 * k / (i + 1), t + 0.002); og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(og); og.connect(g); o.start(t); o.stop(t + d + 0.02);
+    });
   },
+  // sliding along the bar: a rough scrape that slows down, then it stops with a knock
+  slideSound(dur) {
+    const o = this.obj;
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.6, o.from);
+      const n = Math.floor(dur / 0.035);
+      for (let i = 0; i < n; i++) {
+        const u = i / n, sp = Math.pow(1 - u, 1.2);   // fast at first, slower towards the end
+        SFX.noiseHit(t + i * 0.035 + Math.random() * 0.01, g, { type: 'bandpass', freq: 1200 + 900 * sp + Math.random() * 300, q: 1.4, gain: 0.05 + 0.08 * sp * Math.random(), attack: 0.004, decay: 0.03 });
+      }
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: 320, q: 0.7, gain: 0.08, attack: 0.05, decay: dur * 0.9 });
+      SFX.noiseHit(t + dur, g, { type: 'lowpass', freq: 900, q: 0.8, gain: 0.22, attack: 0.002, decay: 0.05 });
+      this.ring(c, g, t + dur + 0.004, 0.6, o.it.vessel);
+    });
+  },
+  // lifted off the wood: a tiny tick and a whisper of a ring
+  lift() {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.45, this.obj ? this.obj.pos : PLAY.pos);
+      SFX.noiseHit(t, g, { type: 'highpass', freq: 3500, q: 0.8, gain: 0.08, attack: 0.001, decay: 0.018 });
+      SFX.noiseHit(t + 0.01, g, { type: 'bandpass', freq: 1600, q: 1.2, gain: 0.05, attack: 0.003, decay: 0.05 });
+      this.ring(c, g, t + 0.005, 0.25, this.obj ? this.obj.it.vessel : 'glass');
+    });
+  },
+  // set down: a knock on the wood and the glass ringing
   clink(k) {
     GSFX.run(() => {
-      const c = SFX.ctx, { g, t } = GSFX.out(0.35 * k, this.obj ? this.obj.pos : PLAY.pos);
-      for (const f of [2350, 3720]) { const o = c.createOscillator(), og = c.createGain(); o.frequency.value = f * (0.97 + Math.random() * 0.06); og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.06, t + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(og); og.connect(g); o.start(t); o.stop(t + 0.2); }
-      SFX.noiseHit(t, g, { type: 'highpass', freq: 3000, q: 0.7, gain: 0.04, attack: 0.001, decay: 0.02 });
+      const c = SFX.ctx, { g, t } = GSFX.out(0.6 * k, this.obj ? this.obj.pos : PLAY.pos), v = this.obj ? this.obj.it.vessel : 'glass';
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: v === 'mug' ? 700 : 1100, q: 0.9, gain: 0.3 * k, attack: 0.001, decay: 0.045 });
+      SFX.thump(t, g, v === 'mug' ? 160 : 230, 90, 0.18 * k, 0.05);
+      this.ring(c, g, t + 0.003, k, v);
     });
   }
 };
@@ -6205,7 +6310,7 @@ const DRINK = {
     const dur = this.st === 'sip' ? this.it.sipT : this.PH[this.st];
     if (this.t < dur) return;
     this.t -= dur;
-    if (this.st === 'reach') { this.st = 'lift'; if (this.src === 'glass') GLASS.obj.held = true; else this.bottleOut = true; }
+    if (this.st === 'reach') { this.st = 'lift'; if (this.src === 'glass') { GLASS.obj.held = true; GLASS.lift(); } else { this.bottleOut = true; FSFX.cloth(); } }
     else if (this.st === 'lift') { this.st = 'sip'; this.gulp(); }
     else if (this.st === 'sip') {
       this.st = 'lower';
@@ -7061,7 +7166,7 @@ const DEV = {
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
     $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
     $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
-    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; });
+    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');

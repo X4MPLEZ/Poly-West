@@ -62,7 +62,7 @@ const GLASS = {
       o.slideT = Math.min(o.slideDur, o.slideT + dt);
       const u = 1 - Math.pow(1 - o.slideT / o.slideDur, 2.2);
       o.pos.lerpVectors(o.from, o.to, u);
-      if (o.slideT >= o.slideDur) this.clink(0.6);
+      // (the knock at the end is part of slideSound)
     }
     // left behind: gone after a while (taken away)
     const d = Math.hypot(PLAY.pos.x - o.to.x, PLAY.pos.z - o.to.z);
@@ -73,14 +73,47 @@ const GLASS = {
     this.mesh.material = W.ch.parts[0].material;
     this.mesh.visible = !o.room || o.room.mesh.visible;
   },
-  slideSound(dur) {
-    GSFX.run(() => { const { g, t } = GSFX.out(0.35, this.obj.from); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.6, gain: 0.05, attack: 0.05, decay: dur * 0.8 }); });
+  /* sounds of a glass on a wooden counter, synthesised: the ring of the glass depends on the vessel */
+  ring(c, g, t, k, vessel) {
+    const fs = vessel === 'mug' ? [1150, 1930, 3100] : vessel === 'shot' ? [2650, 4300, 6100] : vessel === 'bottle' ? [900, 1700, 2900] : [2100, 3500, 5200];
+    fs.forEach((f, i) => {
+      const o = c.createOscillator(), og = c.createGain(), d = 0.22 - i * 0.05;
+      o.frequency.value = f * (0.97 + Math.random() * 0.06);
+      og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.09 * k / (i + 1), t + 0.002); og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(og); og.connect(g); o.start(t); o.stop(t + d + 0.02);
+    });
   },
+  // sliding along the bar: a rough scrape that slows down, then it stops with a knock
+  slideSound(dur) {
+    const o = this.obj;
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.6, o.from);
+      const n = Math.floor(dur / 0.035);
+      for (let i = 0; i < n; i++) {
+        const u = i / n, sp = Math.pow(1 - u, 1.2);   // fast at first, slower towards the end
+        SFX.noiseHit(t + i * 0.035 + Math.random() * 0.01, g, { type: 'bandpass', freq: 1200 + 900 * sp + Math.random() * 300, q: 1.4, gain: 0.05 + 0.08 * sp * Math.random(), attack: 0.004, decay: 0.03 });
+      }
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: 320, q: 0.7, gain: 0.08, attack: 0.05, decay: dur * 0.9 });
+      SFX.noiseHit(t + dur, g, { type: 'lowpass', freq: 900, q: 0.8, gain: 0.22, attack: 0.002, decay: 0.05 });
+      this.ring(c, g, t + dur + 0.004, 0.6, o.it.vessel);
+    });
+  },
+  // lifted off the wood: a tiny tick and a whisper of a ring
+  lift() {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.45, this.obj ? this.obj.pos : PLAY.pos);
+      SFX.noiseHit(t, g, { type: 'highpass', freq: 3500, q: 0.8, gain: 0.08, attack: 0.001, decay: 0.018 });
+      SFX.noiseHit(t + 0.01, g, { type: 'bandpass', freq: 1600, q: 1.2, gain: 0.05, attack: 0.003, decay: 0.05 });
+      this.ring(c, g, t + 0.005, 0.25, this.obj ? this.obj.it.vessel : 'glass');
+    });
+  },
+  // set down: a knock on the wood and the glass ringing
   clink(k) {
     GSFX.run(() => {
-      const c = SFX.ctx, { g, t } = GSFX.out(0.35 * k, this.obj ? this.obj.pos : PLAY.pos);
-      for (const f of [2350, 3720]) { const o = c.createOscillator(), og = c.createGain(); o.frequency.value = f * (0.97 + Math.random() * 0.06); og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.06, t + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(og); og.connect(g); o.start(t); o.stop(t + 0.2); }
-      SFX.noiseHit(t, g, { type: 'highpass', freq: 3000, q: 0.7, gain: 0.04, attack: 0.001, decay: 0.02 });
+      const c = SFX.ctx, { g, t } = GSFX.out(0.6 * k, this.obj ? this.obj.pos : PLAY.pos), v = this.obj ? this.obj.it.vessel : 'glass';
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: v === 'mug' ? 700 : 1100, q: 0.9, gain: 0.3 * k, attack: 0.001, decay: 0.045 });
+      SFX.thump(t, g, v === 'mug' ? 160 : 230, 90, 0.18 * k, 0.05);
+      this.ring(c, g, t + 0.003, k, v);
     });
   }
 };
@@ -111,7 +144,7 @@ const DRINK = {
     const dur = this.st === 'sip' ? this.it.sipT : this.PH[this.st];
     if (this.t < dur) return;
     this.t -= dur;
-    if (this.st === 'reach') { this.st = 'lift'; if (this.src === 'glass') GLASS.obj.held = true; else this.bottleOut = true; }
+    if (this.st === 'reach') { this.st = 'lift'; if (this.src === 'glass') { GLASS.obj.held = true; GLASS.lift(); } else { this.bottleOut = true; FSFX.cloth(); } }
     else if (this.st === 'lift') { this.st = 'sip'; this.gulp(); }
     else if (this.st === 'sip') {
       this.st = 'lower';
