@@ -531,6 +531,20 @@ async def check_ownkeys(g):
         // a refused key: told once, the built-in voice speaks again
         ttsStatus = 401; DIRECT.ttsCache.clear(); VOICE.q = []; VOICE.line(hank, 'Und jetzt?'); await new Promise((x) => setTimeout(x, 50));
         out.dead = DIRECT.elevenDead && !VOICE.eleven() && VOICE.wanted();
+        // Groq says the model is not there: the game asks which ones are, takes one and answers anyway
+        { try { localStorage.removeItem('polywest.aiModel.Groq'); } catch (e) {} SETTINGS.set('claudeKey', 'gsk_test'); const bodies = [];
+          window.fetch = async (url, o) => { calls.push({ url: String(url), o });
+            if (/groq\.com\/openai\/v1\/models$/.test(url)) return new Response(JSON.stringify({ data: [{ id: 'whisper-large-v3' }, { id: 'llama-3.1-8b-instant' }, { id: 'openai/gpt-oss-120b' }] }), { status: 200 });
+            if (/chat\/completions/.test(url)) { const b = JSON.parse(o.body); bodies.push(b);
+              if (b.model === 'llama-3.3-70b-versatile') return new Response(JSON.stringify({ error: { message: 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', code: 'model_not_found' } }), { status: 404 });
+              return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: '[nod, neutral] Klar.' } }] }) + '\n\ndata: [DONE]\n\n', { status: 200 }); }
+            return new Response('{}', { status: 500 }); };
+          const rr = await DIRECT.chat('Hallo', {}); let kept = null; try { kept = localStorage.getItem('polywest.aiModel.Groq'); } catch (e) {}
+          out.modelSwitch = [rr.text, rr.modelApplied, kept, bodies.length, bodies[1] && bodies[1].reasoning_effort];
+          // another error shows the service's own words
+          window.fetch = async () => new Response(JSON.stringify({ error: { message: 'Organization has been restricted.' } }), { status: 400 });
+          try { await DIRECT.chat('Hallo', {}); out.realErr = ''; } catch (e) { out.realErr = e.message; }
+          try { localStorage.removeItem('polywest.aiModel.Groq'); } catch (e) {} }
         // many sentences at once: never more than two requests at a time, "too many" is tried again
         { let live = 0, peak = 0, n429 = 1; DIRECT.ttsCache.clear(); DIRECT.elevenDead = false;
           window.fetch = async (url, o) => { calls.push({ url: String(url), o }); if (/text-to-speech/.test(url)) { live++; peak = Math.max(peak, live); await new Promise((x) => setTimeout(x, 30)); live--;
@@ -558,7 +572,7 @@ async def check_ownkeys(g):
       }
       out.after = [TALK.via || '', VOICE.eleven()];
       return out; }''')
-    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 

@@ -30,7 +30,24 @@ const DIRECT = {
     groq: { name: 'Groq', model: 'llama-3.3-70b-versatile', url: 'https://api.groq.com/openai/v1/chat/completions', site: 'Groq' },
     openai: { name: 'OpenAI', model: 'gpt-4.1-mini', url: 'https://api.openai.com/v1/chat/completions', site: 'OpenAI' }
   },
-  modelFor(P) { return (SETTINGS.v.aiModel || '').trim() || P.model; },
+  // the model: the one set in the settings, else the one found to work for this key, else the service's usual one
+  modelFor(P) {
+    const set = (SETTINGS.v.aiModel || '').trim();
+    if (set) return set;
+    let found = null; try { found = localStorage.getItem('polywest.aiModel.' + P.name); } catch (e) { /* none */ }
+    return found || P.model;
+  },
+  // which models this key may use (OpenAI-style services list them); the best fitting one for talking, or null
+  PREFER_MODELS: [/^llama-3\.3-70b/, /gpt-oss-120b/, /^moonshotai\/kimi/, /^qwen\//, /gpt-oss-20b/, /^meta-llama\/llama-4/, /^llama-3\.1-8b/, /^gpt-4\.1-mini/, /^gpt-4o-mini/, /^gpt-/],
+  async pickModel(P, not) {
+    try {
+      const r = await fetch(P.url.replace('/chat/completions', '/models'), { headers: { authorization: 'Bearer ' + SETTINGS.v.claudeKey.trim() } });
+      if (!r.ok) return null;
+      const ids = ((await r.json()).data || []).map((m) => m.id).filter((id) => id && id !== not && !/whisper|tts|guard|safeguard|embed|orpheus|playai|distil|image|audio|realtime|transcribe/i.test(id));
+      for (const re of this.PREFER_MODELS) { const m = ids.find((id) => re.test(id)); if (m) return m; }
+      return ids[0] || null;
+    } catch (e) { return null; }
+  },
   elevenOn() { return !!(SETTINGS.v.elevenKey || '').trim() && !this.elevenDead; },
   fail(code, msg) { const e = new Error(msg || code); e.code = code; return e; },
 
@@ -86,7 +103,7 @@ const DIRECT = {
     return { text, modelApplied: model };
   },
   // Groq and OpenAI: /chat/completions, streamed; the text comes in choices[0].delta.content
-  async openaiStyle(P, prompt, opt) {
+  async openaiStyle(P, prompt, opt, retried) {
     const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 220, messages: [{ role: 'user', content: prompt }] };
     if (/gpt-oss/.test(model)) { body.reasoning_effort = 'low'; body.include_reasoning = false; body.max_tokens = 600; }   // (thinking models: think briefly, say it short)
     let r;
@@ -100,8 +117,12 @@ const DIRECT = {
       let msg = ''; try { const j = await r.json(); msg = (j.error && (j.error.message || j.error.code)) || ''; } catch (e) { /* no body */ }
       if (r.status === 401 || r.status === 403) throw this.fail('bad_key', P.name + '-Schlüssel abgelehnt');
       if (r.status === 429) throw this.fail(/quota|billing|credit/i.test(msg) ? 'no_credit' : 'rate_limited', /quota|billing|credit/i.test(msg) ? 'kein Guthaben bei ' + P.site : undefined);
-      if (r.status === 404 || /model/i.test(msg)) throw this.fail('bad_request', 'Modell „' + model + '“ gibt es bei ' + P.name + ' nicht');
-      if (r.status === 400) throw this.fail('bad_request', msg.slice(0, 80));
+      // the model is not there (any more) for this key: ask the service which ones are, take the best, try once more
+      if ((r.status === 404 || /model/i.test(msg)) && !retried && !(SETTINGS.v.aiModel || '').trim()) {
+        const m = await this.pickModel(P, model);
+        if (m && m !== model) { try { localStorage.setItem('polywest.aiModel.' + P.name, m); } catch (e) { /* not kept */ } return this.openaiStyle(P, prompt, opt, true); }
+      }
+      if (r.status === 400 || r.status === 404) throw this.fail('bad_request', P.name + ' (' + model + '): ' + (msg || r.status).toString().slice(0, 110));
       throw this.fail('upstream_error', P.name + ' ' + r.status);
     }
     const rd = r.body.getReader(), dec = new TextDecoder();
