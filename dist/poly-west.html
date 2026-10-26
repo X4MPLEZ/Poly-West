@@ -237,6 +237,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .mVoiceT b { color: var(--bone); font-size: 14px; }
 .mVoiceT small { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mVoiceB { height: 30px; padding: 0 10px; font-size: 13px; }
+.mVoiceBtns { display: flex; gap: 8px; flex-wrap: wrap; }
 .mVoiceHelp { margin: 4px 2px 0; font-size: 12px; line-height: 1.35; }
 .mText { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 14px var(--f-mono); -webkit-user-select: text; user-select: text; }
 .mAct { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--brass); background: rgba(231, 166, 64, 0.15); color: var(--bone); font: 700 14px var(--f-ui); }
@@ -5059,7 +5060,9 @@ const VOICE = {
   st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 22050, q: [], playing: null, nextId: 1, waits: {},
   // with an ElevenLabs key (own page) ElevenLabs speaks and Piper is not loaded at all; Piper again if that fails
   eleven() { return !!SETTINGS.v.voice && DIRECT.elevenOn(); },
-  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && !this.eleven(); },
+  // the built-in voice: loaded when ElevenLabs does not speak, and as its stand-in once it is in the browser's storage
+  // (or after ElevenLabs has failed once); so a failed sentence is said by Thorsten, not by the browser's robot voice
+  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && (!this.eleven() || this.backup); },
   ready() { return this.eleven() || this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
@@ -5185,7 +5188,7 @@ const VOICE = {
     const el = this.badgeEl || (this.badgeEl = document.getElementById('voiceSt'));
     if (!el) return;
     let t = '';
-    if (this.wanted()) {
+    if (this.wanted() && !this.eleven()) {
       if (this.st === 'loading') t = '\ud83d\udd0a Stimme lädt \u2026 ' + (this.phase === 'Download' ? this.pct() + ' %' : this.phase);
       else if (this.st === 'ready' && now - this.readyAt < 4000) t = '\ud83d\udd0a Stimme bereit';
       else if (this.st === 'failed') t = '\ud83d\udd0a Stimme: ' + this.why + (this.retryAt ? ' \u00b7 neuer Versuch' : '');
@@ -5205,14 +5208,19 @@ const VOICE = {
     if (!text || !/[\p{L}\d]/u.test(text)) return;
     const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now(), rate: el ? DIRECT.RATE : 0 };
     const made = el ? DIRECT.tts(npc, text, job.mood) : this.synth(text, npc.voiceProfile, job.mood);
-    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { job.err = true; if (el) this.elevenFailed(e, npc, sentence); this.pump(); });
+    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { if (el) this.elevenFailed(e, job, sentence); else job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
-  // ElevenLabs said no (key, credit, connection): tell once, say this sentence with the browser, Piper from now on
-  elevenFailed(e, npc, sentence) {
-    const hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+  /* ElevenLabs said no: a refused key, no credit or no connection switch to the built-in voice for good (told once);
+     this sentence is said in its place in the line by Thorsten (Piper) if he is there, else by the browser.
+     Trying a voice out in the settings shows the reason instead of another voice. */
+  elevenFailed(e, job, sentence) {
+    const npc = job.npc, hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+    if (npc.noFallback) { job.err = true; TOAST.show((e && e.message) || 'ElevenLabs-Fehler', 'long'); return; }
     if (hard) { DIRECT.elevenDead = true; DIRECT.err = e.message; if (!this.toldEleven) { this.toldEleven = true; TOAST.show('ElevenLabs: ' + e.message + ' – es spricht wieder die eingebaute Stimme.', 'long'); } }
-    this.browser(npc, sentence);
+    this.backup = true; this.load();
+    if (this.st === 'ready') { job.rate = 0; job.at = performance.now(); this.synth(this.clean(sentence), npc.voiceProfile, job.mood).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); }); }
+    else { job.err = true; this.browser(npc, sentence); }
   },
   /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
      limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */
@@ -8140,8 +8148,20 @@ const DIRECT = {
   // the most expressive model (v3) is told the mood with a tag in front of the sentence
   TAGS: { neutral: '', amused: '[amused] ', angry: '[angry] ', surprised: '[surprised] ', disgusted: '[annoyed] ', sleepy: '[tired] ', whisper: '[whispers] ', drunk: '[drunk] ' },
   v3() { return SETTINGS.v.voiceModel === 'v3' && !this.v3Dead; },
-  // one sentence -> Float32Array at RATE; throws with a code on failure
+  /* one sentence -> Float32Array at RATE; throws with a code on failure. The free plan allows only a few requests at
+     the same time: they wait in line (two at a time), and "too many" is tried again a moment later */
+  busy: 0, line: [],
   async tts(npc, text, mood) {
+    if (this.busy >= 2) await new Promise((res) => this.line.push(res));
+    this.busy++;
+    try {
+      for (let tries = 0; ; tries++) {
+        try { return await this.tts1(npc, text, mood); }
+        catch (e) { if (e.code !== 'rate_limited' || tries >= 3) throw e; await new Promise((res) => setTimeout(res, 400 + tries * 600)); }
+      }
+    } finally { this.busy--; const next = this.line.shift(); if (next) next(); }
+  },
+  async tts1(npc, text, mood) {
     const v3 = this.v3(), voice = await this.voiceFor(npc), k = voice + '|' + (v3 ? 'v3' : 'f') + '|' + mood + '|' + text;
     if (this.ttsCache.has(k)) return this.ttsCache.get(k);
     const [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
@@ -8169,6 +8189,7 @@ const DIRECT = {
         delete this.voiceIds[(npc && npc.id) || 'any'];
       }
       if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht');
+      if (r.status === 429 || /concurren|too_many|rate/i.test(msg)) throw this.fail('rate_limited', 'ElevenLabs: zu viele Anfragen gleichzeitig');
       throw this.fail('tts_error', 'ElevenLabs ' + r.status + (msg ? ': ' + msg.slice(0, 60) : ''));
     }
     const b = new Uint8Array(await r.arrayBuffer()), n = b.length >> 1, out = new Float32Array(n), dv = new DataView(b.buffer, b.byteOffset, n * 2);
@@ -8189,10 +8210,32 @@ const DIRECT = {
     return vs.sort((a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
   },
   SAMPLE: 'Howdy, Fremder. Was darf’s sein, Whiskey oder Ärger?',
+  // listen to a voice of the account with a sentence of Hank's (no stand-in voice if it fails: the reason is shown)
   tryVoice(id) {
     this.elevenDead = false;
-    VOICE.stop({ id: 'preview' });
-    VOICE.line({ id: 'preview', name: 'Hank', pos: PLAY.pos, voiceProfile: {}, voiceId: id }, this.SAMPLE, 'neutral');
+    VOICE.stop(this.previewNpc);
+    this.previewNpc = { id: 'preview', name: 'Hank', pos: PLAY.pos, voiceProfile: { male: true }, voiceId: id, noFallback: true };
+    VOICE.line(this.previewNpc, this.SAMPLE, 'neutral');
+  },
+  /* German voices from ElevenLabs' library (spoken by German speakers, not English voices speaking German) */
+  async germanVoices(gender) {
+    const q = 'language=de&page_size=40&sort=usage_character_count_1y' + (gender ? '&gender=' + gender : '');
+    const r = await fetch('https://api.elevenlabs.io/v1/shared-voices?' + q, { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
+    if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Schlüssel darf die Stimmen-Bibliothek nicht lesen (Recht „Stimmen: Gelesen“)');
+    if (!r.ok) throw this.fail('voices', 'ElevenLabs ' + r.status);
+    return ((await r.json()).voices || []).filter((v) => v && v.voice_id && v.public_owner_id);
+  },
+  // a library voice into the account, then it is Hank's
+  async addVoice(v) {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices/add/' + encodeURIComponent(v.public_owner_id) + '/' + encodeURIComponent(v.voice_id), {
+      method: 'POST', headers: { 'content-type': 'application/json', 'xi-api-key': SETTINGS.v.elevenKey.trim() }, body: JSON.stringify({ new_name: v.name })
+    });
+    let j = {}; try { j = await r.json(); } catch (e) { /* no body */ }
+    if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Zum Hinzufügen braucht der Schlüssel „Stimmen: Schreiben“ – oder auf elevenlabs.io in der Voice Library auf „Add to my voices“ und dann hier „Meine Stimmen“');
+    if (!r.ok) throw this.fail('voices', 'ElevenLabs ' + r.status + ((j.detail && j.detail.message) ? ': ' + j.detail.message.slice(0, 80) : ''));
+    const id = j.voice_id || v.voice_id;
+    this.takeVoice(id);
+    return id;
   },
   takeVoice(id) {
     SETTINGS.set('elevenVoice', id);
@@ -8367,6 +8410,8 @@ const TALK = {
     SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
     SETTINGS.on('sttMode', () => { HEAR.dead = false; });
     SETTINGS.on('voiceModel', () => { DIRECT.v3Dead = false; });
+    // the built-in voice is the stand-in for ElevenLabs once it is in the browser's storage (then loading it is quick)
+    try { if (window.caches) caches.keys().then((k) => { if (k.some((n) => n.startsWith('poly-west-voice-'))) VOICE.backup = true; }).catch(() => {}); } catch (e) { /* none */ }
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now
@@ -9314,34 +9359,54 @@ const MENU = {
         b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
         row.append(b, out);
       } else if (s.type === 'voices') {
-        // the voices of the ElevenLabs account: listen to each with a sentence of Hank's, take one
-        const b = document.createElement('button'); b.type = 'button'; b.id = id; b.textContent = 'Stimmen laden'; b.className = 'mAct';
+        /* Hank's voice: the voices of the ElevenLabs account (listen with a sentence of his, take one), or German
+           voices from ElevenLabs' library (spoken by Germans; listen to their sample, add one to the account) */
+        const mk = (txt, cls) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.className = cls || 'mAct'; return b; };
+        const bMine = mk('Meine Stimmen'), bDe = mk('Deutsche Stimmen suchen'); bMine.id = id;
         const box = document.createElement('div'); box.className = 'mVoices';
-        const draw = (list) => {
+        const field = () => document.getElementById('set_elevenVoice');
+        const info = (L) => [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || L.description, L.use_case].filter(Boolean).join(' · ');
+        const row2 = (name, sub, on, btns) => {
+          const it = document.createElement('div'); it.className = 'mVoice' + (on ? ' on' : '');
+          const t = document.createElement('div'); t.className = 'mVoiceT';
+          const nm = document.createElement('b'); nm.textContent = (on ? '✓ ' : '') + name; t.appendChild(nm);
+          const sm = document.createElement('small'); sm.textContent = sub; t.appendChild(sm);
+          it.append(t, ...btns); box.appendChild(it);
+        };
+        const help = (txt) => { const p = document.createElement('p'); p.className = 'mVoiceHelp'; p.textContent = txt; box.appendChild(p); };
+        const drawMine = (list) => {
           box.textContent = '';
           const cur = (SETTINGS.v.elevenVoice || '').trim();
           for (const v of list) {
-            const it = document.createElement('div'); it.className = 'mVoice' + (v.voice_id === cur ? ' on' : '');
-            const L = v.labels || {}, info = [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || L.description, L.use_case].filter(Boolean).join(' · ');
-            const t = document.createElement('div'); t.className = 'mVoiceT';
-            const nm = document.createElement('b'); nm.textContent = (v.voice_id === cur ? '\u2713 ' : '') + v.name; t.appendChild(nm);
-            const sm = document.createElement('small'); sm.textContent = info + (v.category && v.category !== 'premade' ? ' · eigene' : ''); t.appendChild(sm);
-            const play = document.createElement('button'); play.type = 'button'; play.textContent = '\u25b6'; play.title = 'Anhören'; play.className = 'mAct mVoiceB';
-            play.addEventListener('click', () => DIRECT.tryVoice(v.voice_id));
-            const take = document.createElement('button'); take.type = 'button'; take.textContent = v.voice_id === cur ? 'Gewählt' : 'Nehmen'; take.className = 'mAct mVoiceB';
-            take.addEventListener('click', () => { DIRECT.takeVoice(v.voice_id); const f = document.getElementById('set_elevenVoice'); if (f) f.value = v.voice_id; draw(list); });
-            it.append(t, play, take); box.appendChild(it);
+            const play = mk('▶', 'mAct mVoiceB'); play.title = 'Anhören'; play.addEventListener('click', () => DIRECT.tryVoice(v.voice_id));
+            const take = mk(v.voice_id === cur ? 'Gewählt' : 'Nehmen', 'mAct mVoiceB');
+            take.addEventListener('click', () => { DIRECT.takeVoice(v.voice_id); if (field()) field().value = v.voice_id; drawMine(list); });
+            row2(v.name, info(v.labels || {}) + (v.category && v.category !== 'premade' ? ' · eigene' : ' · Standard (englisch)'), v.voice_id === cur, [play, take]);
           }
-          const help = document.createElement('p'); help.className = 'mVoiceHelp';
-          help.textContent = 'Mehr Stimmen: auf elevenlabs.io unter „Voices“ → „Voice Library“ suchen (z. B. „old cowboy“, „deep German“) und „Add to my voices“ – oder unter „Voice Design“ eine Stimme beschreiben und speichern. Danach hier „Stimmen laden“.';
-          box.appendChild(help);
+          help('Die Standard-Stimmen sind englische Sprecher und sprechen Deutsch mit Akzent. Echte deutsche Stimmen: „Deutsche Stimmen suchen“.');
         };
-        b.addEventListener('click', () => {
-          if (!(SETTINGS.v.elevenKey || '').trim()) { box.textContent = 'Erst oben den ElevenLabs-Schlüssel eintragen.'; return; }
-          box.textContent = 'lädt \u2026';
-          DIRECT.listVoices().then(draw, (e) => { box.textContent = e.message || 'Fehler'; });
-        });
-        row.classList.add('mRowText'); row.append(b, box);
+        let audio = null;
+        const drawDe = (list) => {
+          box.textContent = '';
+          if (!list.length) help('Keine gefunden.');
+          for (const v of list) {
+            const play = mk('▶', 'mAct mVoiceB'); play.title = 'Hörprobe';
+            play.addEventListener('click', () => { try { if (audio) audio.pause(); audio = new Audio(v.preview_url); audio.play(); } catch (e) { /* no sample */ } });
+            const add = mk('Hinzufügen', 'mAct mVoiceB');
+            add.addEventListener('click', () => {
+              add.textContent = '…';
+              DIRECT.addVoice(v).then((nid) => { if (field()) field().value = nid; add.textContent = 'Gewählt'; TOAST.show('Hank spricht jetzt mit „' + v.name + '“.'); },
+                (e) => { add.textContent = 'Hinzufügen'; help(e.message || 'Fehler'); });
+            });
+            row2(v.name, info(v) + (v.language ? ' · ' + v.language : ''), false, [play, add]);
+          }
+          help('▶ spielt die Hörprobe des Sprechers. „Hinzufügen“ legt die Stimme in deinem ElevenLabs-Konto ab und gibt sie Hank (dafür braucht der Schlüssel „Stimmen: Schreiben“; sonst auf elevenlabs.io in der Voice Library „Add to my voices“ und hier „Meine Stimmen“).');
+        };
+        const need = () => { if ((SETTINGS.v.elevenKey || '').trim()) return true; box.textContent = 'Erst oben den ElevenLabs-Schlüssel eintragen.'; return false; };
+        bMine.addEventListener('click', () => { if (!need()) return; box.textContent = 'lädt …'; DIRECT.listVoices().then(drawMine, (e) => { box.textContent = e.message || 'Fehler'; }); });
+        bDe.addEventListener('click', () => { if (!need()) return; box.textContent = 'sucht …'; DIRECT.germanVoices('male').then(drawDe, (e) => { box.textContent = e.message || 'Fehler'; }); });
+        const btns = document.createElement('div'); btns.className = 'mVoiceBtns'; btns.append(bMine, bDe);
+        row.classList.add('mRowText'); row.append(btns, box);
       } else if (s.type === 'secret' || s.type === 'text') {
         // a key or an id: typed or pasted; kept on change (trimmed); the game's keys do nothing while typing here
         const inp = document.createElement('input'); inp.type = s.type === 'secret' ? 'password' : 'text'; inp.id = id; inp.value = v || ''; inp.className = 'mText';

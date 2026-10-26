@@ -54,6 +54,8 @@ const TALK = {
     SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
     SETTINGS.on('sttMode', () => { HEAR.dead = false; });
     SETTINGS.on('voiceModel', () => { DIRECT.v3Dead = false; });
+    // the built-in voice is the stand-in for ElevenLabs once it is in the browser's storage (then loading it is quick)
+    try { if (window.caches) caches.keys().then((k) => { if (k.some((n) => n.startsWith('poly-west-voice-'))) VOICE.backup = true; }).catch(() => {}); } catch (e) { /* none */ }
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now

@@ -112,7 +112,9 @@ const VOICE = {
   st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 22050, q: [], playing: null, nextId: 1, waits: {},
   // with an ElevenLabs key (own page) ElevenLabs speaks and Piper is not loaded at all; Piper again if that fails
   eleven() { return !!SETTINGS.v.voice && DIRECT.elevenOn(); },
-  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && !this.eleven(); },
+  // the built-in voice: loaded when ElevenLabs does not speak, and as its stand-in once it is in the browser's storage
+  // (or after ElevenLabs has failed once); so a failed sentence is said by Thorsten, not by the browser's robot voice
+  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && (!this.eleven() || this.backup); },
   ready() { return this.eleven() || this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
@@ -238,7 +240,7 @@ const VOICE = {
     const el = this.badgeEl || (this.badgeEl = document.getElementById('voiceSt'));
     if (!el) return;
     let t = '';
-    if (this.wanted()) {
+    if (this.wanted() && !this.eleven()) {
       if (this.st === 'loading') t = '\ud83d\udd0a Stimme lädt \u2026 ' + (this.phase === 'Download' ? this.pct() + ' %' : this.phase);
       else if (this.st === 'ready' && now - this.readyAt < 4000) t = '\ud83d\udd0a Stimme bereit';
       else if (this.st === 'failed') t = '\ud83d\udd0a Stimme: ' + this.why + (this.retryAt ? ' \u00b7 neuer Versuch' : '');
@@ -258,14 +260,19 @@ const VOICE = {
     if (!text || !/[\p{L}\d]/u.test(text)) return;
     const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now(), rate: el ? DIRECT.RATE : 0 };
     const made = el ? DIRECT.tts(npc, text, job.mood) : this.synth(text, npc.voiceProfile, job.mood);
-    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { job.err = true; if (el) this.elevenFailed(e, npc, sentence); this.pump(); });
+    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { if (el) this.elevenFailed(e, job, sentence); else job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
-  // ElevenLabs said no (key, credit, connection): tell once, say this sentence with the browser, Piper from now on
-  elevenFailed(e, npc, sentence) {
-    const hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+  /* ElevenLabs said no: a refused key, no credit or no connection switch to the built-in voice for good (told once);
+     this sentence is said in its place in the line by Thorsten (Piper) if he is there, else by the browser.
+     Trying a voice out in the settings shows the reason instead of another voice. */
+  elevenFailed(e, job, sentence) {
+    const npc = job.npc, hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+    if (npc.noFallback) { job.err = true; TOAST.show((e && e.message) || 'ElevenLabs-Fehler', 'long'); return; }
     if (hard) { DIRECT.elevenDead = true; DIRECT.err = e.message; if (!this.toldEleven) { this.toldEleven = true; TOAST.show('ElevenLabs: ' + e.message + ' – es spricht wieder die eingebaute Stimme.', 'long'); } }
-    this.browser(npc, sentence);
+    this.backup = true; this.load();
+    if (this.st === 'ready') { job.rate = 0; job.at = performance.now(); this.synth(this.clean(sentence), npc.voiceProfile, job.mood).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); }); }
+    else { job.err = true; this.browser(npc, sentence); }
   },
   /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
      limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */

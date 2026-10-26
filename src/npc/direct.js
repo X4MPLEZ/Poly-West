@@ -159,8 +159,20 @@ const DIRECT = {
   // the most expressive model (v3) is told the mood with a tag in front of the sentence
   TAGS: { neutral: '', amused: '[amused] ', angry: '[angry] ', surprised: '[surprised] ', disgusted: '[annoyed] ', sleepy: '[tired] ', whisper: '[whispers] ', drunk: '[drunk] ' },
   v3() { return SETTINGS.v.voiceModel === 'v3' && !this.v3Dead; },
-  // one sentence -> Float32Array at RATE; throws with a code on failure
+  /* one sentence -> Float32Array at RATE; throws with a code on failure. The free plan allows only a few requests at
+     the same time: they wait in line (two at a time), and "too many" is tried again a moment later */
+  busy: 0, line: [],
   async tts(npc, text, mood) {
+    if (this.busy >= 2) await new Promise((res) => this.line.push(res));
+    this.busy++;
+    try {
+      for (let tries = 0; ; tries++) {
+        try { return await this.tts1(npc, text, mood); }
+        catch (e) { if (e.code !== 'rate_limited' || tries >= 3) throw e; await new Promise((res) => setTimeout(res, 400 + tries * 600)); }
+      }
+    } finally { this.busy--; const next = this.line.shift(); if (next) next(); }
+  },
+  async tts1(npc, text, mood) {
     const v3 = this.v3(), voice = await this.voiceFor(npc), k = voice + '|' + (v3 ? 'v3' : 'f') + '|' + mood + '|' + text;
     if (this.ttsCache.has(k)) return this.ttsCache.get(k);
     const [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
@@ -188,6 +200,7 @@ const DIRECT = {
         delete this.voiceIds[(npc && npc.id) || 'any'];
       }
       if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht');
+      if (r.status === 429 || /concurren|too_many|rate/i.test(msg)) throw this.fail('rate_limited', 'ElevenLabs: zu viele Anfragen gleichzeitig');
       throw this.fail('tts_error', 'ElevenLabs ' + r.status + (msg ? ': ' + msg.slice(0, 60) : ''));
     }
     const b = new Uint8Array(await r.arrayBuffer()), n = b.length >> 1, out = new Float32Array(n), dv = new DataView(b.buffer, b.byteOffset, n * 2);
@@ -208,10 +221,32 @@ const DIRECT = {
     return vs.sort((a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
   },
   SAMPLE: 'Howdy, Fremder. Was darf’s sein, Whiskey oder Ärger?',
+  // listen to a voice of the account with a sentence of Hank's (no stand-in voice if it fails: the reason is shown)
   tryVoice(id) {
     this.elevenDead = false;
-    VOICE.stop({ id: 'preview' });
-    VOICE.line({ id: 'preview', name: 'Hank', pos: PLAY.pos, voiceProfile: {}, voiceId: id }, this.SAMPLE, 'neutral');
+    VOICE.stop(this.previewNpc);
+    this.previewNpc = { id: 'preview', name: 'Hank', pos: PLAY.pos, voiceProfile: { male: true }, voiceId: id, noFallback: true };
+    VOICE.line(this.previewNpc, this.SAMPLE, 'neutral');
+  },
+  /* German voices from ElevenLabs' library (spoken by German speakers, not English voices speaking German) */
+  async germanVoices(gender) {
+    const q = 'language=de&page_size=40&sort=usage_character_count_1y' + (gender ? '&gender=' + gender : '');
+    const r = await fetch('https://api.elevenlabs.io/v1/shared-voices?' + q, { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
+    if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Schlüssel darf die Stimmen-Bibliothek nicht lesen (Recht „Stimmen: Gelesen“)');
+    if (!r.ok) throw this.fail('voices', 'ElevenLabs ' + r.status);
+    return ((await r.json()).voices || []).filter((v) => v && v.voice_id && v.public_owner_id);
+  },
+  // a library voice into the account, then it is Hank's
+  async addVoice(v) {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices/add/' + encodeURIComponent(v.public_owner_id) + '/' + encodeURIComponent(v.voice_id), {
+      method: 'POST', headers: { 'content-type': 'application/json', 'xi-api-key': SETTINGS.v.elevenKey.trim() }, body: JSON.stringify({ new_name: v.name })
+    });
+    let j = {}; try { j = await r.json(); } catch (e) { /* no body */ }
+    if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Zum Hinzufügen braucht der Schlüssel „Stimmen: Schreiben“ – oder auf elevenlabs.io in der Voice Library auf „Add to my voices“ und dann hier „Meine Stimmen“');
+    if (!r.ok) throw this.fail('voices', 'ElevenLabs ' + r.status + ((j.detail && j.detail.message) ? ': ' + j.detail.message.slice(0, 80) : ''));
+    const id = j.voice_id || v.voice_id;
+    this.takeVoice(id);
+    return id;
   },
   takeVoice(id) {
     SETTINGS.set('elevenVoice', id);

@@ -521,7 +521,7 @@ async def check_ownkeys(g):
         TALK.start(false); await TALK.send('Und jetzt?'); out.groqAnswer = N.talkLog.slice(-1)[0].text; TALK.close();
         const gc = calls.find((c) => /api\.groq\.com/.test(c.url)), gb = JSON.parse(gc.o.body); out.groqReq = [gc.o.headers.authorization, gb.model, gb.stream];
         // ElevenLabs: Piper is not wanted any more, a sentence comes as 24 kHz sound in Hank's (found) voice
-        SETTINGS.set('elevenKey', 'el-test'); out.eleven = VOICE.eleven() && !VOICE.wanted() && VOICE.ready();
+        VOICE.backup = false; SETTINGS.set('elevenKey', 'el-test'); out.eleven = VOICE.eleven() && !VOICE.wanted() && VOICE.ready();
         try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {} DIRECT.voiceIds = {}; DIRECT.ttsCache.clear();
         const hank = { id: 'barkeep', name: 'Hank', pos: PLAY.pos, voiceProfile: {} }; VOICE.q = [];
         const pcm = await DIRECT.tts(hank, 'Howdy, Fremder.', 'angry'); out.pcm = [pcm.length, +Math.max(...pcm.slice(0, 200)).toFixed(2)];
@@ -531,6 +531,24 @@ async def check_ownkeys(g):
         // a refused key: told once, the built-in voice speaks again
         ttsStatus = 401; DIRECT.ttsCache.clear(); VOICE.q = []; VOICE.line(hank, 'Und jetzt?'); await new Promise((x) => setTimeout(x, 50));
         out.dead = DIRECT.elevenDead && !VOICE.eleven() && VOICE.wanted();
+        // many sentences at once: never more than two requests at a time, "too many" is tried again
+        { let live = 0, peak = 0, n429 = 1; DIRECT.ttsCache.clear(); DIRECT.elevenDead = false;
+          window.fetch = async (url, o) => { calls.push({ url: String(url), o }); if (/text-to-speech/.test(url)) { live++; peak = Math.max(peak, live); await new Promise((x) => setTimeout(x, 30)); live--;
+            if (n429-- > 0) return new Response(JSON.stringify({ detail: { status: 'too_many_concurrent_requests', message: 'too many concurrent requests' } }), { status: 429 });
+            return new Response(new Int16Array(2400).buffer, { status: 200 }); } return new Response('{}', { status: 500 }); };
+          const res = await Promise.all(['Eins.', 'Zwei.', 'Drei.', 'Vier.', 'Fünf.'].map((t) => DIRECT.tts(hank, t, 'neutral').then(() => 1, () => 0)));
+          out.queue = [peak, res.reduce((a, b) => a + b, 0)]; }
+        // trying a voice out that fails: the reason is shown, no stand-in voice speaks
+        { window.fetch = async (url) => new Response(JSON.stringify({ detail: { message: 'voice not found' } }), { status: 404 }); let robot = 0; const rb = VOICE.browser; VOICE.browser = () => { robot++; };
+          DIRECT.ttsCache.clear(); DIRECT.tryVoice('nope'); await new Promise((x) => setTimeout(x, 80)); VOICE.browser = rb; out.previewNoRobot = robot === 0; }
+        // German voices from the library: asked for in German, a chosen one is added and becomes Hank's
+        { window.fetch = async (url, o) => { calls.push({ url: String(url), o });
+            if (/shared-voices/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'lib1', public_owner_id: 'own9', name: 'Bernd', gender: 'male', age: 'old', accent: 'standard', language: 'de', preview_url: 'x.mp3' }] }), { status: 200 });
+            if (/voices\/add\/own9\/lib1/.test(url)) return new Response(JSON.stringify({ voice_id: 'mine1' }), { status: 200 });
+            return new Response('{}', { status: 500 }); };
+          const de = await DIRECT.germanVoices('male'); const q = calls.filter((c) => /shared-voices/.test(c.url)).pop().url;
+          out.german = [de.length, /language=de/.test(q), /gender=male/.test(q)]; out.added = await DIRECT.addVoice(de[0]); out.addedTaken = SETTINGS.v.elevenVoice; }
+        window.fetch = async (url, o) => { calls.push({ url: String(url), o }); if (/api\.groq\.com/.test(url)) return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Howdy.' } }] }) + '\n\ndata: [DONE]\n\n', { status: 200 }); if (/text-to-speech/.test(url)) return new Response(JSON.stringify({ detail: { message: 'invalid api key' } }), { status: 401 }); return new Response('{}', { status: 500 }); };
         out.test = await DIRECT.test();
         // the voice list: men and own voices first; trying one out uses that voice
         out.list = (await (async () => { window.fetch = async (url, o) => { calls.push({ url: String(url), o }); if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', category: 'premade', labels: { gender: 'female' } }, { voice_id: 'own1', name: 'Alter Hank', category: 'generated', labels: { gender: 'male' } }] }), { status: 200 }); return new Response('{}', { status: 500 }); }; return DIRECT.listVoices(); })()).map((v) => v.voice_id);
@@ -540,7 +558,7 @@ async def check_ownkeys(g):
       }
       out.after = [TALK.via || '', VOICE.eleven()];
       return out; }''')
-    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1'
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 
