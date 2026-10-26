@@ -151,6 +151,11 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .touch #prompt3 { display: none; }
 #bTalk { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(184px + env(safe-area-inset-right, 0px)); bottom: calc(120px + env(safe-area-inset-bottom, 0px)); font-size: 11px; border-color: rgba(231, 166, 64, 0.8); }
 #bTalk[hidden] { display: none; }
+#bPay { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; z-index: 2;
+  height: 44px; padding: 0 20px; border-radius: 999px; border: 2px solid var(--brass); background: rgba(231, 166, 64, 0.92); color: var(--ink); font: 700 15px var(--f-ui); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+#bPay[hidden] { display: none; }
+#bPay kbd { display: inline-block; margin-right: 8px; padding: 0 6px; border-radius: 5px; background: rgba(0, 0, 0, 0.18); font: 700 12px var(--f-mono); }
+.touch #bPay kbd { display: none; }
 #talk { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 32px)); pointer-events: auto;
   display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 7px 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
 /* phones: at the top, where the keyboard does not cover it and the thumbs are not */
@@ -349,6 +354,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="talkStop" type="button" hidden title="Abbrechen: er hört auf zu reden">Stopp</button>
       <button id="talkClose" type="button" title="Gespräch beenden (Esc)">Ende</button>
     </section>
+    <button id="bPay" type="button" hidden></button>
     <div id="toasts" aria-live="polite"></div>
     <section id="shop" hidden aria-labelledby="shopTitle">
       <header><b id="shopTitle">Theke</b><span id="shopMoney"></span><button id="shopClose" type="button" aria-label="Schließen">×</button></header>

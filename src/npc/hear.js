@@ -19,6 +19,7 @@ const HEAR = {
   async start(cb) {
     if (this.active()) { this.cb = cb; return; }
     this.cb = cb; this.st = 'connecting'; this.why = '';
+    this.session('play-and-record');
     try {
       if (!this.stream) this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     } catch (e) { this.fail('Mikrofon nicht erlaubt', true); return; }
@@ -86,7 +87,15 @@ const HEAR = {
     if (ws) { try { ws.onclose = null; ws.close(); } catch (e) { /* ignore */ } }
     if (this.proc) { try { this.proc.disconnect(); this.proc.onaudioprocess = null; } catch (e) { /* ignore */ } this.proc = null; }
     if (this.ctx) { try { this.ctx.close(); } catch (e) { /* ignore */ } this.ctx = null; }
-    if (!keep && this.stream) { for (const t of this.stream.getTracks()) t.stop(); this.stream = null; }
+    if (!keep && this.stream) { for (const t of this.stream.getTracks()) t.stop(); this.stream = null; this.backToSpeaker(); }
     this.st = 'off';
+  },
+  /* iPhones: while a page records, all its sound goes to the small ear speaker. Safari lets a page say what it does
+     (navigator.audioSession); when the microphone is let go, it is told "playback" again and the game's sound is
+     started anew, so it comes out of the loud speaker */
+  session(type) { try { if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch (e) { /* not here */ } },
+  backToSpeaker() {
+    this.session('playback');
+    try { const c = SFX.ctx; if (c && c.state === 'running') c.suspend().then(() => c.resume()).catch(() => {}); } catch (e) { /* ignore */ }
   }
 };

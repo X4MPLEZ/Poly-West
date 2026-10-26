@@ -76,6 +76,7 @@ function initInput(app, canvas, onAction) {
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
     if (k === 't') { onAction('slow'); return; }
+    if (k === 'e' && !e.repeat && BARKEEP.pending && G.room === BARKEEP.R) { BARKEEP.pay(); return; }   // money for what was ordered in words
     if (k === 'e' && !e.repeat) { INTERACT.use(0); onAction('use'); return; }
     if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
     if (k === 't' && !e.repeat) { if (INV.has('bottle')) DRINK.start('bottle'); else TOAST.show('Du hast keine Flasche dabei.'); return; }

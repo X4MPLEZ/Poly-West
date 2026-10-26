@@ -41,6 +41,9 @@ const BARKEEP = {
     smash: ['Das zahlst du.', 'Hände weg von meinem Glas!', 'Noch eins, und du fliegst raus.', 'Das war ein gutes Glas.', 'Willst du alles kaputtmachen?', 'Die Scherben kehrst du auf.'],
     thanks: ['Schon gut.', 'Gern.', 'Nichts zu danken.', 'Passt schon.'],
     bye: ['Komm wieder.', 'Mach’s gut, Cowboy.', 'Pass auf dich auf.', 'Bis bald.', 'Reite vorsichtig.'],
+    pay: ['Macht {p}.', '{p}, Freund.', 'Erst {p}, dann gibt’s was.', '{p}. Leg’s auf die Theke.', 'Das kostet {p}.', '{p}, bitte.'],
+    paid: ['Danke.', 'Stimmt so.', 'Gut.', 'Passt.'],
+    nopay: ['Dann eben nicht.', 'Überleg’s dir.', 'Auch gut.'],
     price: ['Whiskey fünfundzwanzig Cent, Bier zehn, Wasser fünf. Die Flasche einen Dollar fünfzig.', 'Bier zehn Cent, Whiskey fünfundzwanzig, Wasser fünf. Für die Flasche einsfünfzig.']
   },
   bags: {}, lastLine: {},
@@ -58,6 +61,38 @@ const BARKEEP = {
   feel(d, why) { this.att = clamp(this.att + d, -1, 1); if (why) this.note(why); },
   note(text) { this.recent.push({ t: G.time, text }); if (this.recent.length > 6) this.recent.shift(); },
   attWord() { const a = this.att; return a < -0.6 ? 'feindselig, du traust ihm alles zu' : a < -0.25 ? 'misstrauisch und gereizt' : a < 0.15 ? 'neutral, abwartend' : a < 0.5 ? 'freundlich' : 'herzlich, er ist ein guter Gast'; },
+  // a price in words, the way he says it (10 -> "zehn Cent", 150 -> "einen Dollar fünfzig")
+  priceWords(c) {
+    const U = ['', 'ein', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn', 'sechzehn', 'siebzehn', 'achtzehn', 'neunzehn'];
+    const T = ['', '', 'zwanzig', 'dreißig', 'vierzig', 'fünfzig', 'sechzig', 'siebzig', 'achtzig', 'neunzig'];
+    const w = (n) => n < 20 ? (n === 1 ? 'eins' : U[n]) : (n % 10 ? U[n % 10] + 'und' : '') + T[Math.floor(n / 10)];
+    const d = Math.floor(c / 100), r = c % 100;
+    if (!d) return w(r) + ' Cent';
+    return (d === 1 ? 'einen Dollar' : w(d) + ' Dollar') + (r ? ' ' + w(r) : '');
+  },
+  /* an order in words: he names the price and waits for the money (a button "… bezahlen"); then he pours.
+     said: the answer already said something (the AI's words), so only the button comes */
+  pending: null,
+  askPay(id, said) {
+    const it = ITEMS[id]; if (!it) return null;
+    const speak = (kind) => { const l = this.pick(kind); if (!said) this.npc.speak(l.text, undefined, l.mood, true); return l; };
+    if (id !== 'water' && DRUNK.level > 0.85) { this.pending = null; return speak('refuse'); }
+    if (INV.money < it.price) { this.pending = null; return speak('broke'); }
+    this.pending = { id, t: G.time };
+    const l = this.pick('pay'), text = l.text.replace('{p}', this.priceWords(it.price)).replace(/^(\w)/, (m) => m.toUpperCase());
+    if (!said) this.npc.speak(text, undefined, l.mood, true);
+    return { text, mood: l.mood };
+  },
+  // the money is on the counter: he takes it and pours
+  pay() {
+    const P = this.pending; if (!P) return false;
+    const it = ITEMS[P.id]; this.pending = null;
+    if (!it || INV.money < it.price) { const l = this.pick('broke'); this.npc.speak(l.text, undefined, l.mood, true); return false; }
+    this.serveFromTalk(P.id, true);
+    const l = this.pick(P.id === 'bottle' ? 'bottle' : P.id); if (l) this.npc.speak(l.text, undefined, l.mood, true);
+    return true;
+  },
+  payLabel() { const P = this.pending, it = P && ITEMS[P.id]; return it ? it.name + ' bezahlen (' + (it.price < 100 ? it.price + ' ¢' : money(it.price)) + ')' : ''; },
   helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
@@ -122,7 +157,7 @@ const BARKEEP = {
     this.remember('Er hat ' + (sc.outside >= sc.shots ? 'vor deinem Saloon' : 'in deinem Saloon') + ' herumgeschossen (' + bits.join(', ') + ').');
   },
   // the settings button: he has never seen you before
-  forget() { this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
+  forget() { this.pending = null; this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
   persona() {
     const B = this;
     return {
@@ -135,7 +170,7 @@ const BARKEEP = {
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
-        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt; das Spiel kassiert selbst und prüft, ob sein Geld reicht. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
+        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt: dann nennst du den Preis und willst erst das Geld sehen (er legt es per Knopf hin, erst dann schenkst du ein) – sag also nicht, dass es schon kommt. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
       ].join('\n'),
       context() {
         const L = DRUNK.level, lines = [];
@@ -184,7 +219,8 @@ const BARKEEP = {
           const it = ITEMS[drink];
           if (drink !== 'water' && DRUNK.level > 0.85) return line('refuse', 'shake_head');
           if (it && INV.money < it.price) return line('broke', 'shake_head');
-          return line(drink, 'serve_' + drink);
+          const l = B.askPay(drink, true);
+          return l && { say: l.text, mood: l.mood, action: 'none', quick: true };
         }
         if (words <= 4 && /^(hallo|hi|hey|howdy|servus|moin|tag|guten (tag|abend|morgen)|grüß (dich|gott)|n abend|abend)\b/.test(t)) return line(B.helloKind(), 'nod');
         if (words <= 4 && /^(danke|vielen dank|dankeschön|danke schön|merci)\b/.test(t)) return line('thanks', 'nod');
@@ -199,15 +235,16 @@ const BARKEEP = {
       forgetEvent(i) { B.mem.splice(i, 1); },
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
-        if (m) { B.serveFromTalk(m[1]); return; }
+        if (m) { B.askPay(m[1], true); return; }   // he has named his price in his words; the button does the rest
         if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) B.npc.gesture(action);
       }
     };
   },
   // an order made in conversation: the game checks it like one from the list
-  serveFromTalk(id) {
+  serveFromTalk(id, paid) {
     const it = ITEMS[id];
     if (!it) return;
+    void paid;
     if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => { const l = this.pick('refuse'); this.npc.speak(l.text, undefined, l.mood, true); }, 2600); return; }
     if (INV.money < it.price) { setTimeout(() => { const l = this.pick('broke'); this.npc.speak(l.text, undefined, l.mood, true); }, 2600); return; }
     SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
@@ -282,7 +319,13 @@ const BARKEEP = {
     if (!N) return;
     this.t += dt;
     const inside = G.room === this.R;
-    this.att *= 1 - dt * 0.002;   // grudges and good will fade slowly (about a tenth a minute)
+    this.att *= 1 - dt * 0.002;
+    // the button for the money (E on the keyboard), while he waits for it
+    const pb = this.payEl || (this.payEl = document.getElementById('bPay'));
+    if (pb && !pb.wired) { pb.wired = true; pb.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.pay(); }); }
+    const lab = this.pending && inside && !MENU.open ? this.payLabel() : '';
+    if (pb && lab !== (pb.dataset.l || '')) { pb.dataset.l = lab; pb.hidden = !lab; pb.innerHTML = '<kbd>E</kbd>'; pb.appendChild(document.createTextNode(lab)); }
+    if (this.pending && (G.time - this.pending.t > 45 || !inside)) { const was = this.pending; this.pending = null; if (inside && G.time - was.t > 45) this.say('nopay'); }   // grudges and good will fade slowly (about a tenth a minute)
     // the player: greet him, look at him, mind him
     if (inside && !this.wasInside) this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
     this.wasInside = inside;

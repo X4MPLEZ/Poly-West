@@ -78,7 +78,8 @@ const TALK = {
     // the voice loads early: a few seconds after the start, so it is there when someone speaks
     if (VOICE.st === 'off' && VOICE.wanted() && G.time > 0.5) VOICE.load();
     if (VOICE.st === 'failed' && !this.toldVoice && VOICE.wanted()) { this.toldVoice = true; TOAST.show('Echte Stimme geht hier nicht (' + VOICE.why + '). Es spricht die Browser-Stimme.', 'long'); }
-    if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
+    // the strip stays while you are near him, or seated anywhere in his room (talking is something you do on the side)
+    if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > (SIT.state === 'sit' && this.npc.room === G.room ? 13 : 6) || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
     /* hands-free listening lets go of the microphone while he thinks and speaks, and takes it again after: phones
