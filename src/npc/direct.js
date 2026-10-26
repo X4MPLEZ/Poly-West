@@ -15,19 +15,40 @@ const DIRECT = {
   ttsCache: new Map(), voiceIds: {}, err: '',
   // is this the game on its own page (not inside claude.ai)?
   ownPage() { return !(window.claude && window.claude.use); },
-  claudeOn() { return !!(SETTINGS.v.claudeKey || '').trim(); },
+  // the AI key: which service it belongs to is told by how it starts (Anthropic sk-ant-…, Groq gsk_…, OpenAI sk-…)
+  claudeOn() { return !!this.provider(); },
+  provider() {
+    const k = (SETTINGS.v.claudeKey || '').trim();
+    if (!k) return null;
+    if (/^sk-ant-/.test(k)) return this.PROVIDERS.claude;
+    if (/^gsk_/.test(k)) return this.PROVIDERS.groq;
+    if (/^sk-/.test(k)) return this.PROVIDERS.openai;
+    return this.PROVIDERS.claude;
+  },
+  PROVIDERS: {
+    claude: { name: 'Claude', model: 'claude-haiku-5-5', site: 'Anthropic' },
+    groq: { name: 'Groq', model: 'llama-3.3-70b-versatile', url: 'https://api.groq.com/openai/v1/chat/completions', site: 'Groq' },
+    openai: { name: 'OpenAI', model: 'gpt-4.1-mini', url: 'https://api.openai.com/v1/chat/completions', site: 'OpenAI' }
+  },
+  modelFor(P) { return (SETTINGS.v.aiModel || '').trim() || P.model; },
   elevenOn() { return !!(SETTINGS.v.elevenKey || '').trim() && !this.elevenDead; },
   fail(code, msg) { const e = new Error(msg || code); e.code = code; return e; },
 
-  /* ---- Claude ---- */
-  async claude(prompt, opt) {
-    opt = opt || {};
+  /* ---- the AI: Claude, or an OpenAI-style service (Groq, OpenAI) ---- */
+  claude(prompt, opt) { return this.chat(prompt, opt); },
+  chat(prompt, opt) {
+    const P = this.provider();
+    if (!P) return Promise.reject(this.fail('bad_key', 'kein KI-Schlüssel'));
+    return P === this.PROVIDERS.claude ? this.anthropic(prompt, opt || {}) : this.openaiStyle(P, prompt, opt || {});
+  },
+  async anthropic(prompt, opt) {
+    const model = this.modelFor(this.PROVIDERS.claude);
     let r;
     try {
       r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST', signal: opt.signal,
         headers: { 'content-type': 'application/json', 'x-api-key': SETTINGS.v.claudeKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: this.MODEL, max_tokens: opt.maxTokens || 220, stream: true, messages: [{ role: 'user', content: prompt }] })
+        body: JSON.stringify({ model, max_tokens: opt.maxTokens || 220, stream: true, messages: [{ role: 'user', content: prompt }] })
       });
     } catch (e) {
       if (e && e.name === 'AbortError') throw this.fail('cancelled');
@@ -62,12 +83,57 @@ const DIRECT = {
       if (e && e.name === 'AbortError') throw this.fail('cancelled');
       throw e.code ? e : this.fail('network', 'Verbindung abgerissen');
     }
-    return { text, modelApplied: this.MODEL };
+    return { text, modelApplied: model };
+  },
+  // Groq and OpenAI: /chat/completions, streamed; the text comes in choices[0].delta.content
+  async openaiStyle(P, prompt, opt) {
+    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 220, messages: [{ role: 'user', content: prompt }] };
+    if (/gpt-oss/.test(model)) { body.reasoning_effort = 'low'; body.include_reasoning = false; body.max_tokens = 600; }   // (thinking models: think briefly, say it short)
+    let r;
+    try {
+      r = await fetch(P.url, { method: 'POST', signal: opt.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + SETTINGS.v.claudeKey.trim() }, body: JSON.stringify(body) });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw this.fail('cancelled');
+      throw this.fail('network', 'keine Verbindung zu ' + P.name);
+    }
+    if (!r.ok) {
+      let msg = ''; try { const j = await r.json(); msg = (j.error && (j.error.message || j.error.code)) || ''; } catch (e) { /* no body */ }
+      if (r.status === 401 || r.status === 403) throw this.fail('bad_key', P.name + '-Schlüssel abgelehnt');
+      if (r.status === 429) throw this.fail(/quota|billing|credit/i.test(msg) ? 'no_credit' : 'rate_limited', /quota|billing|credit/i.test(msg) ? 'kein Guthaben bei ' + P.site : undefined);
+      if (r.status === 404 || /model/i.test(msg)) throw this.fail('bad_request', 'Modell „' + model + '“ gibt es bei ' + P.name + ' nicht');
+      if (r.status === 400) throw this.fail('bad_request', msg.slice(0, 80));
+      throw this.fail('upstream_error', P.name + ' ' + r.status);
+    }
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', text = '';
+    try {
+      for (;;) {
+        const { done, value } = await rd.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue;
+          const d = line.slice(5).trim();
+          if (d === '[DONE]') continue;
+          let ev; try { ev = JSON.parse(d); } catch (e) { continue; }
+          if (ev.error) throw this.fail('stream_error', ev.error.message || 'Fehler');
+          const c = ev.choices && ev.choices[0] && ev.choices[0].delta && ev.choices[0].delta.content;
+          if (c) { text += c; if (opt.onText) opt.onText({ text }); }
+        }
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw this.fail('cancelled');
+      throw e.code ? e : this.fail('network', 'Verbindung abgerissen');
+    }
+    return { text, modelApplied: model };
   },
 
   /* ---- ElevenLabs ---- */
   // the voice for a person: the one set in the settings (Hank), the one found before, or a fitting one from the account
   async voiceFor(npc) {
+    if (npc && npc.voiceId) return npc.voiceId;   // (trying a voice out in the settings)
     const set = (SETTINGS.v.elevenVoice || '').trim();
     if (set && (!npc || npc.id === 'barkeep')) return set;
     const key = (npc && npc.id) || 'any';
@@ -90,19 +156,30 @@ const DIRECT = {
   },
   // how a mood sounds: less stable = more expression; a little faster when angry, slower when tired
   MOOD: { neutral: [0.5, 1], amused: [0.4, 1.03], angry: [0.28, 1.08], surprised: [0.35, 1.05], disgusted: [0.42, 0.98], sleepy: [0.6, 0.88], whisper: [0.55, 0.92], drunk: [0.3, 0.9] },
+  // the most expressive model (v3) is told the mood with a tag in front of the sentence
+  TAGS: { neutral: '', amused: '[amused] ', angry: '[angry] ', surprised: '[surprised] ', disgusted: '[annoyed] ', sleepy: '[tired] ', whisper: '[whispers] ', drunk: '[drunk] ' },
+  v3() { return SETTINGS.v.voiceModel === 'v3' && !this.v3Dead; },
   // one sentence -> Float32Array at RATE; throws with a code on failure
   async tts(npc, text, mood) {
-    const k = (npc && npc.id) + '|' + mood + '|' + text;
+    const v3 = this.v3(), voice = await this.voiceFor(npc), k = voice + '|' + (v3 ? 'v3' : 'f') + '|' + mood + '|' + text;
     if (this.ttsCache.has(k)) return this.ttsCache.get(k);
-    const voice = await this.voiceFor(npc), [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
+    const [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
+    const body = v3 ? { text: (this.TAGS[mood] || '') + text, model_id: 'eleven_v3', voice_settings: { stability: 0.5, similarity_boost: 0.8 } }
+      : { text, model_id: this.TTS_MODEL, language_code: 'de', voice_settings: { stability, similarity_boost: 0.8, speed } };
     let r;
     try {
-      r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(voice) + '/stream?output_format=pcm_24000', {
+      r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(voice) + (v3 ? '' : '/stream') + '?output_format=pcm_24000', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'xi-api-key': SETTINGS.v.elevenKey.trim() },
-        body: JSON.stringify({ text, model_id: this.TTS_MODEL, language_code: 'de', voice_settings: { stability, similarity_boost: 0.8, speed } })
+        body: JSON.stringify(body)
       });
     } catch (e) { throw this.fail('network', 'keine Verbindung zu ElevenLabs'); }
+    // v3 not allowed or not there (plan, region): the fast model from now on, this sentence too
+    if (v3 && !r.ok && r.status !== 401 && r.status !== 429) {
+      this.v3Dead = true;
+      try { TOAST.show('Ausdrucksstarke Stimme (v3) geht mit diesem Konto nicht – es spricht die schnelle.', 'long'); } catch (e) { /* ignore */ }
+      return this.tts(npc, text, mood);
+    }
     if (!r.ok) {
       let msg = ''; try { const j = await r.json(); msg = (j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* no body */ }
       if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'ElevenLabs-Schlüssel abgelehnt' + (msg ? ' (' + msg.slice(0, 60) + ')' : ''));
@@ -120,13 +197,34 @@ const DIRECT = {
     return out;
   },
 
+  /* ---- choosing a voice in the settings: the voices of the account, to listen to and to take ---- */
+  async listVoices() {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
+    if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Schlüssel darf die Stimmen nicht lesen (Recht „Stimmen: Gelesen“)');
+    if (!r.ok) throw this.fail('voices', 'ElevenLabs ' + r.status);
+    const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id);
+    // men first, own voices (cloned, designed, from the library) before ElevenLabs' standard ones
+    const rank = (v) => (/female/i.test((v.labels && v.labels.gender) || '') ? 2 : 0) + (v.category === 'premade' ? 1 : 0);
+    return vs.sort((a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
+  },
+  SAMPLE: 'Howdy, Fremder. Was darf’s sein, Whiskey oder Ärger?',
+  tryVoice(id) {
+    this.elevenDead = false;
+    VOICE.stop({ id: 'preview' });
+    VOICE.line({ id: 'preview', name: 'Hank', pos: PLAY.pos, voiceProfile: {}, voiceId: id }, this.SAMPLE, 'neutral');
+  },
+  takeVoice(id) {
+    SETTINGS.set('elevenVoice', id);
+    delete this.voiceIds.barkeep;
+  },
   // the settings button: are the keys good?
   async test() {
     const out = [];
     if (this.claudeOn()) {
-      try { const r = await this.claude('Sag nur: Howdy.', { maxTokens: 10 }); out.push('Claude: ok (' + (r.text || '').trim().slice(0, 20) + ')'); }
-      catch (e) { out.push('Claude: ' + (e.message || e.code)); }
-    } else out.push('Claude: kein Schlüssel');
+      const P = this.provider();
+      try { const r = await this.chat('Sag nur: Howdy.', { maxTokens: 10 }); out.push(P.name + ': ok (' + this.modelFor(P) + ')'); }
+      catch (e) { out.push(P.name + ': ' + (e.message || e.code)); }
+    } else out.push('KI: kein Schlüssel');
     if ((SETTINGS.v.elevenKey || '').trim()) {
       this.elevenDead = false;
       const hank = { id: 'barkeep', name: 'Hank', pos: PLAY.pos, voiceProfile: {} };

@@ -24,9 +24,12 @@ const SETTINGS = {
     { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
     // only on the game's own page (not in claude.ai): keys stay in this browser
     { group: 'Eigene Schlüssel', own: true },
-    { key: 'claudeKey', label: 'Claude-API-Schlüssel (console.anthropic.com)', type: 'secret', def: '', own: true },
+    { key: 'claudeKey', label: 'KI-Schlüssel: Claude, Groq oder OpenAI (wird am Anfang erkannt)', type: 'secret', def: '', own: true },
+    { key: 'aiModel', label: 'KI-Modell (leer = passendes wird genommen)', type: 'text', def: '', own: true },
     { key: 'elevenKey', label: 'ElevenLabs-Schlüssel (elevenlabs.io)', type: 'secret', def: '', own: true },
     { key: 'sttMode', label: 'Spracheingabe', type: 'choice', def: 'auto', own: true, options: [['auto', 'Automatisch'], ['eleven', 'ElevenLabs'], ['browser', 'Browser'], ['type', 'Tippen / Diktier-App']] },
+    { key: 'voiceModel', label: 'ElevenLabs-Stimme', type: 'choice', def: 'flash', own: true, options: [['flash', 'Schnell'], ['v3', 'Ausdrucksstark (v3)']] },
+    { label: 'Hanks Stimme aussuchen', type: 'voices', own: true },
     { key: 'elevenVoice', label: 'Hanks Stimme: Voice-ID (leer = passende wird gesucht)', type: 'text', def: '', own: true },
     { label: 'Schlüssel prüfen', type: 'action', button: 'Prüfen', run: () => DIRECT.test(), own: true },
     { group: 'Entwicklung' },

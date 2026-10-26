@@ -502,6 +502,7 @@ async def check_ownkeys(g):
       let ttsStatus = 200;
       window.fetch = async (url, o) => { calls.push({ url: String(url), o });
         if (/api\.anthropic\.com/.test(url)) return sse();
+        if (/api\.groq\.com/.test(url)) return new Response(new ReadableStream({ start(c) { const e = new TextEncoder(); for (const piece of ['[nod, ', 'neutral] Howdy ', 'aus Groq.']) c.enqueue(e.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n')); c.enqueue(e.encode('data: [DONE]\n\n')); c.close(); } }), { status: 200 });
         if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', labels: { gender: 'female' } }, { voice_id: 'clyde1', name: 'Clyde', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
         if (/text-to-speech/.test(url)) { if (ttsStatus !== 200) return new Response(JSON.stringify({ detail: { message: 'invalid api key' } }), { status: ttsStatus });
           const n = 12000, b = new Int16Array(n); for (let i = 0; i < n; i++) b[i] = Math.round(Math.sin(i * 0.05) * 8000); return new Response(b.buffer, { status: 200 }); }
@@ -510,11 +511,15 @@ async def check_ownkeys(g):
         out.own = DIRECT.ownPage();
         MENU.buildSettings(); const ck = document.getElementById('set_claudeKey'); out.field = !!ck && ck.type === 'password' && !!document.getElementById('set_elevenKey');
         out.noKeyVia = TALK.via || '';
-        SETTINGS.set('claudeKey', 'sk-test'); out.via = TALK.via; out.aiOn = TALK.aiOn();
+        SETTINGS.set('claudeKey', 'sk-ant-test'); out.via = TALK.via; out.aiOn = TALK.aiOn();
         const B = BARKEEP, R = B.R, N = B.npc, bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
         TALK.start(false); await TALK.send('Hallo Hank'); out.answer = N.talkLog.slice(-1)[0].text; TALK.close();
         const cc = calls.find((c) => /anthropic/.test(c.url)), body = JSON.parse(cc.o.body);
         out.req = [cc.o.headers['x-api-key'], cc.o.headers['anthropic-dangerous-direct-browser-access'], body.model, body.stream];
+        // a Groq key: the same conversation through Groq's OpenAI-style interface
+        SETTINGS.set('claudeKey', 'gsk_test'); out.groqName = DIRECT.provider().name;
+        TALK.start(false); await TALK.send('Und jetzt?'); out.groqAnswer = N.talkLog.slice(-1)[0].text; TALK.close();
+        const gc = calls.find((c) => /api\.groq\.com/.test(c.url)), gb = JSON.parse(gc.o.body); out.groqReq = [gc.o.headers.authorization, gb.model, gb.stream];
         // ElevenLabs: Piper is not wanted any more, a sentence comes as 24 kHz sound in Hank's (found) voice
         SETTINGS.set('elevenKey', 'el-test'); out.eleven = VOICE.eleven() && !VOICE.wanted() && VOICE.ready();
         try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {} DIRECT.voiceIds = {}; DIRECT.ttsCache.clear();
@@ -527,12 +532,15 @@ async def check_ownkeys(g):
         ttsStatus = 401; DIRECT.ttsCache.clear(); VOICE.q = []; VOICE.line(hank, 'Und jetzt?'); await new Promise((x) => setTimeout(x, 50));
         out.dead = DIRECT.elevenDead && !VOICE.eleven() && VOICE.wanted();
         out.test = await DIRECT.test();
+        // the voice list: men and own voices first; trying one out uses that voice
+        out.list = (await (async () => { window.fetch = async (url, o) => { calls.push({ url: String(url), o }); if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', category: 'premade', labels: { gender: 'female' } }, { voice_id: 'own1', name: 'Alter Hank', category: 'generated', labels: { gender: 'male' } }] }), { status: 200 }); return new Response('{}', { status: 500 }); }; return DIRECT.listVoices(); })()).map((v) => v.voice_id);
+        DIRECT.takeVoice('own1'); out.taken = SETTINGS.v.elevenVoice;
       } finally {
-        window.fetch = real; SETTINGS.set('claudeKey', ''); SETTINGS.set('elevenKey', ''); VOICE.q = [];
+        window.fetch = real; SETTINGS.set('claudeKey', ''); SETTINGS.set('elevenKey', ''); SETTINGS.set('elevenVoice', ''); VOICE.q = [];
       }
       out.after = [TALK.via || '', VOICE.eleven()];
       return out; }''')
-    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-test', 'true', 'claude-haiku-5-5', True]
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 

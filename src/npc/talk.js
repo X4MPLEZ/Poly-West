@@ -53,6 +53,7 @@ const TALK = {
     SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
     SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
     SETTINGS.on('sttMode', () => { HEAR.dead = false; });
+    SETTINGS.on('voiceModel', () => { DIRECT.v3Dead = false; });
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now

@@ -91,6 +91,35 @@ const MENU = {
         const out = document.createElement('output'); out.className = 'mActOut';
         b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
         row.append(b, out);
+      } else if (s.type === 'voices') {
+        // the voices of the ElevenLabs account: listen to each with a sentence of Hank's, take one
+        const b = document.createElement('button'); b.type = 'button'; b.id = id; b.textContent = 'Stimmen laden'; b.className = 'mAct';
+        const box = document.createElement('div'); box.className = 'mVoices';
+        const draw = (list) => {
+          box.textContent = '';
+          const cur = (SETTINGS.v.elevenVoice || '').trim();
+          for (const v of list) {
+            const it = document.createElement('div'); it.className = 'mVoice' + (v.voice_id === cur ? ' on' : '');
+            const L = v.labels || {}, info = [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || L.description, L.use_case].filter(Boolean).join(' · ');
+            const t = document.createElement('div'); t.className = 'mVoiceT';
+            const nm = document.createElement('b'); nm.textContent = (v.voice_id === cur ? '\u2713 ' : '') + v.name; t.appendChild(nm);
+            const sm = document.createElement('small'); sm.textContent = info + (v.category && v.category !== 'premade' ? ' · eigene' : ''); t.appendChild(sm);
+            const play = document.createElement('button'); play.type = 'button'; play.textContent = '\u25b6'; play.title = 'Anhören'; play.className = 'mAct mVoiceB';
+            play.addEventListener('click', () => DIRECT.tryVoice(v.voice_id));
+            const take = document.createElement('button'); take.type = 'button'; take.textContent = v.voice_id === cur ? 'Gewählt' : 'Nehmen'; take.className = 'mAct mVoiceB';
+            take.addEventListener('click', () => { DIRECT.takeVoice(v.voice_id); const f = document.getElementById('set_elevenVoice'); if (f) f.value = v.voice_id; draw(list); });
+            it.append(t, play, take); box.appendChild(it);
+          }
+          const help = document.createElement('p'); help.className = 'mVoiceHelp';
+          help.textContent = 'Mehr Stimmen: auf elevenlabs.io unter „Voices“ → „Voice Library“ suchen (z. B. „old cowboy“, „deep German“) und „Add to my voices“ – oder unter „Voice Design“ eine Stimme beschreiben und speichern. Danach hier „Stimmen laden“.';
+          box.appendChild(help);
+        };
+        b.addEventListener('click', () => {
+          if (!(SETTINGS.v.elevenKey || '').trim()) { box.textContent = 'Erst oben den ElevenLabs-Schlüssel eintragen.'; return; }
+          box.textContent = 'lädt \u2026';
+          DIRECT.listVoices().then(draw, (e) => { box.textContent = e.message || 'Fehler'; });
+        });
+        row.classList.add('mRowText'); row.append(b, box);
       } else if (s.type === 'secret' || s.type === 'text') {
         // a key or an id: typed or pasted; kept on change (trimmed); the game's keys do nothing while typing here
         const inp = document.createElement('input'); inp.type = s.type === 'secret' ? 'password' : 'text'; inp.id = id; inp.value = v || ''; inp.className = 'mText';
