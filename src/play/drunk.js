@@ -30,9 +30,10 @@ const DRUNK = {
     if (L > 0.2 && !SIT.busy() && !MENU.open && !FALL.busy()) {
       this.hicT -= dt;
       if (this.hicT <= 0) { this.hicT = 4 + Math.random() * 10 / L; this.hiccup(); }
-      if (PLAY.speed > 0.6 && L > 0.3 && PLAY.inYaw !== null) {   // only while walking on purpose
-        this.stumbleT -= dt * (L - 0.2) * (PLAY.speed > 3 ? 1.8 : 1);
-        if (this.stumbleT <= 0) { this.stumbleT = 1.2 + Math.random() * 2.5; this.stumble(); }
+      // without a reason, only when really drunk; edges and steps trip you much earlier (see ground())
+      if (PLAY.speed > 0.6 && L > 0.45 && PLAY.inYaw !== null) {
+        this.stumbleT -= dt * (L - 0.4) * (PLAY.speed > 3 ? 1.6 : 0.8);
+        if (this.stumbleT <= 0) { this.stumbleT = 2 + Math.random() * 3; this.stumble(); }
       }
     }
     // a drunk hand does not hold the revolver still
@@ -40,8 +41,6 @@ const DRUNK = {
       PLAY.camYaw += (Math.cos(t * 0.9) * 0.22 + Math.cos(t * 2.3) * 0.1) * L * dt;
       PLAY.aimPitch += Math.sin(t * 1.3) * L * 0.12 * dt;
     }
-    const v = document.getElementById('drunkFx');
-    if (v) { const o = clamp((L - 0.1) * 0.9, 0, 0.6); if (Math.abs(o - (this.fxO || 0)) > 0.01) { this.fxO = o; v.style.opacity = o.toFixed(2); } }
     if (this.level >= 1 && !this.out) this.blackout();
     if (this.out) this.updateBlackout(dt);
   },
@@ -75,20 +74,34 @@ const DRUNK = {
   },
   // the pace surges and drags
   maxSpeed() { const L = Math.min(this.level, 1); return (1 - clamp(L - 0.25, 0, 0.6) * 0.5) * (1 + Math.sin(this.t * 1.9) * 0.22 * L); },
-  stumble(dir, big) {
+  /* a stumble is a lurch, not a stop: the body pitches the way you were going, the feet hurry after it, the arms
+     fly up, and you keep walking. dir: which way it throws you (default: ahead, a little off to one side) */
+  stumble(dir, big, fallChance) {
     if (FALL.busy() || SIT.busy()) return;
-    const L = Math.min(this.level, 1);
-    const a = dir !== undefined ? dir : PLAY.yaw + (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * 1.0);
-    const f = (1.0 + L * 2.2) * (big ? 1.4 : 1);
+    const L = Math.min(this.level, 1), moveDir = PLAY.speed > 0.3 ? Math.atan2(PLAY.vx, PLAY.vz) : PLAY.yaw;
+    const a = dir !== undefined ? dir : moveDir + (Math.random() - 0.5) * 0.9;
+    const f = (0.9 + L * 1.6) * (big ? 1.35 : 1);
     PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
-    // the body lurches the same way
-    const rel = a - PLAY.yaw;
-    this.bodyV.x += -Math.sin(rel) * 1.6 * f * 0.5; this.bodyV.y += Math.cos(rel) * 1.2 * f * 0.5;
-    this.headV.x += -Math.sin(rel) * 2.5 * f * 0.5;
-    FSFX.cloth();
+    const rel = wrapA(a - PLAY.yaw);
+    this.bodyV.x += -Math.sin(rel) * 1.4 * f; this.bodyV.y += Math.cos(rel) * 2.4 * f;
+    this.headV.x += -Math.sin(rel) * 2.0 * f; this.headV.y += Math.cos(rel) * 3.2 * f;
+    this.flail = 0.6;
+    FSFX.cloth(); this.scuff();
     // very drunk: sometimes it ends on the floor
-    if (L > 0.45 && Math.random() < (L - 0.4) * 1.1) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 180);
+    const p = fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
+    if (Math.random() < p) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 220);
   },
+  // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
+  ground(g, dt) {
+    const L = Math.min(this.level, 1), dg = g - (this.lastG === undefined ? g : this.lastG);
+    this.lastG = g; this.tripCool = Math.max(0, (this.tripCool || 0) - dt);
+    if (L < 0.12 || Math.abs(dg) < 0.06 || PLAY.speed < 0.8 || this.tripCool > 0 || FALL.busy() || SIT.busy()) return;
+    if (Math.random() < Math.min(0.95, L * 1.8)) {
+      this.tripCool = 1.2;
+      this.stumble(undefined, dg > 0, L > 0.55 ? (L - 0.5) * 0.8 : 0);   // stepping up catches the toes harder
+    }
+  },
+  scuff() { GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.8, gain: 0.25, attack: 0.01, decay: 0.12 }); SFX.noiseHit(t + 0.13, g, { type: 'bandpass', freq: 700, q: 0.8, gain: 0.18, attack: 0.01, decay: 0.08 }); }); },
   // the body: the chain of springs (called after the gait or the seat has posed it)
   pose(P) {
     const L = Math.min(this.level, 1);
@@ -107,13 +120,19 @@ const DRUNK = {
       a.out += Math.min(0.6, lean * 2.2 + (s * B.x < 0 ? Math.abs(B.x) * 1.5 : 0)) * L;
       a.el += lean * 0.8 * L; a.sw += Math.sin(this.t * 2.3 + i * 2) * 0.15 * L;
     }
+    // arms thrown up and forward in a stumble
+    if (this.flail > 0 && !seated) {
+      const f = Math.sin(Math.PI * (this.flail / 0.6)) * Math.min(1, L * 2);
+      for (let i = 0; i < 2; i++) { const a = P.arm[i]; a.sw += f * (0.9 + i * 0.3); a.out += f * 0.5; a.el += f * 0.6; }
+      this.flail = Math.max(0, this.flail - 1 / 60);
+    }
     if (this.hicPose > 0) { P.hdPitch -= this.hicPose * 0.6; P.spPitch -= this.hicPose * 0.15; this.hicPose = Math.max(0, this.hicPose - 1 / 60); }
   },
   // the view: the horizon tilts, the camera drifts and lags
   camera(cam) {
     const L = Math.min(this.level, 1);
     if (L < 0.02) return;
-    const k = Math.min(1, L * 1.6);
+    const k = L * 1.5;   // keeps growing with every drink
     cam.position.x += (this.sway.y * 0.25 + this.body.x * 0.6) * k; cam.position.y += this.sway.x * 0.12 * k;
     cam.rotateZ((this.sway.x * 0.1 + this.body.x * 0.25) * k);
     const fov = cam.fov * (1 + Math.sin(this.t * 0.7) * 0.04 * k);
@@ -144,13 +163,12 @@ const DRUNK = {
     const O = this.out, el = document.getElementById('blackout');
     O.t += dt;
     if (O.phase === 'fade') {
-      el.hidden = false; el.style.opacity = clamp((O.t - 0.6) / 1.6, 0, 1).toFixed(2);
+      el.hidden = true;   // the eyelids in POST do the closing
       PLAY.vx *= Math.exp(-dt * 3); PLAY.vz *= Math.exp(-dt * 3);
       if (O.t >= 2.6) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
     } else if (O.phase === 'dark') {
       if (O.t >= 1.4) { O.phase = 'wake'; O.t = 0; }
     } else {
-      el.style.opacity = clamp(1 - O.t / 2.5, 0, 1).toFixed(2);
       if (O.t >= 2.5) { el.hidden = true; this.out = null; }
     }
   },

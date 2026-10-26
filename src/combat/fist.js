@@ -122,6 +122,9 @@ const FIST = {
   guardOf(i) {
     const m = i === 1 ? 1 : -1;
     const f = new THREE.Vector3(GUARD_T.fist[0] * m, GUARD_T.fist[1], GUARD_T.fist[2]), pl = new THREE.Vector3(GUARD_T.pole[0] * m, GUARD_T.pole[1], GUARD_T.pole[2]);
+    // drunk: the guard sags, drifts apart and wobbles
+    const L = Math.min(DRUNK.level, 1);
+    if (L > 0.05) { f.x += m * 0.1 * L; f.y -= 0.2 * L + Math.sin(G.time * 2.1 + i * 2) * 0.05 * L; f.z -= 0.08 * L; }
     if (AIK.ready) { f.applyMatrix4(AIK.tor); pl.transformDirection(AIK.tor); } else { f.y += 1.03; }
     return { fist: f, pole: pl };
   },
@@ -147,7 +150,7 @@ const FIST = {
   },
   /* ---- per frame ---- */
   update(dt) {
-    const slow = (this.weak ? 1.45 : 1) * (1 + Math.min(DRUNK.level, 1) * 0.9);   // drunk: slow and heavy
+    const slow = (this.weak ? 1.45 : 1) * (1 + Math.min(DRUNK.level, 1) * 1.3);   // drunk: slow and heavy
     this.t += dt / slow;
     if (this.holding && this.st === 'idle' && this.moved < 10 && G.time - this.downT > 0.24 && GUN.state === 'holster') this.start(true);
     if (this.st === 'charge') {
@@ -160,7 +163,7 @@ const FIST = {
       if (K === first && this.t < dt * 1.5) { this.lunge(this.heavy ? 2.4 : this.clipName === 'hook' ? 1.5 : 1.3); FSFX.whoosh(this.heavy || this.clipName === 'hook'); this.trail.length = 0; this.trailT = this.heavy ? 0.3 : 0.22; }
       if (this.t >= K.dur) {
         // drunk: the swing carries him after it
-        if (K.hit && DRUNK.level > 0.2 && Math.random() < Math.min(DRUNK.level, 1) * 0.85) DRUNK.stumble(this.faceYaw + (Math.random() - 0.5) * 0.8, this.heavy);
+        if (K.hit && DRUNK.level > 0.1) this.drunkFollow();
         this.k++; this.t = 0; this.snapFrom();
         if (this.k >= this.clip.length) { this.clip = null; this.st = 'idle'; }
         else this.st = this.clip[this.k].ph;
@@ -182,6 +185,15 @@ const FIST = {
   },
   lunge(v) { PLAY.vx += Math.sin(this.faceYaw) * v; PLAY.vz += Math.cos(this.faceYaw) * v; },
   // the moment the fist arrives
+  // drunk: the swing carries the body after it; a miss spins him round, and he often stumbles after it
+  drunkFollow() {
+    const L = Math.min(DRUNK.level, 1), yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, rel = wrapA(yaw - PLAY.yaw);
+    const side = this.side * (this.clipName === 'hook' || this.heavy ? 1.6 : 0.8);
+    DRUNK.bodyV.x += (side * 1.8 - Math.sin(rel) * 1.5) * L; DRUNK.bodyV.y += 2.2 * L;
+    DRUNK.headV.x += side * 2.6 * L; DRUNK.headV.y += 2.4 * L;
+    if (!this.landed && Math.random() < L * 0.7) PLAY.yaw += this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
+    if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
+  },
   connect() {
     const kind = this.clipName, reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : 1.02;
     const yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw);
@@ -245,7 +257,8 @@ const FIST = {
       const K = this.clip[this.k];
       e = EASE[K.ease](clamp(this.t / K.dur, 0, 1));
       goal = K.fist ? { fist: V(K.fist, m), pole: V(K.pole, m), via: K.via ? V(K.via, m) : null } : this.guardOf(pi);
-      bodyGoal = { ty: K.ty * m, tp: K.tp, pz: K.pz, dy: K.dy, roll: (K.roll || 0) * m };
+      const dk = 1 + Math.min(DRUNK.level, 1) * 0.8;   // drunk: everything bigger, wilder
+      bodyGoal = { ty: K.ty * m * dk, tp: K.tp * dk, pz: K.pz * dk, dy: K.dy * dk, roll: (K.roll || 0) * m * dk };
       if (K.fist && this.sloppy) { goal.fist.x += this.sloppy[0]; goal.fist.y += this.sloppy[1]; bodyGoal.roll += this.sloppy[2]; bodyGoal.tp += Math.abs(this.sloppy[2]) * 0.4; }
       // a landed blow stops the fist and bounces it back a little
       if (this.landed && (K.ph === 'hold' || K.ph === 'follow')) goal.fist.z -= 0.08;

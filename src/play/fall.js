@@ -14,7 +14,7 @@ const FALL_KEYS = {
 };
 const FALL_STEPS = [
   // key to blend towards, seconds, easing ('in' = accelerating like falling)
-  ['reel', 0.45, 'out'], ['seat', 0.28, 'in'], ['flat', 0.38, 'in'], ['lie', 1.8, 'out'], ['sitUp', 0.7, 'inout'], ['squat', 0.65, 'inout'], ['stand', 0.6, 'inout']
+  ['reel', 0.4, 'out'], ['seat', 0.26, 'in'], ['flat', 0.34, 'in'], ['lie', 1.2, 'out'], ['sitUp', 0.5, 'inout'], ['squat', 0.5, 'inout'], ['stand', 0.45, 'inout']
 ];
 const FALL = {
   st: null, i: 0, t: 0, from: null, cur: null, down: 0, keep: false, feet: [new THREE.Vector3(), new THREE.Vector3()], _v: new THREE.Vector3(),
@@ -30,7 +30,7 @@ const FALL = {
     const k0 = JSON.parse(JSON.stringify(FALL_KEYS.stand));
     for (let i = 0; i < 2; i++) { SIT.toChar(GAIT.feet[i].cur, this._v); k0.ank[i] = [this._v.x, this._v.y, this._v.z]; }
     this.cur = k0; this.from = k0; this.st = 'run'; this.i = 0; this.t = 0;
-    this.lieT = 1.4 + Math.random() * 1.2;
+    this.lieT = 0.8 + Math.random() * 0.8;
     worldEvent('fall', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   cancel() { this.st = null; this.down = 0; },

@@ -178,11 +178,14 @@ const DRINK = {
     mesh.matrix.copy(M); mesh.matrixWorldNeedsUpdate = true;
     mesh.material = ch.parts[0].material;
   },
+  // the recording (gulps), once for a shot, a few times for a long drink; the synthesised gulp only if it is missing
   gulp() {
     GSFX.run(() => {
-      const c = SFX.ctx, { g, t } = GSFX.out(0.4, PLAY.pos), n = this.it.sipT > 0.7 ? 3 : 1;
+      const c = SFX.ctx, { g, t } = GSFX.out(0.55, PLAY.pos), n = Math.max(1, Math.round(this.it.sipT / 0.42));
       for (let i = 0; i < n; i++) {
-        const t0 = t + 0.12 + i * 0.26, o = c.createOscillator(), og = c.createGain();
+        const t0 = t + 0.08 + i * 0.36;
+        if (GSFX.play('drink', g, t0, 0.92 + Math.random() * 0.14, 0.9)) continue;
+        const o = c.createOscillator(), og = c.createGain();
         o.frequency.setValueAtTime(170, t0); o.frequency.exponentialRampToValueAtTime(85, t0 + 0.09);
         og.gain.setValueAtTime(0.0001, t0); og.gain.linearRampToValueAtTime(0.16, t0 + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
         o.connect(og); og.connect(g); o.start(t0); o.stop(t0 + 0.14);

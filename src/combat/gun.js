@@ -103,6 +103,9 @@ const GUN = {
     this.t += dt;
     this.cool = Math.max(0, this.cool - dt);
     this.hipT = Math.max(0, this.hipT - dt);
+    // touch: there is no holster button; aiming draws the revolver, and it goes back by itself when not used for a while
+    if (this.touch && this.state === 'drawn' && !this.wantAim && this.hipT <= 0 && !this.reload) { this.idleT = (this.idleT || 0) + dt; if (this.idleT > 3.5) { this.idleT = 0; this.toggleHolster(); } }
+    else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
       if (this.t > 0.42) this.state = 'drawn';
@@ -322,7 +325,6 @@ const GUN = {
       HUD.$('ammo').classList.toggle('dim', this.state === 'holster');
       HUD.$('ammo').classList.toggle('loading', !!this.reload);
       HUD.$('bReload').disabled = this.ammo >= 6 || this.reserve <= 0;
-      HUD.$('bHolster').textContent = this.state === 'holster' ? 'Ziehen' : 'Holster';
       HUD.$('bFire').textContent = this.state === 'holster' ? 'Schlag' : 'Feuer';
     }
     HUD.$('bAim').setAttribute('aria-pressed', this.wantAim ? 'true' : 'false');

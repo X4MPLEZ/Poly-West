@@ -108,7 +108,6 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bAim { width: 64px; height: 64px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
 #bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); }
 #bReload { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
-#bHolster { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
 .touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
@@ -211,7 +210,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 /* the quick wheel */
 #bagBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right, 0px)) + 112px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; }
 .touch #bagBtn { display: none; }
-#bBag { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(190px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
+#bBag { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
 #wheel { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(12, 8, 5, 0.25), rgba(12, 8, 5, 0.6)); z-index: 3; pointer-events: auto; }
 #wheel[hidden] { display: none; }
 #wheelRing { position: relative; width: min(340px, 78vmin); height: min(340px, 78vmin); border-radius: 50%; background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); }
@@ -274,7 +273,6 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <span id="reserve">24</span>
     </div>
     <div id="pad">
-      <button id="bHolster" class="pb" type="button">Ziehen</button>
       <button id="bReload" class="pb" type="button">Laden</button>
       <button id="bAim" class="pb" type="button" aria-pressed="false">Zielen</button>
       <button id="bFire" class="pb" type="button">Feuer</button>
@@ -313,7 +311,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
           <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>linker Daumen ziehen, weit = rennen</td></tr>
           <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
           <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
-          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Ziehen · Zielen · Feuer · Laden</td></tr>
+          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
           <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
           <tr><th scope="row">Tasche</th><td>Tab halten, zeigen, loslassen · T trinkt direkt aus der Flasche</td><td>Knopf „Tasche“</td></tr>
           <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
@@ -323,5 +321,5 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     </div>
   </div>
   <div id="boot"><div class="bootIn"><b>Poly West</b><span id="bootMsg">wird aufgebaut …</span></div>
-    <small id="credits">Schuss-Aufnahme: „9mm Gunshot“ von GoodSoundForYou (soundbible.com), CC BY 3.0, bearbeitet · Schlag-Luftzug: kwahmah_02 (freesound.org), CC BY 3.0 · Glas, Leerklick und Schläge: CC0 (freesound.org)</small></div>
+    <small id="credits">Schuss-Aufnahme: „9mm Gunshot“ von GoodSoundForYou (soundbible.com), CC BY 3.0, bearbeitet · Schlag-Luftzug: kwahmah_02 (freesound.org), CC BY 3.0 · Glas, Leerklick und Schläge: CC0 (freesound.org) · Trinken: VoxeLibre, CC0</small></div>
 </div>

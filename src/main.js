@@ -62,6 +62,7 @@
     DEV.update(dt);
     DRUNK.update(dt);
     FALL.update(dt);
+    POST.update(dt);
     DRINK.update(dt);
     updatePlayer(dt);
     GLASS.update(dt);

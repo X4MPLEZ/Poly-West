@@ -111,6 +111,7 @@ function updatePlayer(dt) {
   // just up from a seat that stands close to furniture: ease out of it instead of popping
   if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
   const g = groundAt(px, pz, PLAY.pos.y);
+  DRUNK.ground(g, dt);
   PLAY.pos.x = px; PLAY.pos.z = pz;
   PLAY.pos.y += (g - PLAY.pos.y) * (1 - Math.exp(-dt * (g > PLAY.pos.y ? 22 : 14)));
   const stride = PLAY.speed > 4 ? 2.5 : 1.6;
