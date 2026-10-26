@@ -14,8 +14,8 @@ if missing or unlisted:
 head = (src / 'ui' / 'page.html').read_text()
 js = '\n'.join(f'// ==== {f} ====\n' + (src / f).read_text() for f in order)
 local = '--local' in sys.argv
-THREE_VER = '128'
-three = '../vendor/three.min.js' if local else f'https://cdnjs.cloudflare.com/ajax/libs/three.js/r{THREE_VER}/three.min.js'
+THREE_VER = next((a.split('=')[1] for a in sys.argv if a.startswith('--three=')), '128')
+three = f'../vendor/three-r{THREE_VER}.min.js' if local else f'https://cdnjs.cloudflare.com/ajax/libs/three.js/r{THREE_VER}/three.min.js'
 fallback = '' if local else f'<script>if (!window.THREE) document.write(\'<script src="https://cdn.jsdelivr.net/npm/three@0.{THREE_VER}.0/build/three.min.js"><\\/script>\');</script>\n'
 html = f'{head}\n<script src="{three}"></script>\n{fallback}<script>\n{js}\n</script>\n'
 out = root / 'dist' / ('test.html' if local else 'dust-creek.html')
