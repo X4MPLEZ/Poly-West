@@ -9,6 +9,7 @@ world/rooms.js
 world/furniture.js
 world/interiors.js
 world/nature.js
+world/chunks.js
 gfx/atlas.js
 char/rig.js
 char/gait.js

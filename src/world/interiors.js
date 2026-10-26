@@ -171,26 +171,27 @@ const FURNISH = {
     at(mb, -0.5, F + 1.7, z0 + 0.05, 0, () => picture(mb, 1.1, 0.75, rgb(0x6a8aa0)));
   },
   sheriff(mb, R, rnd) {
-    const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
+    const { x0, x1, z0, floorY: F } = R;
     lining(mb, R, rgb(0xcfc4a8), rgb(0x6a4a32), 3);
-    at(mb, -1.6, F, -3.6, 0, () => { squareTable(mb, 1.5, 0.8, 0.78, IC.oak); mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
-    at(mb, -1.6, F, -4.3, 0, () => chair(mb, IC.walnut));
-    rColl(R, -2.4, -0.8, -4.0, -3.2, 0.8);
-    // jail cell with bunk and bucket
-    at(mb, 1.9, F, -5.4, 0, () => bars(mb, 3.9, 2.4, 0)); rColl(R, 0, x1, -5.45, -5.35, 3);
-    at(mb, 0.15, F, -6.9, Math.PI / 2, () => bars(mb, 3.0, 2.4, 0)); rColl(R, 0.1, 0.2, z0, -5.4, 3);
+    place(mb, R, [
+      ['table', -1.6, -3.6, 0, { w: 1.5, box: [-2.4, -0.8, -4.0, -3.2, 0.8] }],                 // the sheriff's desk
+      ['chair', -1.6, -4.3, 0],
+      ['bars', 1.9, -5.4, 0, { len: 3.9, box: [0, x1, -5.45, -5.35, 3] }],                      // jail cell
+      ['bars', 0.15, -6.9, Math.PI / 2, { len: 3.0, box: [0.1, 0.2, z0, -5.4, 3] }],
+      ...[0, 1, 2, 3].map((i) => ['poster', x0 + 0.05, -1.6 - i * 0.7, Math.PI / 2, { y: 1.5 + (i % 2) * 0.1 }]),
+      ['stove', -2.9, -6.8, 0, { circle: 0.38 }],
+      ['lantern', -1.6, -3.6, 0, { len: 0.8 }], ['lantern', 2.0, -7.0, 0, { len: 0.8 }]
+    ], rnd);
+    // one-offs: things on the desk, bunk and bucket in the cell, gun rack, coffee pot, filing cabinet
+    at(mb, -1.6, F, -3.6, 0, () => { mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
     mb.box(2.9, F + 0.4, -7.9, 1.8, 0.08, 0.7, IC.oak, 2); mb.box(2.9, F + 0.48, -7.9, 1.7, 0.1, 0.6, rgb(0x6a6a5a), 9);
     for (const s of [-1, 1]) mb.box(2.9 + s * 0.85, F, -7.9, 0.06, 0.4, 0.6, IC.oak, 3);
     rColl(R, 1.95, x1, -8.3, -7.5, 0.6);
     mb.cyl(0.8, F, -8.2, 0.15, 0.13, 0.28, 8, rgb(0x6a6a6a), 0);
-    // gun rack and wanted posters
     at(mb, x1 - 0.06, F + 1.0, -2.6, -Math.PI / 2, () => { mb.box(0, 0, 0, 1.4, 0.08, 0.15, IC.walnut, 3); mb.box(0, 1.1, 0, 1.4, 0.08, 0.15, IC.walnut, 3); for (let i = 0; i < 4; i++) { mb.box(-0.5 + i * 0.33, 0.05, 0.08, 0.06, 1.2, 0.04, IC.walnut, 3); mb.box(-0.5 + i * 0.33, 0.6, 0.08, 0.04, 0.65, 0.05, IC.iron, 0); } });
-    for (let i = 0; i < 4; i++) at(mb, x0 + 0.05, F + 1.5 + (i % 2) * 0.1, -1.6 - i * 0.7, Math.PI / 2, () => poster(mb, 0.45, 0.6));
-    stove(mb, -2.9, F, -6.8, C); rCircle(R, -2.9, -6.8, 0.38);
     mb.cyl(-2.9, F + 0.93, -6.65, 0.08, 0.06, 0.2, 7, rgb(0x5a6a7a), 0);
     at(mb, x0 + 0.35, F, -7.8, Math.PI / 2, () => { mb.box(0, 0, 0, 0.8, 1.3, 0.5, rgb(0x5a5a52), 0); for (let i = 0; i < 3; i++) mb.box(0, 0.2 + i * 0.4, 0.26, 0.6, 0.3, 0.02, rgb(0x6a6a62), 0); });
     rColl(R, x0, x0 + 0.65, -8.3, -7.3, 1.4);
-    lantern(mb, -1.6, -3.6, C, 0.8); lantern(mb, 2.0, -7.0, C, 0.8);
   },
   barber(mb, R, rnd) {
     const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
@@ -253,11 +254,14 @@ const FURNISH = {
     lantern(mb, -0.2, -3.4, C, 0.9); lantern(mb, 0, -7.0, C, 0.9);
   },
   post(mb, R, rnd) {
-    const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
-    lining(mb, R, rgb(0xb79a6e), rgb(0x5e4030), 3);
-    at(mb, 0, F, -5.2, 0, () => { counter(mb, x1 - x0 - 2.2, 0.7, 1.05, rgb(0x5e4030)); for (let i = 0; i < 3; i++) at(mb, -2.6 + i * 2.6, 1.08, 0, 0, () => bars(mb, 0.8, 0.6, 0)); });
-    rColl(R, x0 + 1.1 - 0.05, x1 - 1.1 + 0.05, -5.6, -4.8, 1.2);
-    rColl(R, x1 - 1.15, x1, -5.25, -5.15, 1.1); mb.box(x1 - 0.6, F, -5.2, 1.0, 1.05, 0.06, rgb(0x5e4030), 3);
+    const { x0, x1, z0, floorY: F } = R;
+    const wood = rgb(0x5e4030);
+    lining(mb, R, rgb(0xb79a6e), wood, 3);
+    place(mb, R, [
+      ['counter', 0, -5.2, 0, { len: x1 - x0 - 2.2, col: wood, box: [x0 + 1.05, x1 - 1.05, -5.6, -4.8, 1.2] }],
+      ...[0, 1, 2].map((i) => ['bars', -2.6 + i * 2.6, -5.2, 0, { len: 0.8, h: 0.6, y: 1.08 }]),   // teller grilles on the counter
+    ], rnd);
+    rColl(R, x1 - 1.15, x1, -5.25, -5.15, 1.1); mb.box(x1 - 0.6, F, -5.2, 1.0, 1.05, 0.06, wood, 3);
     // pigeonholes full of letters
     at(mb, 0, F + 0.9, z0 + 0.25, 0, () => {
       mb.box(0, 0, -0.18, 4.4, 2.0, 0.04, IC.walnut, 3);
@@ -266,16 +270,18 @@ const FURNISH = {
       for (let i = 0; i < 10; i++) for (let j = 0; j < 5; j++) if (rnd() < 0.55) mb.box(-1.98 + i * 0.44, j * 0.4 + 0.04, 0.05, 0.3, 0.06 + rnd() * 0.15, 0.25, IC.paper, 0);
     });
     rColl(R, -2.3, 2.3, z0, z0 + 0.5, 3);
-    // telegraph desk, parcels, mail sacks, scale
+    // telegraph desk (one-off), parcels, mail sacks, waiting bench, picture, lamps
     at(mb, x0 + 0.6, F, -7.6, Math.PI / 2, () => { squareTable(mb, 1.4, 0.7, 0.78, IC.oak); mb.box(0, 0.78, 0.05, 0.25, 0.06, 0.18, IC.brass, 0); mb.box(0.05, 0.84, 0.05, 0.14, 0.03, 0.03, IC.black, 0); mb.box(-0.4, 0.78, 0, 0.3, 0.2, 0.22, rgb(0x3a3a3a), 0); });
     rColl(R, x0, x0 + 1.0, -8.4, -6.8, 0.8);
-    for (let i = 0; i < 5; i++) crate(mb, x1 - 0.5 - (i % 3) * 0.45, F + Math.floor(i / 3) * 0.4, -7.5 - (i % 2) * 0.1, 0.4, rgb(0xb89a6a));
+    place(mb, R, [
+      ...[0, 1, 2, 3, 4].map((i) => ['crate', x1 - 0.5 - (i % 3) * 0.45, -7.5 - (i % 2) * 0.1, 0, { s: 0.4, col: rgb(0xb89a6a), y: Math.floor(i / 3) * 0.4 }]),
+      ['sack', x1 - 0.5, -3.0, 0, { col: rgb(0x8a8a6a) }], ['sack', x1 - 0.5, -3.6, 0, { col: rgb(0x8a8a6a) }],
+      ['bench', -2.0, -2.2, 0, { len: 1.8, box: [-2.9, -1.1, -2.45, -2.0, 0.8] }],
+      ['picture', x0 + 0.05, -3.0, Math.PI / 2, { w: 1.4, h: 1.0, col: rgb(0xd8c8a0), y: 1.5 }],
+      ['lantern', -2.0, -3.4, 0, { len: 0.9 }], ['lantern', 2.0, -3.4, 0, { len: 0.9 }]
+    ], rnd);
     rColl(R, x1 - 1.6, x1, -7.8, -7.2, 0.9);
-    for (let i = 0; i < 2; i++) sack(mb, x1 - 0.5, F, -3.0 - i * 0.6, rgb(0x8a8a6a));
     rColl(R, x1 - 0.8, x1, -3.9, -2.7, 0.7);
-    at(mb, -2.0, F, -2.2, 0, () => bench(mb, 1.8, IC.walnut)); rColl(R, -2.9, -1.1, -2.45, -2.0, 0.8);
-    at(mb, x0 + 0.05, F + 1.5, -3.0, Math.PI / 2, () => picture(mb, 1.4, 1.0, rgb(0xd8c8a0)));
-    lantern(mb, -2.0, -3.4, C, 0.9); lantern(mb, 2.0, -3.4, C, 0.9);
   },
   apothecary(mb, R, rnd) {
     const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;

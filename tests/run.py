@@ -11,7 +11,7 @@ from harness import open_game, OUT, ROOT
 
 GOLDEN = ROOT / 'tests' / 'golden.json'
 # performance budget (headless renderer, fixed views): draw calls and triangles per frame
-BUDGET = {'street': {'calls': 60, 'tris': 260000}, 'saloon': {'calls': 60, 'tris': 260000}}
+BUDGET = {'street': {'calls': 70, 'tris': 260000}, 'saloon': {'calls': 60, 'tris': 260000}}
 
 RESET = '''() => { G.noRender = true; G.camHook = null; INPUT.keys.clear(); if (SIT.busy()) { SIT.cancel(); }
   if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; } GUN.setAim(false); GUN.hipT = 0;
@@ -27,18 +27,20 @@ WALK = '''(a) => { const [yaw, secs, keys] = a; INPUT.keys.clear(); (keys || ['w
 # a fingerprint of everything that was built: meshes, colliders, platforms, seats, doors.
 # Refactors must keep it identical; intended changes to the world are accepted with --golden.
 FINGERPRINT = '''() => {
-  const r = (v) => Math.round(v * 100) / 100, meshes = [];
+  const r = (v) => Math.round(v * 100) / 100, meshes = [], tot = { v: 0, s: 0, c: 0 };
   // order-independent: the same pieces built in another order give the same signature
   const sig = (o) => { const a = o.geometry.attributes, P = a.position.array; let s = 0, c = 0;
     for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2]; s += x + 2 * y + 3 * z + 0.01 * (x * x + y * y * 2 + z * z * 3); }
     if (a.color) { const C = a.color.array; for (let i = 0; i < C.length; i += 3) c += C[i] + 2 * C[i + 1] + 3 * C[i + 2] + C[i] * C[i + 1]; }
     o.updateMatrixWorld(); const e = o.matrixWorld.elements;
+    tot.v += P.length / 3; tot.s += s; tot.c += c;
     return [P.length / 3, r(s), r(c), r(e[12]), r(e[13]), r(e[14])].join(':'); };
   for (const o of W.worldMeshes.concat(ROOMS.map((R) => R.mesh))) meshes.push(sig(o));
   for (const D of DOORS) for (const m of D.meshes) meshes.push('door:' + sig(m).split(':').slice(0, 3).join(':'));
   meshes.sort();
   const sum = (L, f) => r(L.reduce((t, x) => t + f(x), 0));
-  return { meshes: meshes.length, meshHash: meshes.join('|').split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7),
+  // the sum over everything stays the same when the same triangles are only regrouped into other meshes (chunks)
+  return { total: [tot.v, Math.round(tot.s), Math.round(tot.c)], meshes: meshes.length, meshHash: meshes.join('|').split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7),
     coll: [COLL.length, sum(COLL, (c) => c.cx * 3 + c.cz * 7 + (c.r || c.hx + c.hz))], plats: [PLATS.length, sum(PLATS, (p) => p.cx + p.cz * 3 + p.y * 5)],
     camblock: CAMBLOCK.length, seats: [SEATS.length, sum(SEATS, (s) => s.x + s.z * 3 + s.yaw)], doors: DOORS.length, rooms: ROOMS.length }; }'''
 

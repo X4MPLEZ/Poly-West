@@ -149,9 +149,10 @@ function surfaceOf(hit) {
   const obj = hit.object, g = obj.geometry, i = hit.face.a;
   const col = g.attributes.color ? [g.attributes.color.getX(i), g.attributes.color.getY(i), g.attributes.color.getZ(i)] : [0.6, 0.5, 0.4];
   const tile = g.attributes.tile ? Math.round(g.attributes.tile.getX(i)) : 0;
-  if (obj === W.terrain || obj === W.road) return { kind: 'dirt', col };
-  if (obj === W.rocks) return { kind: 'stone', col };
-  if (obj === W.plants) return { kind: col[1] > col[0] * 1.05 ? 'cactus' : null, col };
+  const src = chunkKind(obj, hit.faceIndex);
+  if (src === 'terrain' || src === 'road') return { kind: 'dirt', col };
+  if (src === 'rocks') return { kind: 'stone', col };
+  if (src === 'plants') return { kind: col[1] > col[0] * 1.05 ? 'cactus' : null, col };
   if (DOORS.some((D) => D.meshes.includes(obj))) return { kind: null, col, splinter: true };
   if (tile >= 32) return { kind: col[0] + col[1] + col[2] < 0.6 ? 'glass' : 'wood', col };  // lettering on a shop window is glass
   if ([2, 3, 5, 13].includes(tile)) return { kind: 'wood', col };

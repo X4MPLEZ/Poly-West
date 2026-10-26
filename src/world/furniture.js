@@ -100,3 +100,36 @@ function bench(mb, len, col, kind) {
   for (let k = 0; k < n; k++) seatHere(mb, -len / 2 + ((k + 0.5) * len) / n, 0.02, kind || 'bench');
 }
 function bars(mb, len, h, y0) { const n = Math.round(len / 0.14); for (let i = 0; i <= n; i++) mb.box(-len / 2 + (len * i) / n, y0, 0, 0.03, h, 0.03, IC.iron, 0); mb.box(0, y0 + h - 0.04, 0, len, 0.05, 0.05, IC.iron, 0); mb.box(0, y0, 0, len, 0.05, 0.05, IC.iron, 0); }
+
+/* ---------- prefabs: furniture by name, so a room can be written as a list ----------
+   place(mb, R, [[name, x, z, ry, opts], ...]) puts each piece on the room floor (opts.y lifts it) and adds its collider:
+   opts.box = [x0, x1, z0, z1, h] (room coordinates), opts.circle = radius around (x, z).
+   New rooms should be lists like this; one-off pieces (a piano, a vault) stay as code next to the list. */
+const PREFAB = {
+  chair: (mb, o) => chair(mb, o.col || IC.walnut),
+  stool: (mb, o) => stool(mb, o.col || rgb(0x5a3422), o.bar ? { bar: o.bar } : undefined),
+  bench: (mb, o) => bench(mb, o.len || 1.6, o.col || IC.walnut, o.kind),
+  roundTable: (mb, o) => roundTable(mb, o.r || 0.55, o.col || IC.walnut),
+  table: (mb, o) => squareTable(mb, o.w || 1.2, o.d || 0.8, o.h || 0.78, o.col || IC.oak),
+  counter: (mb, o) => counter(mb, o.len, o.dep || 0.7, o.h || 1.05, o.col, o.top),
+  shelf: (mb, o, R, rnd) => shelfUnit(mb, o.len, o.h || 2.4, o.dep || 0.45, o.levels || 5, rnd, o.fill || 'mixed', o.col),
+  crate: (mb, o) => crate(mb, 0, 0, 0, o.s || 0.5, o.col),
+  sack: (mb, o) => sack(mb, 0, 0, 0, o.col),
+  keg: (mb, o) => keg(mb, 0, 0, 0, o.r || 0.35, o.h || 0.85, o.col),
+  stove: (mb, o, R) => stove(mb, 0, 0, 0, R.ceilY - R.floorY - (o.y || 0)),
+  bars: (mb, o) => bars(mb, o.len, o.h || 2.4, 0),
+  picture: (mb, o) => picture(mb, o.w || 1.0, o.h || 0.7, o.col || rgb(0x8a7a6a)),
+  poster: (mb, o) => poster(mb, o.w || 0.45, o.h || 0.6),
+  rug: (mb, o) => rug(mb, 0, 0, 0, o.w, o.d, o.col, o.border),
+  // hangs from the ceiling: its height comes from the room, not the floor
+  lantern: (mb, o, R) => lantern(mb, 0, 0, R.ceilY, o.len || 0.8)
+};
+function place(mb, R, list, rnd) {
+  for (const [name, x, z, ry, o0] of list) {
+    const o = o0 || {}, fn = PREFAB[name];
+    if (!fn) throw new Error('unknown prefab ' + name);
+    at(mb, x, name === 'lantern' ? 0 : R.floorY + (o.y || 0), z, ry || 0, () => fn(mb, o, R, rnd));
+    if (o.box) rColl(R, o.box[0], o.box[1], o.box[2], o.box[3], o.box[4]);
+    if (o.circle) rCircle(R, x, z, o.circle);
+  }
+}

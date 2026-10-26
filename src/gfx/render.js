@@ -37,14 +37,15 @@ function assembleScene() {
     const m = new THREE.Mesh(geo, G.litMat); m.name = name; m.layers.enable(1); m.matrixAutoUpdate = false; m.updateMatrix();
     scene.add(m); W.worldMeshes.push(m); return m;
   };
-  W.terrain = addStatic(buildTerrain(), 'terrain');
-  W.road = addStatic(buildRoad(), 'road');
-  const town = buildTown();
-  W.town = addStatic(town.geo, 'town');
+  // the static world, built in this order (the town reads the ground), then merged per cell (see chunks.js)
+  const terrain = buildTerrain(), road = buildRoad(), town = buildTown(), nat = buildNature();
   W.bridge = town.bridge;
-  const nat = buildNature();
-  W.plants = addStatic(nat.plants, 'plants');
-  W.rocks = addStatic(nat.rocks, 'rocks');
+  const parts = [{ geo: terrain, kind: 'terrain' }, { geo: road, kind: 'road' }, { geo: town.geo, kind: 'town' },
+    { geo: nat.plants, kind: 'plants' }, { geo: nat.rocks, kind: 'rocks' }];
+  for (const c of chunkStatic(parts, TOWN.cx, TOWN.cz)) {
+    const m = addStatic(c.geo, 'chunk ' + c.key); m.userData.kinds = c.kinds; CHUNKS.cells.set(c.key, m);
+  }
+  for (const p of parts) p.geo.dispose();
   // moving bits
   const addDyn = (geo) => { const m = new THREE.Mesh(geo, G.litMat); m.layers.enable(2); scene.add(m); W.dynMeshes.push(m); return m; };
   W.poles = [];
