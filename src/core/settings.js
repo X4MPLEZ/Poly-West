@@ -18,6 +18,7 @@ const SETTINGS = {
     { group: 'Gespräche' },
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
     { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
+    { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],

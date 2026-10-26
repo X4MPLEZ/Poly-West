@@ -28,6 +28,7 @@ play/drunk.js
 play/fall.js
 audio/sfx.js
 audio/samples.js
+audio/voice.js
 combat/fx.js
 combat/gun.js
 combat/gun_sound.js

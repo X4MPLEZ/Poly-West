@@ -350,8 +350,30 @@ async def check_npc(g):
           and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'])
     return ok, json.dumps(r)
 
+async def check_voice(g):
+    """the real voice (Piper in a worker): loads over http, says a sentence; skipped without tools/voices.py output"""
+    import threading, http.server, functools, socketserver
+    if not (ROOT / 'vendor' / 'voice' / 'thorsten.voice.json').exists(): return True, 'skipped (python3 tools/voices.py)'
+    h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
+    h.log_message = lambda *a: None
+    srv = socketserver.TCPServer(('127.0.0.1', 0), h); port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    page = await g.browser.new_page()
+    try:
+        await page.goto(f'http://127.0.0.1:{port}/dist/test.html')
+        await page.wait_for_function('() => typeof VOICE !== "undefined" && typeof G !== "undefined" && G.cam', timeout=90000)
+        r = await page.evaluate("""() => new Promise((res) => { G.manual = true; VOICE.load(); const t0 = performance.now();
+          const iv = setInterval(() => { if (VOICE.st === 'loading') return; clearInterval(iv);
+            if (VOICE.st !== 'ready') { res({ st: VOICE.st, why: VOICE.why }); return; }
+            const t1 = performance.now(); VOICE.synth('Howdy, Fremder. Was darf es sein?', { pitch: 0.9, length: 1.05 }).then((p) => {
+              let e = 0; for (const v of p) e += v * v; res({ st: 'ready', load: Math.round(t1 - t0), synth: Math.round(performance.now() - t1), secs: +(p.length / VOICE.rate).toFixed(2), rms: +Math.sqrt(e / p.length).toFixed(3) }); },
+              (err) => res({ st: 'synth failed', why: String(err) })); }, 50); })""")
+    finally:
+        await page.close(); srv.shutdown()
+    return r.get('st') == 'ready' and r.get('secs', 0) > 1.0 and r.get('rms', 0) > 0.01, json.dumps(r)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

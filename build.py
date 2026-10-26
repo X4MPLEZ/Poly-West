@@ -23,4 +23,8 @@ out.parent.mkdir(exist_ok=True)
 if local:
     html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + html + '</body></html>'
 out.write_text(html)
+# the real voices (tools/voices.py): next to the page, as artifact files
+voice_src, voice_dst = root / 'vendor' / 'voice', root / 'dist' / 'voice'
+if voice_src.exists() and not voice_dst.exists():
+    voice_dst.symlink_to(voice_src.resolve(), target_is_directory=True)
 print(out, len(html), 'bytes,', len(order), 'scripts')

@@ -148,22 +148,23 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .touch #prompt3 { display: none; }
 #bTalk { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(132px + env(safe-area-inset-bottom, 0px)); font-size: 11px; border-color: rgba(231, 166, 64, 0.8); }
 #bTalk[hidden] { display: none; }
-#talk { position: absolute; left: 50%; bottom: calc(10% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(460px, calc(100% - 32px)); pointer-events: auto;
-  display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+#talk { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 32px)); pointer-events: auto;
+  display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 7px 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.touch #talk { width: min(440px, calc(100% - 360px)); min-width: 260px; }
 #talk[hidden] { display: none; }
 #talkMid { flex: 1; min-width: 0; }
-#talkMid b { font-family: var(--f-display); font-weight: 400; font-size: 17px; color: var(--brass); margin-right: 8px; }
-#talkState { font-size: 13.5px; color: var(--dust); }
+#talkMid b { font-family: var(--f-display); font-weight: 400; font-size: 15px; color: var(--brass); margin-right: 8px; }
+#talkState { font-size: 12.5px; color: var(--dust); }
 #talk[data-st="listen"] #talkState { color: var(--bone); }
 #talk[data-st="err"] #talkState { color: var(--warn); }
 #talkHeard { margin: 3px 0 0; font-size: 15px; font-weight: 600; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #talkHeard:empty { display: none; }
-#talkType { display: flex; gap: 6px; margin-top: 6px; }
+#talkType { display: flex; gap: 6px; margin-top: 4px; }
 #talkType[hidden] { display: none; }
-#talkType input { flex: 1; min-width: 0; height: 38px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 15px var(--f-ui); -webkit-user-select: text; user-select: text; }
-#talkType button { height: 38px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font: 700 14px var(--f-ui); padding: 0 12px; }
+#talkType input { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 15px var(--f-ui); -webkit-user-select: text; user-select: text; }
+#talkType button { height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); font: 700 14px var(--f-ui); padding: 0 12px; }
 #talkClose { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--edge); background: transparent; color: var(--bone); font-size: 18px; line-height: 1; }
-#talkMic { width: 52px; height: 52px; flex: none; border-radius: 50%; border: 2px solid var(--brass); background: rgba(231, 166, 64, 0.18); color: var(--bone); display: grid; place-items: center; padding: 0; }
+#talkMic { width: 42px; height: 42px; flex: none; border-radius: 50%; border: 2px solid var(--brass); background: rgba(231, 166, 64, 0.18); color: var(--bone); display: grid; place-items: center; padding: 0; }
 #talkMic[hidden] { display: none; }
 #talkMic svg { width: 24px; height: 24px; }
 #talkMic[aria-pressed="true"] { background: var(--bad); border-color: var(--bad); color: var(--ink); animation: micPulse 1s ease-in-out infinite; }
@@ -653,6 +654,7 @@ const SETTINGS = {
     { group: 'Gespräche' },
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
     { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
+    { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],
@@ -4866,6 +4868,151 @@ const SND_DATA = {
   swing3: 'data:audio/mpeg;base64,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'
 };
 
+// ==== audio/voice.js ====
+/* ---------- real voices: Piper (a neural text-to-speech model) running in the browser ----------
+   The files (tools/voices.py -> vendor/voice -> published next to the page as voice/…) are loaded once, in a
+   worker so the game does not stutter: onnxruntime-web (wasm), piper_phonemize (espeak, German), and per voice a
+   model that is put back together from a template + float16 weights. Then a line is spoken sentence by sentence:
+   the next sentence is computed while the one before plays, so speech starts after the first sentence.
+   Every person has a voice profile: npc.voiceProfile = { piper: 'thorsten', pitch, length, noise }. Pitch is a
+   playback-rate shift; the model is asked for a matching tempo so the pace stays as set by `length`.
+   If this cannot run here (no workers, no wasm, files missing), the browser's own voices are used (TALK.speakBrowser). */
+function VOICE_WORKER() {
+  let sess = null, phon = null, cfg = null, pending = null, readyRes = null;
+  const ready = new Promise((r) => { readyRes = r; });
+  const HALF = new Float32Array(65536);
+  for (let h = 0; h < 65536; h++) { const s = h >> 15, e = (h >> 10) & 31, m = h & 1023; HALF[h] = (s ? -1 : 1) * (e === 0 ? m * 5.960464477539063e-8 : e === 31 ? (m ? NaN : Infinity) : Math.pow(2, e - 15) * (1 + m / 1024)); }
+  async function get(url, part) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(url.split('/').pop() + ': ' + r.status);
+    const rd = r.body.getReader(), chunks = []; let n = 0;
+    for (;;) { const { done, value } = await rd.read(); if (done) break; chunks.push(value); n += value.length; postMessage({ t: 'progress', part, n }); }
+    const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
+  async function init(m) {
+    const base = m.base;
+    importScripts(base + 'ort.wasm.min.js', base + 'piper_phonemize.js');
+    ort.env.wasm.numThreads = 1; ort.env.wasm.wasmPaths = base;
+    cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg')));
+    const tmpl = await get(base + m.voice + '.tmpl', 'tmpl'), parts = [];
+    for (const p of cfg.parts) parts.push(await get(base + p, p));
+    let hl = 0; for (const p of parts) hl += p.length;
+    const half = new Uint8Array(hl); { let o = 0; for (const p of parts) { half.set(p, o); o += p.length; } }
+    // the model again: the template with the weights put back in as float32 (they are not 4-byte aligned in the file)
+    const full = new Uint8Array(cfg.size), H = new Uint16Array(half.buffer);
+    let t = 0, h = 0, last = 0, f = null;
+    for (const [i, n] of cfg.segs) {
+      full.set(tmpl.subarray(t, t + i - last), last); t += i - last;
+      if (!f || f.length < n / 4) f = new Float32Array(n / 4);
+      for (let k = 0; k < n / 4; k++) f[k] = HALF[H[h + k]];
+      full.set(new Uint8Array(f.buffer, 0, n), i); h += n / 4; last = i + n;
+    }
+    full.set(tmpl.subarray(t), last);
+    sess = await ort.InferenceSession.create(full, { executionProviders: ['wasm'] });
+    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x });
+    readyRes();
+    postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate });
+  }
+  function ids(text) { return new Promise((res) => { pending = res; phon.callMain(['-l', cfg.voice.espeak.voice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data']); }); }
+  async function say(m) {
+    await ready;
+    const id = await ids(m.text), I = cfg.voice.inference;
+    const r = await sess.run({
+      input: new ort.Tensor('int64', BigInt64Array.from(id.map(BigInt)), [1, id.length]),
+      input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(id.length)]), [1]),
+      scales: new ort.Tensor('float32', Float32Array.from([m.noise != null ? m.noise : I.noise_scale, m.length != null ? m.length : I.length_scale, m.noiseW != null ? m.noiseW : I.noise_w]), [3])
+    });
+    const pcm = new Float32Array(r.output.data);
+    postMessage({ t: 'audio', id: m.id, pcm }, [pcm.buffer]);
+  }
+  let chain = Promise.resolve();
+  onmessage = (e) => {
+    const m = e.data;
+    if (m.t === 'init') init(m).catch((err) => postMessage({ t: 'fail', msg: String((err && err.message) || err) }));
+    else chain = chain.then(() => say(m)).catch((err) => postMessage({ t: 'error', id: m.id, msg: String((err && err.message) || err) }));
+  };
+}
+
+const VOICE = {
+  st: 'off', why: '', got: 0, worker: null, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
+  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
+  ready() { return this.st === 'ready'; },
+  pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
+  // start loading (once); cheap to call often
+  load() {
+    if (this.st !== 'off' || !this.wanted()) return;
+    this.st = 'loading'; this.got = 0; this.parts = {};
+    try {
+      const base = new URL('voice/', location.href).href;
+      if (!/^https?:/.test(base)) throw new Error('nur über http(s) möglich');
+      if (typeof Worker === 'undefined' || typeof WebAssembly === 'undefined') throw new Error('Worker/WebAssembly fehlen');
+      const w = this.worker = new Worker(URL.createObjectURL(new Blob(['(' + VOICE_WORKER.toString() + ')()'], { type: 'text/javascript' })));
+      w.onmessage = (e) => this.msg(e.data);
+      w.onerror = (e) => { e.preventDefault && e.preventDefault(); this.fail('Worker: ' + (e.message || 'Fehler')); };
+      w.postMessage({ t: 'init', base, voice: 'thorsten' });
+    } catch (e) { this.fail(String((e && e.message) || e)); }
+  },
+  fail(why) {
+    if (this.st === 'failed') return;
+    this.st = 'failed'; this.why = why; console.warn('[voice]', why);
+    try { if (this.worker) this.worker.terminate(); } catch (e) { /* ignore */ }
+    this.worker = null;
+    for (const k in this.waits) this.waits[k].rej(new Error(why));
+    this.waits = {}; this.q = [];
+  },
+  msg(m) {
+    if (m.t === 'progress') { this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
+    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); }
+    else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
+    else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
+    else if (m.t === 'fail') this.fail(m.msg);
+  },
+  synth(text, prof) {
+    return new Promise((res, rej) => {
+      if (!this.worker) { rej(new Error(this.why || 'keine Stimme')); return; }
+      const id = this.nextId++, P = prof || {}, pitch = P.pitch || 1;
+      this.waits[id] = { res, rej };
+      // played back `pitch` times faster, so ask for that much slower speech: the pace stays at `length`
+      this.worker.postMessage({ t: 'say', id, text, length: (P.length || 1) * pitch, noise: P.noise, noiseW: P.noiseW });
+    });
+  },
+  // what the voice should not stumble over
+  clean(text) { return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
+  // a sentence for npc to say: computed now (in order), played when its turn comes
+  push(npc, sentence) {
+    const text = this.clean(sentence);
+    if (!text || !/[\p{L}\d]/u.test(text)) return;
+    const job = { npc, text, pcm: null, err: false };
+    this.synth(text, npc.voiceProfile).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
+    this.q.push(job); this.pump();
+  },
+  stop(npc) {
+    this.q = this.q.filter((j) => j.npc !== npc);
+    if (this.playing && this.playing.npc === npc) { try { this.playing.src.stop(); } catch (e) { /* ignore */ } }
+  },
+  speaking(npc) { return (this.playing && this.playing.npc === npc) || this.q.some((j) => j.npc === npc); },
+  pump() {
+    if (this.playing || !this.q.length) return;
+    const job = this.q[0];
+    if (job.err) { this.q.shift(); this.pump(); return; }
+    if (!job.pcm || !SFX.ctx) return;
+    this.q.shift();
+    const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
+    buf.getChannelData(0).set(job.pcm);
+    const src = c.createBufferSource(), g = c.createGain();
+    src.buffer = buf; src.playbackRate.value = P.pitch || 1;
+    const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
+    g.gain.value = 1.6 / (1 + d * 0.12);
+    src.connect(g); g.connect(SFX.master);
+    const dur = buf.duration / (P.pitch || 1);
+    job.npc.talkT = dur + 0.15;
+    this.playing = { npc: job.npc, src };
+    src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), 90); };
+    src.start();
+  }
+};
+
 // ==== combat/fx.js ====
 /* ---------- shot effects: muzzle flash and its light, smoke, debris, sparks, bullet holes ----------
    Everything lives in a handful of pooled meshes that are written in place, so a shot costs no new objects
@@ -6974,7 +7121,7 @@ const BARKEEP = {
     onWorldEvent((e) => this.event(e));
     this.npc.persona = this.persona();
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
-    this.npc.voiceProfile = { male: true, pitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
+    this.npc.voiceProfile = { male: true, piper: 'thorsten', pitch: 0.9, length: 1.06, noise: 0.6, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
@@ -7319,17 +7466,22 @@ const BARKEEP = {
 
 // ==== npc/talk.js ====
 /* ---------- talking to people ----------
-   Press V (touch: the "Reden" button) near someone and speak: the browser's speech recognition (German) turns it
-   into text when you stop talking. (Typing is only the fallback where no microphone is allowed.) The line goes to Claude through the artifact's `sample` capability
-   (on the viewer's own Claude account; the first time the viewer is asked to allow it), together with who the
-   person is, what they know and what is going on right now. The answer comes back as JSON {say, action}.
-   The person SAYS it (bubble, panel, a browser voice), but what HAPPENS is the game's decision: an action is one
-   word from a short list, and the person's own code checks it (serving costs money, …).
-   Without Claude (outside claude.ai, or not allowed, or offline) a small phrase book answers instead.
-   A person who can talk has npc.persona = { rules, context(), offline(text), act(action) }. */
+   One button: V (touch: "Reden") near someone. Where the page may use the microphone, the browser's speech
+   recognition (German) listens and sends when you stop talking. In claude.ai the frame does not allow the
+   microphone, so the strip opens with a text line instead and the system's own dictation fills it
+   (Windows: Win+H, Mac: Fn twice, phones: the microphone on the keyboard); dictated text is sent by itself when
+   you pause, typed text with Enter.
+   The line goes to Claude through the artifact's `sample` capability (the viewer's own Claude account, fastest
+   model tier), with who the person is, what they know and what is going on right now. The answer streams back
+   as "[action] words": the words appear in the bubble as they come, and each finished sentence goes to the
+   person's voice at once (audio/voice.js), so speaking starts before the answer is complete.
+   The person SAYS it; what HAPPENS is the game's decision: the action is one word from a short list that the
+   person's own code checks (persona.act). Without Claude a small phrase book answers (persona.offline).
+   A person who can talk has npc.persona = { rules, context(), offline(text), act(action) } and npc.voiceProfile. */
 const TALK = {
   open: false, npc: null, ai: null, aiOff: false, aiOk: false, busy: false, rec: null, listening: false, heard: '', final: '',
-  micOff: false, micWhy: '', ctl: null, voice: null, lastErr: '', seq: 0,
+  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0,
+  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
   init() {
     const $ = (id) => document.getElementById(id);
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
@@ -7340,11 +7492,17 @@ const TALK = {
       e.stopPropagation();
       if (e.key === 'Enter') { e.preventDefault(); this.sendTyped(); } else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
     });
-    // one tap: listen (it stops by itself when you stop talking); a tap while listening: done
+    // dictation puts in whole words or phrases at once (or composes them); typing comes a letter at a time
+    this.inp.addEventListener('input', (e) => {
+      const it = e.inputType || '', d = e.data || '';
+      if (e.isComposing || it === 'insertReplacementText' || it === 'insertFromDictation' || (it === 'insertText' && d.length > 2) || it === 'insertFromPaste') this.dictT = 1.4;
+      else if (this.dictT > 0) this.dictT = 1.4;
+    });
+    this.inp.addEventListener('compositionupdate', () => { this.dictT = 1.4; });
     this.mic.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.toggleListen(); });
     this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.start(); });
     this.SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-    if (!this.SR) this.noMic('Dieser Browser kann keine Sprache erkennen (Chrome oder Edge können es).');
+    if (!this.SR) this.noMic('');
     // Claude, if this page may ask it
     try {
       if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.ai = s || null; }).catch(() => { this.ai = null; });
@@ -7366,51 +7524,64 @@ const TALK = {
     const t = this.can() && !DRUNK.blocked() && !MENU.open ? this.target() : null;
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
+    // the voice loads early: as soon as someone who can talk is near
+    if (VOICE.st === 'off' && VOICE.wanted()) for (const n of NPCS.list) if (n.persona && (G.room === n.room || Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z) < 25)) { VOICE.load(); break; }
+    if (VOICE.st === 'failed' && !this.toldVoice && VOICE.wanted()) { this.toldVoice = true; TOAST.show('Echte Stimme geht hier nicht (' + VOICE.why + '). Es spricht die Browser-Stimme.', 'long'); }
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
-    // listening that never ends (some browsers): give up after a while
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
-    // while talking face to face: the camera comes round over his shoulder, he turns to the other one
-    if (this.listening || this.busy || n.talkT > 0) {
-      const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
+    // dictated text: send when the dictation pauses
+    if (this.dictT > 0) { this.dictT -= dt; if (this.dictT <= 0 && this.inp.value.trim() && !this.busy) this.sendTyped(); }
+    if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err') this.setState(n.name + 's Stimme lädt … ' + VOICE.pct() + ' %', 'idle');
+    // face to face: the camera comes round over his shoulder, he turns to the one he talks to
+    const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
+    if (this.listening || this.busy || n.talkT > 0 || this.dictT > 0) {
       PLAY.camYaw += wrapA(Math.atan2(-dx, -dz) + 0.32 - PLAY.camYaw) * (1 - Math.exp(-dt * 2.2));
       PLAY.camPitch += (0.16 - PLAY.camPitch) * (1 - Math.exp(-dt * 2));
       if (!SIT.busy() && !FALL.busy() && PLAY.speed < 0.3) PLAY.yaw += wrapA(face - PLAY.yaw) * (1 - Math.exp(-dt * 4));
     }
   },
-  /* ---- the strip at the bottom: who, what he hears, what is going on ---- */
+  /* ---- the strip at the bottom ---- */
   start() {
     const n = this.open ? this.npc : this.target();
     if (!n) return;
+    VOICE.load();
     if (!this.open) {
       this.open = true; this.npc = n; FIST.up(); GUN.setAim(false);
       document.getElementById('talkName').textContent = n.name;
       this.el.hidden = false; document.getElementById('app').classList.add('talking');
       this.heardEl.textContent = ''; this.setState('');
     }
-    if (this.micOff) { this.typeRow.hidden = false; this.setState(this.micWhy); setTimeout(() => this.inp.focus({ preventScroll: true }), 30); return; }
+    if (this.micOff) { this.typeMode(); return; }
     if (!this.busy) this.listen();
+  },
+  // no microphone for the page: a text line that the system's dictation can fill
+  typeMode() {
+    this.typeRow.hidden = false;
+    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Sprich mit dem Mikrofon deiner Tastatur' : 'Sprechen: Windows+H \u00b7 oder tippen + Enter'), 'idle');
+    setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
   close() {
     if (!this.open) return;
     this.stopListen(true);
+    this.userAbort = true;
     if (this.ctl) { this.ctl.abort(); this.ctl = null; }
-    this.open = false; this.el.hidden = true; document.getElementById('app').classList.remove('talking');
+    this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
     if (this.npc) { this.npc.talking = false; this.npc.thinking = false; }
     this.npc = null; this.busy = false; this.seq++;
     try { this.inp.blur(); document.getElementById('gl').focus({ preventScroll: true }); } catch (e) { /* ignore */ }
   },
-  // keys while talking: V = speak again (or stop), Esc = end; everything else plays on
+  // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on
   key(e, k) {
     if (k === 'Escape') { this.close(); return true; }
-    if (k === 'v') { if (!e.repeat) this.toggleListen(); return true; }
+    if (k === 'v') { if (!e.repeat) { if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
     return false;
   },
   setState(s, cls) { this.state.textContent = s; this.el.dataset.st = cls || ''; },
   aiOn() { return !!this.ai && !this.aiOff && SETTINGS.v.aiTalk; },
   noMic(why) { this.micOff = true; this.micWhy = why; if (this.mic) this.mic.hidden = true; },
-  /* ---- the microphone ---- */
+  /* ---- the microphone (where it is allowed) ---- */
   toggleListen() { if (this.listening) this.stopListen(); else if (this.open) this.start(); },
   listen() {
     if (this.listening || this.busy || this.micOff) return;
@@ -7421,31 +7592,36 @@ const TALK = {
       r.onresult = (e) => {
         let fin = '', mid = '';
         for (let i = 0; i < e.results.length; i++) { const x = e.results[i]; if (x.isFinal) fin += x[0].transcript; else mid += x[0].transcript; }
-        this.final = fin; this.heard = (fin + ' ' + mid).trim(); this.heardEl.textContent = '\u201e' + this.heard + ' \u2026\u201c';
+        this.final = fin; this.heard = (fin + ' ' + mid).trim(); this.heardEl.textContent = '„' + this.heard + ' …“';
       };
       r.onerror = (e) => {
         this.micErr = e.error || 'error';
-        if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) {
-          this.noMic(e.error === 'audio-capture' ? 'Kein Mikrofon gefunden. Schreib stattdessen.' : 'Das Mikrofon ist hier nicht erlaubt (' + e.error + '). Schreib stattdessen.');
-          this.typeRow.hidden = false; setTimeout(() => this.inp.focus({ preventScroll: true }), 30);
-        }
+        if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) { this.noMic(''); this.typeMode(); }
       };
       r.onend = () => {
         if (this.rec !== r) return;
         this.listening = false; this.mic.setAttribute('aria-pressed', 'false');
         const said = (this.final || this.heard || '').trim();
-        if (said && !this.dropNext) { this.heardEl.textContent = '\u201e' + said + '\u201c'; this.send(said); }
-        else if (!this.micOff) this.setState(this.micErr === 'no-speech' || !said ? 'Nichts gehört. Nochmal: V oder Mikrofon.' : '', 'idle');
+        if (said && !this.dropNext) { this.heardEl.textContent = '„' + said + '“'; this.send(said); }
+        else if (!this.micOff) this.setState(this.micErr === 'no-speech' || !said ? 'Nichts gehört. Nochmal: V' : '', 'idle');
         this.dropNext = false;
       };
-      if (window.speechSynthesis) speechSynthesis.cancel();
+      VOICE.stop(this.npc);
       r.start(); this.listening = true; this.listenAt = performance.now();
       this.mic.setAttribute('aria-pressed', 'true'); this.setState('Ich höre … sprich jetzt', 'listen'); this.heardEl.textContent = '';
-    } catch (e) { this.noMic('Spracherkennung startet hier nicht. Schreib stattdessen.'); this.typeRow.hidden = false; this.setState(this.micWhy); }
+    } catch (e) { this.noMic(''); this.typeMode(); }
   },
   stopListen(drop) { if (this.rec && this.listening) { this.dropNext = !!drop; try { this.rec.stop(); } catch (e) { /* ignore */ } } },
-  sendTyped() { const t = this.inp.value.trim(); if (!t) return; this.inp.value = ''; this.heardEl.textContent = '\u201e' + t + '\u201c'; this.send(t); },
+  sendTyped() { const t = this.inp.value.trim(); this.dictT = 0; if (!t || this.busy) return; this.inp.value = ''; this.heardEl.textContent = '„' + t + '“'; this.send(t); },
   /* ---- one exchange ---- */
+  // "[nod] Klar. Kommt sofort." -> { action, say }; while streaming the bracket may not be complete yet
+  parse(raw) {
+    const s = raw.replace(/^\s+/, '');
+    const m = /^\[\s*([a-z_]+)\s*\]\s*/i.exec(s);
+    if (m) return { action: m[1].toLowerCase(), say: s.slice(m[0].length) };
+    if (s.startsWith('[')) return { action: 'none', say: s.indexOf(']') < 0 ? '' : s.slice(s.indexOf(']') + 1) };
+    return { action: 'none', say: s };
+  },
   async send(text) {
     const n = this.npc;
     if (!n || this.busy) return;
@@ -7454,47 +7630,74 @@ const TALK = {
     n.talkLog = n.talkLog || [];
     n.talkLog.push({ who: 'p', text });
     worldEvent('talk', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', to: n.id, text });
-    n.thinking = true; SAY.show(n, '\u2026', 60);
+    VOICE.stop(n); try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    n.thinking = true; SAY.show(n, '…', 60);
     this.setState(n.name + ' überlegt …', 'think');
-    let out = null;
-    if (this.aiOn()) out = await this.ask(n, text);
+    // the answer, as it comes: words into the bubble, finished sentences to the voice
+    let queued = 0, shown = '';
+    const feed = (raw, done) => {
+      if (seq !== this.seq) return;
+      const say = this.parse(raw).say.replace(/\s+/g, ' ');
+      if (say && say !== shown) { shown = say; n.thinking = false; SAY.show(n, say, 60); if (this.el.dataset.st === 'think') this.setState('', 'idle'); }
+      if (VOICE.ready()) {
+        const rest = say.slice(queued), re = /[^.!?…]*[.!?…]+["'“”)]*(\s+|$)/g; let m, used = 0;
+        while ((m = re.exec(rest)) && m[0]) { if (!m[1] && !done) break; VOICE.push(n, m[0]); used = re.lastIndex; }
+        if (done && used < rest.length && rest.slice(used).trim()) { VOICE.push(n, rest.slice(used)); used = rest.length; }
+        queued += used;
+      }
+    };
+    let raw = null;
+    if (this.aiOn()) raw = await this.ask(n, text, (t) => feed(t, false));
     if (seq !== this.seq) { n.thinking = false; return; }   // ended or walked off meanwhile
-    if (!out) out = n.persona.offline(text);
+    let out;
+    if (raw !== null) out = this.parse(raw);
+    else if (this.aiOn() || this.lastErr) out = { action: 'none', say: this.lastErr ? 'Hm? Sag das nochmal.' : n.persona.offline(text).say };
+    else out = n.persona.offline(text);
     n.thinking = false; this.busy = false;
     const say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'Hm.';
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
-    this.speak(n, say);
-    this.setState(this.lastErr ? this.lastErr : this.aiOn() ? 'V oder Mikrofon: weiterreden' : 'ohne KI \u00b7 V: weiterreden', this.lastErr ? 'err' : 'idle');
+    if (VOICE.ready()) { if (raw !== null) feed(raw, true); else VOICE.push(n, say); }
+    else if (VOICE.st === 'failed' || !VOICE.wanted()) this.speakBrowser(n, say);
+    this.setState(this.lastErr ? this.lastErr : this.micOff ? '' : 'V: weiterreden', this.lastErr ? 'err' : 'idle');
     this.lastErr = '';
-    n.persona.act(String(out.action || 'none'));
+    const act = String(out.action || 'none');
+    n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
+    if (this.micOff && this.open) this.typeMode();
   },
-  async ask(n, text) {
+  async ask(n, text, onText) {
     const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
-      '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '\u201d') + '"\n\nAntworte nur mit JSON in genau dieser Form: {"say": "deine Antwort", "action": "none"}';
-    const ctl = this.ctl = new AbortController();
-    // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)
-    const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
-    try {
-      const r = await this.ai.json(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal });
-      if (r && typeof r === 'object' && !Array.isArray(r) && typeof r.say === 'string' && r.say.trim()) { this.aiOk = true; return r; }
-      this.lastErr = 'Unverständliche Antwort der KI.';
-      return null;
-    } catch (e) {
-      const code = (e && e.code) || 'upstream_error';
-      if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
-        this.aiOff = true; this.lastErr = 'KI nicht erlaubt (' + code + '). ' + n.name + ' antwortet einfacher.';
-      } else if (code === 'rate_limited') this.lastErr = 'Zu viele Fragen gerade (rate_limited).';
-      else if (code !== 'cancelled' || !this.lastErr) this.lastErr = 'KI-Fehler: ' + code;
-      return null;
-    } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
+      '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
+      'Antworte genau so: zuerst EINE Aktion in eckigen Klammern (' + this.ACTIONS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiel: [nod] Kommt sofort.';
+    const once = async () => {
+      const ctl = this.ctl = new AbortController(); this.userAbort = false;
+      // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)
+      const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
+      try {
+        const r = await this.ai(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, onText: ({ text: t }) => onText(t) });
+        this.aiOk = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
+      } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { const t = await once(); if (t && t.trim()) return t; this.lastErr = 'Leere Antwort der KI.'; return null; }
+      catch (e) {
+        const code = (e && e.code) || 'upstream_error';
+        if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) {
+          this.aiOff = true; this.lastErr = 'KI nicht erlaubt (' + code + '). ' + n.name + ' antwortet einfacher.'; return null;
+        }
+        if (code === 'rate_limited') { this.lastErr = 'Zu viele Fragen gerade (rate_limited).'; return null; }
+        if (this.userAbort || this.lastErr.startsWith('Keine Antwort')) return null;
+        // cancelled without us, or a hiccup on the way: one more try, then tell
+        if (attempt === 0 && (code === 'cancelled' || code === 'upstream_error')) continue;
+        this.lastErr = 'KI-Fehler: ' + code; return null;
+      }
+    }
+    return null;
   },
-  /* ---- the voice ---- */
-  /* every person has a voice profile: npc.voiceProfile = { male, pitch, rate, prefer: [name parts] }. From the
-     German voices this device has, the best fitting one is taken: the preferred names first, then the right sex,
-     the natural (neural) ones before the robotic ones. Pitch and pace make the rest of the difference. */
+  /* ---- the browser's own voices: only when the real voice cannot run here ----
+     The best fitting German voice of the device: preferred names, the right sex, natural (neural) ones first. */
   MALE: /conrad|killian|florian|ralf|markus|stefan|hans|yannick|jonas|bernd|klaus|male|mann|männlich/i,
   FEMALE: /katja|hedda|amala|louisa|seraphina|marlene|vicki|anna|petra|helena|sandy|shelley|google deutsch|female|frau|weiblich/i,
   pickVoice(prof) {
@@ -7503,7 +7706,7 @@ const TALK = {
     const P = prof || { male: true };
     const score = (v) => {
       let s = 0;
-      if (P.prefer && P.prefer.some((n) => v.name.toLowerCase().includes(n))) s += 10;
+      if (P.prefer && P.prefer.some((x) => v.name.toLowerCase().includes(x))) s += 10;
       const m = this.MALE.test(v.name), f = this.FEMALE.test(v.name);
       if (P.male ? m && !f : f && !m) s += 5; else if (P.male ? f : m) s -= 5;
       if (/natural|online|neural|premium|enhanced/i.test(v.name)) s += 3;
@@ -7512,20 +7715,15 @@ const TALK = {
     };
     return de.slice().sort((a, b) => score(b) - score(a))[0];
   },
-  voiceFor(n) {
-    if (!n._voice || n._voiceN !== speechSynthesis.getVoices().length) { n._voice = this.pickVoice(n.voiceProfile); n._voiceN = speechSynthesis.getVoices().length; }
-    return n._voice;
-  },
-  speak(n, text) {
+  speakBrowser(n, text) {
     if (!SETTINGS.v.voice || !window.speechSynthesis || !SFX.on) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      const P = n.voiceProfile || {}, v = this.voiceFor(n), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
+      const P = n.voiceProfile || {}, v = this.pickVoice(P), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
       u.lang = 'de-DE'; if (v) u.voice = v;
-      // only a female voice for a man on this device: lower it further (and the other way round)
-      u.pitch = clamp((P.pitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
-      u.rate = (P.rate || 1) * (DRUNK.level > 0.6 && n.id === 'player' ? 0.85 : 1); u.volume = clamp((SETTINGS.v.volume || 30) / 60, 0.2, 1);
+      u.pitch = clamp((P.browserPitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
+      u.rate = P.rate || 1; u.volume = clamp((SETTINGS.v.volume || 30) / 60, 0.2, 1);
       u.onstart = () => { n.talkT = 30; };
       u.onend = () => { n.talkT = 0; };
       speechSynthesis.speak(u);

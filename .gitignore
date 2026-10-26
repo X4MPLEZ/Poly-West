@@ -3,3 +3,5 @@ tests/out/
 __pycache__/
 *.pyc
 node_modules/
+vendor/voice/
+dist/voice

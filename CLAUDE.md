@@ -23,7 +23,8 @@ python3 tests/run.py --golden     # gewollte Änderung an der Welt als neue Refe
 - **fingerprint** prüft, ob die gebaute Welt exakt gleich geblieben ist: Meshes, Kollisionen, Plattformen, Sitzplätze, Türen. Nach reinen Umbauten muss das Ergebnis „identical“ sein. Nach gewollten Änderungen `--golden` ausführen.
 - **budget**: Zeichenaufrufe und Dreiecke in festen Ansichten. Liegt ein Wert über der Grenze, gilt die Prüfung als nicht bestanden.
 - Bilder zum Ansehen landen in `tests/out/`; der Ordner ist nicht im Repo.
-- Veröffentlichen: Artefakt-Tool mit `dist/poly-west.html` (immer derselbe Pfad, damit der Link bleibt). Das Artefakt deklariert `capabilities: {sample: {}}` (KI-Gespräche); beim erneuten Veröffentlichen `capabilities` weglassen, dann bleibt die Deklaration.
+- **Stimmen:** `python3 tools/voices.py [thorsten karlsson kerstin]` baut die Stimm-Dateien nach `vendor/voice/` (nicht im Repo, ca. 45 MB für Laufzeit + Thorsten). `build.py` verlinkt sie nach `dist/voice/`; die Prüfung `voice` lädt sie über einen lokalen http-Server.
+- Veröffentlichen: Artefakt-Tool mit `dist/poly-west.html` (immer derselbe Pfad, damit der Link bleibt). Das Artefakt deklariert `capabilities: {sample: {}}` (KI-Gespräche); beim erneuten Veröffentlichen `capabilities` weglassen, dann bleibt die Deklaration. Die Stimm-Dateien gehen als `files` mit (`voice/<name>` → `vendor/voice/<name>`, `.wasm` als `application/wasm`, Binärdateien als `application/octet-stream`); weggelassene Dateien bleiben beim nächsten Veröffentlichen erhalten, also nur mitschicken, wenn sie sich geändert haben.
 
 ## Aufbau
 Alle Skripte teilen sich **einen gemeinsamen Gültigkeitsbereich**: Es gibt keine Module und keine Imports, nur Globale. Die Reihenfolge steht in `src/manifest.txt`.
@@ -55,6 +56,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `play/camera.js` | Third-Person-Kamera, innen/außen, Zielkamera über der Schulter |
 | `audio/sfx.js` | Web-Audio-Grundlagen, Schritte |
 | `audio/samples.js` | eingebettete MP3-Aufnahmen und ihre Lizenzen |
+| `audio/voice.js` | `VOICE`: echte Stimmen mit Piper (neuronales TTS) im Browser, in einem Worker: onnxruntime-web + piper_phonemize (espeak, nur Deutsch); Satz für Satz (`push`), Tonhöhe/Tempo pro NPC aus `npc.voiceProfile`. Dateien aus `tools/voices.py` (siehe oben) |
 | `combat/fx.js` | Mündungsfeuer, Rauch, Splitter, Einschusslöcher je Material (`surfaceOf`) |
 | `combat/gun.js` | Revolver: Holster → Ziehen → Zielen/Schießen → Nachladen, Flaschen, Treffer |
 | `combat/gun_sound.js` | `GSFX`: Aufnahmen abspielen und Mechanik-Geräusche |
@@ -70,7 +72,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
 | `npc/npc.js` | `NPC`: Körper aus dem Rig (`buildCharacter(farben, {hat, gun, apron, bowtie, garter, hair})`), Gehen zu einem Ziel (`goTo`), Blick (`lookAt`), Hände per Arm-IK (`reach`), Ducken/Lehnen, Gesten (`gesture`); `SAY` Sprechblasen; `NPCS.bodies` Kollision mit dem Spieler |
 | `npc/barkeep.js` | `BARKEEP`: Hank. Arbeitet hinter der Theke (polieren, wischen, umsehen), kommt zum Gast, bedient von Hand (`order` ← `SHOP.buy`), duckt sich bei Schüssen, Hände hoch beim Zielen, Sprüche (`LINES`), Gedächtnis (`mem`), `persona` für Gespräche |
-| `npc/talk.js` | `TALK`: Gespräche. V / „Reden“ → Spracherkennung (de-DE; Textfeld nur, wenn kein Mikrofon erlaubt ist) → Claude über die `sample`-Capability (`json`, Antwort `{say, action}`) → Sprechblase, Verlauf, Vorlesen (speechSynthesis, Stimme pro NPC aus `npc.voiceProfile`). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
+| `npc/talk.js` | `TALK`: Gespräche. V / „Reden“ → Spracherkennung (de-DE), wo das Mikrofon erlaubt ist; in claude.ai nicht, dann Textzeile für das System-Diktat (Win+H, Handy-Tastatur), schickt nach Diktierpause selbst → Claude über die `sample`-Capability (schnellste Stufe `quick`, gestreamt, Format `[aktion] Worte`) → Sprechblase wächst mit, jeder fertige Satz geht sofort an `VOICE` (sonst Browser-Stimme). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
 | `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |
