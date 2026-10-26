@@ -220,6 +220,10 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .mRow label { flex: 1; font-size: 14.5px; font-weight: 600; }
 .mRow input[type="range"] { width: min(200px, 40vw); accent-color: var(--brass); }
 .mRow output { width: 52px; text-align: right; font-family: var(--f-mono); font-size: 12.5px; color: var(--dust); }
+.mRow:has(.mAct) { flex-wrap: wrap; padding-bottom: 6px; }
+.mAct { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--brass); background: rgba(231, 166, 64, 0.15); color: var(--bone); font: 700 14px var(--f-ui); }
+.mRow output.mActOut { width: 100%; text-align: left; font-family: var(--f-ui); font-size: 13px; line-height: 1.3; }
+.mRow output.mActOut:empty { display: none; }
 .mSwitch { width: 22px; height: 22px; accent-color: var(--brass); }
 .mSeg { display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
 .mSeg button { border: 0; background: transparent; padding: 7px 10px; font-weight: 700; font-size: 13px; color: var(--dust); }
@@ -655,6 +659,8 @@ const SETTINGS = {
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
     { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
     { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
+    { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
+    { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],
@@ -4964,7 +4970,7 @@ const VOICE = {
   },
   msg(m) {
     if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
-    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); }
+    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); TOAST.show('Echte Stimme geladen.'); }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
@@ -5044,6 +5050,32 @@ const VOICE = {
     this.synth(text, npc.voiceProfile).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
+  /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
+     limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */
+  output() {
+    const c = SFX.ctx;
+    if (!this.outG || this.outCtx !== c) {
+      this.outCtx = c;
+      const comp = c.createDynamicsCompressor();
+      comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+      this.outG = c.createGain(); this.outG.connect(comp); comp.connect(c.destination);
+    }
+    const vol = SETTINGS.v.volume == null ? 30 : SETTINGS.v.volume;
+    this.outG.gain.value = SFX.on ? ((SETTINGS.v.voiceVol == null ? 100 : SETTINGS.v.voiceVol) / 100) * (0.55 + 0.45 * Math.min(1, vol / 40)) * (vol > 0 ? 1 : 0) : 0;
+    return this.outG;
+  },
+  // the button in the settings: say a test sentence and tell which way it went
+  test() {
+    const n = (typeof BARKEEP !== 'undefined' && BARKEEP.npc) || { id: 'test', pos: PLAY.pos, voiceProfile: { male: true, pitch: 0.9, length: 1.06, noise: 0.6, browserPitch: 0.82, rate: 0.95 } };
+    this.load();
+    try { if (SFX.unlock) SFX.unlock(); } catch (e) { /* ignore */ }
+    this.browserErr = '';
+    this.line(n, 'Howdy, Fremder. So klinge ich.');
+    return new Promise((res) => setTimeout(() => {
+      const vs = (window.speechSynthesis && speechSynthesis.getVoices().filter((v) => /^de/i.test(v.lang)).length) || 0;
+      res(this.label() + (this.ready() ? '' : ' · deutsche Browser-Stimmen: ' + vs) + (this.browserErr ? ' · Fehler: ' + this.browserErr : '') + (SFX.ctx ? ' · Audio: ' + SFX.ctx.state : ' · Audio aus'));
+    }, 1500));
+  },
   stop(npc) {
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     this.q = this.q.filter((j) => j.npc !== npc);
@@ -5057,12 +5089,15 @@ const VOICE = {
     if (!job.pcm || !SFX.ctx) return;
     this.q.shift();
     const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
+    // the model speaks quietly (peaks around 0.3): bring every sentence up to a full, even level
+    let peak = 1e-4; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); if (a > peak) peak = a; }
+    const k = Math.min(8, 0.9 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
     buf.getChannelData(0).set(job.pcm);
     const src = c.createBufferSource(), g = c.createGain();
     src.buffer = buf; src.playbackRate.value = P.pitch || 1;
     const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
-    g.gain.value = 1.6 / (1 + d * 0.12);
-    src.connect(g); g.connect(SFX.master);
+    g.gain.value = 1 / (1 + Math.max(0, d - 2) * 0.12);
+    src.connect(g); g.connect(this.output());
     const dur = buf.duration / (P.pitch || 1);
     job.npc.talkT = dur + 0.15;
     this.playing = { npc: job.npc, src };
@@ -8362,7 +8397,7 @@ const MENU = {
     for (const s of SETTINGS.SPEC) {
       if (s.group) { const h = document.createElement('h3'); h.textContent = s.group; box.appendChild(h); continue; }
       const row = document.createElement('div'); row.className = 'mRow';
-      const id = 'set_' + s.key, lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
+      const id = 'set_' + (s.key || s.label.replace(/\W+/g, '_')), lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
       const v = SETTINGS.v[s.key];
       if (s.type === 'range') {
         const inp = document.createElement('input'); inp.type = 'range'; inp.id = id; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = v;
@@ -8375,6 +8410,12 @@ const MENU = {
         const inp = document.createElement('input'); inp.type = 'checkbox'; inp.id = id; inp.checked = v; inp.className = 'mSwitch';
         inp.addEventListener('change', () => SETTINGS.set(s.key, inp.checked));
         row.appendChild(inp);
+      } else if (s.type === 'action') {
+        // a button that runs something and shows its answer next to it
+        const b = document.createElement('button'); b.type = 'button'; b.id = id; b.textContent = s.button; b.className = 'mAct';
+        const out = document.createElement('output'); out.className = 'mActOut';
+        b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
+        row.append(b, out);
       } else if (s.type === 'choice') {
         const grp = document.createElement('div'); grp.className = 'mSeg'; grp.setAttribute('role', 'radiogroup'); grp.setAttribute('aria-label', s.label);
         for (const [val, text] of s.options) {

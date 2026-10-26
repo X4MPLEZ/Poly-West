@@ -93,7 +93,7 @@ const VOICE = {
   },
   msg(m) {
     if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
-    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); }
+    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); TOAST.show('Echte Stimme geladen.'); }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
@@ -173,6 +173,32 @@ const VOICE = {
     this.synth(text, npc.voiceProfile).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
+  /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
+     limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */
+  output() {
+    const c = SFX.ctx;
+    if (!this.outG || this.outCtx !== c) {
+      this.outCtx = c;
+      const comp = c.createDynamicsCompressor();
+      comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+      this.outG = c.createGain(); this.outG.connect(comp); comp.connect(c.destination);
+    }
+    const vol = SETTINGS.v.volume == null ? 30 : SETTINGS.v.volume;
+    this.outG.gain.value = SFX.on ? ((SETTINGS.v.voiceVol == null ? 100 : SETTINGS.v.voiceVol) / 100) * (0.55 + 0.45 * Math.min(1, vol / 40)) * (vol > 0 ? 1 : 0) : 0;
+    return this.outG;
+  },
+  // the button in the settings: say a test sentence and tell which way it went
+  test() {
+    const n = (typeof BARKEEP !== 'undefined' && BARKEEP.npc) || { id: 'test', pos: PLAY.pos, voiceProfile: { male: true, pitch: 0.9, length: 1.06, noise: 0.6, browserPitch: 0.82, rate: 0.95 } };
+    this.load();
+    try { if (SFX.unlock) SFX.unlock(); } catch (e) { /* ignore */ }
+    this.browserErr = '';
+    this.line(n, 'Howdy, Fremder. So klinge ich.');
+    return new Promise((res) => setTimeout(() => {
+      const vs = (window.speechSynthesis && speechSynthesis.getVoices().filter((v) => /^de/i.test(v.lang)).length) || 0;
+      res(this.label() + (this.ready() ? '' : ' · deutsche Browser-Stimmen: ' + vs) + (this.browserErr ? ' · Fehler: ' + this.browserErr : '') + (SFX.ctx ? ' · Audio: ' + SFX.ctx.state : ' · Audio aus'));
+    }, 1500));
+  },
   stop(npc) {
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     this.q = this.q.filter((j) => j.npc !== npc);
@@ -186,12 +212,15 @@ const VOICE = {
     if (!job.pcm || !SFX.ctx) return;
     this.q.shift();
     const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
+    // the model speaks quietly (peaks around 0.3): bring every sentence up to a full, even level
+    let peak = 1e-4; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); if (a > peak) peak = a; }
+    const k = Math.min(8, 0.9 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
     buf.getChannelData(0).set(job.pcm);
     const src = c.createBufferSource(), g = c.createGain();
     src.buffer = buf; src.playbackRate.value = P.pitch || 1;
     const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
-    g.gain.value = 1.6 / (1 + d * 0.12);
-    src.connect(g); g.connect(SFX.master);
+    g.gain.value = 1 / (1 + Math.max(0, d - 2) * 0.12);
+    src.connect(g); g.connect(this.output());
     const dur = buf.duration / (P.pitch || 1);
     job.npc.talkT = dur + 0.15;
     this.playing = { npc: job.npc, src };

@@ -324,7 +324,7 @@ async def check_npc(g):
       const p0 = rwp(R, 0, R.floorY, 0.8); PLAY.pos.set(p0.x, p0.y, p0.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
       const p = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(p.x, p.y, p.z); PLAY.yaw = B.backYaw; GAIT.init = false;
       for (let k = 0; k < 10; k++) G.stepFrame(1/60); out.hello = B.npc.said;
-      for (let k = 0; k < 180; k++) G.stepFrame(1/60); out.attending = B.attending; out.near = +Math.abs(B.myZ() + 5.0).toFixed(2);
+      for (let k = 0; k < 420; k++) G.stepFrame(1/60); out.attending = B.attending; out.near = +Math.abs(B.myZ() + 5.0).toFixed(2);
       SHOP.show(B.C, null); SHOP.buy('whiskey'); const seen = [];
       for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) { G.stepFrame(1/60); const st = B.cur ? B.cur.st : null; if (st && seen[seen.length - 1] !== st) seen.push(st); }
       out.steps = seen.join('>'); out.served = GLASS.ready();
@@ -347,7 +347,7 @@ async def check_npc(g):
         // the microphone window (simulated): connected, then a spoken line arrives and is sent by itself
         MICWIN.onMsg({ data: { pw: 'mic-ready' }, source: null }); MICWIN.win = { closed: false, focus() {} };
         TALK.start(); B.npc.talkT = 0; try { speechSynthesis.cancel(); } catch (e) {} const n0 = (B.npc.talkLog || []).length;
-        TALK.remoteHeard('Wie heißt du?', false); TALK.remoteHeard('Wie heißt du?', true);
+        VOICE.q = []; VOICE.playing = null; B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', false); B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', true);
         return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.said;
           TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null; return out; }); }); }''')
     ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.7 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']

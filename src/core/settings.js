@@ -19,6 +19,8 @@ const SETTINGS = {
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
     { key: 'voice', label: 'Antworten vorlesen', type: 'toggle', def: true },
     { key: 'voiceHQ', label: 'Echte Stimmen (lädt einmal ca. 45 MB)', type: 'toggle', def: true },
+    { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
+    { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2)', type: 'toggle', def: false }
   ],

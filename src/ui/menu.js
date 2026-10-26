@@ -71,7 +71,7 @@ const MENU = {
     for (const s of SETTINGS.SPEC) {
       if (s.group) { const h = document.createElement('h3'); h.textContent = s.group; box.appendChild(h); continue; }
       const row = document.createElement('div'); row.className = 'mRow';
-      const id = 'set_' + s.key, lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
+      const id = 'set_' + (s.key || s.label.replace(/\W+/g, '_')), lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
       const v = SETTINGS.v[s.key];
       if (s.type === 'range') {
         const inp = document.createElement('input'); inp.type = 'range'; inp.id = id; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = v;
@@ -84,6 +84,12 @@ const MENU = {
         const inp = document.createElement('input'); inp.type = 'checkbox'; inp.id = id; inp.checked = v; inp.className = 'mSwitch';
         inp.addEventListener('change', () => SETTINGS.set(s.key, inp.checked));
         row.appendChild(inp);
+      } else if (s.type === 'action') {
+        // a button that runs something and shows its answer next to it
+        const b = document.createElement('button'); b.type = 'button'; b.id = id; b.textContent = s.button; b.className = 'mAct';
+        const out = document.createElement('output'); out.className = 'mActOut';
+        b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
+        row.append(b, out);
       } else if (s.type === 'choice') {
         const grp = document.createElement('div'); grp.className = 'mSeg'; grp.setAttribute('role', 'radiogroup'); grp.setAttribute('aria-label', s.label);
         for (const [val, text] of s.options) {
