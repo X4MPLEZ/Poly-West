@@ -126,6 +126,8 @@ const DRINK = {
   busy() { return this.st !== 'idle' || !!this.queued; },
   // src: 'glass' (the served one) or 'bottle' (from the bag)
   start(src) {
+    // still putting the last one down: take the next sip right after
+    if (this.st !== 'idle' && !this.queued && src === 'bottle' && this.src === 'bottle' && !DRUNK.blocked()) { this.queued = src; return true; }
     if (this.busy() || DRUNK.blocked()) return false;
     if (src === 'glass' && !GLASS.ready()) return false;
     if (src === 'bottle' && !INV.has('bottle')) return false;
@@ -137,7 +139,7 @@ const DRINK = {
   },
   cancel() { if (this.src === 'glass' && GLASS.obj) { GLASS.obj.held = false; } this.st = 'idle'; this.queued = null; this.w = 0; this.bottleOut = false; },
   update(dt) {
-    if (this.queued && GUN.state === 'holster') { const s = this.queued; this.queued = null; this.start(s); }
+    if (this.queued && GUN.state === 'holster' && this.st === 'idle') { const s = this.queued; this.queued = null; this.start(s); }
     if (this.st === 'idle') return;
     if (this.src === 'glass' && !GLASS.obj) { this.cancel(); return; }
     this.t += dt;

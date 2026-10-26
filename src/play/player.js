@@ -76,6 +76,8 @@ function updatePlayer(dt) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
   [mx, mz] = DRUNK.steer(mx, mz);
+  const crawl = FALL.crawling();
+  if (crawl) { crawlMove(dt, crawl === 'ctl' ? mx : 0, crawl === 'ctl' ? mz : 0, crawl === 'ctl' ? mag : 1); return; }
   if (DRUNK.blocked() || SHOP.open) { mx = mz = 0; mag = 0; }
   // had enough: the feet find the way out by themselves
   if (DRUNK.leave && !SIT.busy()) { const d = DRUNK.autoDir(); if (d) { [mx, mz] = DRUNK.steer(d[0], d[1]); mag = 1; } }
@@ -103,14 +105,22 @@ function updatePlayer(dt) {
     const ty = PLAY.camYaw + Math.PI + 0.35;
     let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * 16));
-  } else if (PLAY.speed > 0.25 && mag > 0.05) {
+  } else if (PLAY.speed > 0.25 && mag > 0.05 && (PLAY.vx * mx + PLAY.vz * mz) > PLAY.speed * 0.2) {
+    // face the way you go (but not while being shoved somewhere you are not steering)
     const ty = Math.atan2(PLAY.vx, PLAY.vz);
     let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * 14));
   }
+  moveAndCollide(dt);
+}
+// move by the velocity, slide along what is in the way, settle on the ground
+function moveAndCollide(dt) {
   let px = PLAY.pos.x + PLAY.vx * dt, pz = PLAY.pos.z + PLAY.vz * dt;
   const [cx, cz] = collide(px, pz, PLAY.pos.y);
-  DRUNK.bump(cx - px, cz - pz);   // drunk into a wall or a post: bounce off it
+  DRUNK.bump(cx - px, cz - pz);   // drunk into a wall or a post: the head knocks back
+  // the part of the velocity that goes into the wall is gone: no walking on the spot, no pushing
+  const nx = cx - px, nz = cz - pz, nl = Math.hypot(nx, nz);
+  if (nl > 1e-5) { const vn = (PLAY.vx * nx + PLAY.vz * nz) / nl; if (vn < 0) { PLAY.vx -= vn * nx / nl; PLAY.vz -= vn * nz / nl; PLAY.speed = Math.hypot(PLAY.vx, PLAY.vz); PLAY.moving = PLAY.speed > 0.35; } }
   // just up from a seat that stands close to furniture: ease out of it instead of popping
   if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
   const g = groundAt(px, pz, PLAY.pos.y);
@@ -123,6 +133,22 @@ function updatePlayer(dt) {
   PLAY.amp += (tAmp - PLAY.amp) * (1 - Math.exp(-dt * 10));
   W.ch.root.position.copy(PLAY.pos);
   W.ch.root.rotation.y = PLAY.yaw;
+}
+// on all fours: slow, turning slowly towards where you push (auto: straight on)
+function crawlMove(dt, mx, mz, mag) {
+  const ml = Math.hypot(mx, mz), auto = ml < 1e-4 && mag > 0.5;
+  let target = 0;
+  if (auto) target = 0.45;
+  else if (mag > 0.08 && ml > 1e-4) {
+    let d = wrapA(Math.atan2(mx, mz) - PLAY.yaw);
+    PLAY.yaw += d * (1 - Math.exp(-dt * 2.2));
+    target = 0.55 * Math.min(1, mag) * Math.max(0, Math.cos(d));   // turn first, then crawl
+  }
+  PLAY.inYaw = null;
+  const a = 1 - Math.exp(-dt * 5), fx = Math.sin(PLAY.yaw), fz = Math.cos(PLAY.yaw);
+  PLAY.vx += (fx * target - PLAY.vx) * a; PLAY.vz += (fz * target - PLAY.vz) * a;
+  PLAY.speed = Math.hypot(PLAY.vx, PLAY.vz); PLAY.moving = false;
+  moveAndCollide(dt);
 }
 
 function updateWorld(dt, t) {

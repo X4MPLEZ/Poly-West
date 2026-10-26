@@ -21,9 +21,9 @@ const DRUNK = {
   blocked() { return !!this.out || FALL.busy() || !!this.leave; },
   update(dt) {
     this.t += dt;
-    // stomach -> gut -> blood: a few seconds before you feel it, then it rises over about ten seconds;
+    // stomach -> gut -> blood: a moment before you feel it, fully there after about seven seconds;
     // blood -> gone (slowly, faster when it is a lot)
-    const s2g = this.stomach * (1 - Math.exp(-dt / 3.5)), g2b = this.gut * (1 - Math.exp(-dt / 5));
+    const s2g = this.stomach * (1 - Math.exp(-dt / 1.3)), g2b = this.gut * (1 - Math.exp(-dt / 1.3));
     this.stomach -= s2g; this.gut += s2g - g2b; this.level += g2b;
     this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
     const L = Math.min(this.level, 1), t = this.t;
@@ -34,9 +34,9 @@ const DRUNK = {
       this.hicT -= dt;
       if (this.hicT <= 0) { this.hicT = 4 + Math.random() * 10 / L; this.hiccup(); }
       // without a reason, only when really drunk; edges and steps trip you much earlier (see ground())
-      if (PLAY.speed > 0.6 && L > 0.4 && PLAY.inYaw !== null) {
-        this.stumbleT -= dt * (L - 0.35) * (PLAY.speed > 3 ? 1.6 : 0.8);
-        if (this.stumbleT <= 0) { this.stumbleT = 2 + Math.random() * 3; this.stumble(); }
+      if (PLAY.speed > 0.6 && L > 0.45 && PLAY.inYaw !== null) {
+        this.stumbleT -= dt * (L - 0.4) * (PLAY.speed > 3 ? 1.6 : 0.8);
+        if (this.stumbleT <= 0) { this.stumbleT = 4 + Math.random() * 6; this.stumble(); }
       }
     }
     // a drunk hand does not hold the revolver still
@@ -86,44 +86,49 @@ const DRUNK = {
   },
   // the pace surges and drags
   maxSpeed() { const L = Math.min(this.level, 1); return (1 - clamp(L - 0.25, 0, 0.6) * 0.5) * (1 + Math.sin(this.t * 1.9) * 0.22 * L); },
-  /* a stumble is a lurch, not a stop: the body pitches the way you were going, the feet hurry after it, the arms
-     fly up, and you keep walking. dir: which way it throws you (default: ahead, a little off to one side) */
+  // which way the body is going: where it leans plus where it moves (world angle)
+  fallDir() {
+    const cy = Math.cos(PLAY.yaw), sy = Math.sin(PLAY.yaw), B = this.body, l = this.lurch;
+    const lx = B.x + l.x * 0.6, ly = B.y + l.y * 0.6;   // x: to his right, y: forwards
+    let wx = sy * ly - cy * lx, wz = cy * ly + sy * lx;
+    const sp = Math.hypot(PLAY.vx, PLAY.vz);
+    if (sp > 0.2) { wx += PLAY.vx / sp * 0.12; wz += PLAY.vz / sp * 0.12; }
+    if (Math.hypot(wx, wz) < 1e-3) return PLAY.yaw;
+    return Math.atan2(wx, wz);
+  },
+  /* a stumble is a lurch, not a stop: the body pitches the way it was already going (lean + motion), the feet
+     hurry after it, the arms fly out to that side, and you keep walking. dir: world angle (default: from the body) */
   stumble(dir, big, fallChance, kind) {
     if (FALL.busy() || SIT.busy()) return;
-    const L = Math.min(this.level, 1), moveDir = PLAY.speed > 0.3 ? Math.atan2(PLAY.vx, PLAY.vz) : PLAY.yaw;
-    const a = dir !== undefined ? dir : moveDir + (Math.random() - 0.5) * 0.9;
-    const f = (0.9 + L * 1.6) * (big ? 1.35 : 1);
+    const L = Math.min(this.level, 1);
+    const a = dir !== undefined ? dir : this.fallDir() + (Math.random() - 0.5) * 0.5;
+    const f = (0.7 + L * 1.4) * (big ? 1.3 : 1) * (0.75 + Math.random() * 0.5);
     PLAY.vx += Math.sin(a) * f; PLAY.vz += Math.cos(a) * f;
     const rel = wrapA(a - PLAY.yaw);
-    this.push(-Math.sin(rel) * 0.22 * f, Math.cos(rel) * 0.3 * f);
-    this.flail = 0.6;
+    this.push(-Math.sin(rel) * 0.24 * f, Math.cos(rel) * 0.28 * f);
+    this.flail = 0.6; this.flailX = Math.sin(rel); this.flailK = 0.7 + Math.random() * 0.6;
     FSFX.cloth(); this.scuff();
-    // very drunk: sometimes it ends on the floor, forwards or over to the side the body leans to
-    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.55) * 0.6 : 0);
-    if (Math.random() < p) this.fallLater(kind || (Math.random() < 0.55 ? 'side' : 'fwd'), 220);
+    // very drunk: sometimes it ends on the floor, the way the body was going
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.6) * 0.5 : 0);
+    if (Math.random() < p) this.fallLater(kind || 'auto', 200);
   },
   fallLater(kind, ms) {
-    const sd = this.body.x + this.lurch.x * 0.5 >= 0 ? 1 : -1;
-    setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, sd); }, ms);
+    setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, this.fallDir()); }, ms);
   },
   // push the balance: lean that way for a moment (x: to his right, y: forwards), smoothly through the springs
   push(x, y) { this.lurch.x = clamp(this.lurch.x + x, -0.5, 0.5); this.lurch.y = clamp(this.lurch.y + y, -0.5, 0.5); },
-  // walked into something solid (the push-out from collide): drunk, he bounces off and reels back
+  // walked into something solid (the push-out from collide): drunk, the head knocks back, a thud; no tumbling
   bump(dx, dz) {
     const L = Math.min(this.level, 1), n = Math.hypot(dx, dz);
     if (L < 0.2 || n < 0.004 || this.bumpT > 0 || FALL.busy() || SIT.busy()) return;
     const nx = dx / n, nz = dz / n, vn = PLAY.vx * nx + PLAY.vz * nz;   // vn < 0: moving into it
-    if (vn > -0.7) return;
-    this.bumpT = 0.8;
-    const e = 0.5 + L * 0.6;
-    PLAY.vx -= (1 + e) * vn * nx; PLAY.vz -= (1 + e) * vn * nz;
+    if (vn > -1.0) return;
+    this.bumpT = 1.5;
     const rel = wrapA(Math.atan2(nx, nz) - PLAY.yaw);
-    this.push(-Math.sin(rel) * 0.35 * L, Math.cos(rel) * 0.4 * L - 0.15 * L);
-    this.flail = 0.6;
-    PLAY.camShake = Math.max(PLAY.camShake, 0.06);
-    GSFX.run(() => { const { g, t } = GSFX.out(0.5, PLAY.pos); SFX.thump(t, g, 120, 60, 0.5, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.25, attack: 0.002, decay: 0.08 }); });
-    FSFX.cloth();
-    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) this.fallLater('back', 300);
+    this.push(-Math.sin(rel) * 0.12 * L, Math.cos(rel) * 0.15 * L);
+    this.headV.y -= 1.2 * L;
+    PLAY.camShake = Math.max(PLAY.camShake, 0.04);
+    GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.thump(t, g, 120, 60, 0.4, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.2, attack: 0.002, decay: 0.08 }); });
   },
   /* had enough indoors: stand up, stagger out of the door, go down in the street */
   startLeave() {
@@ -159,19 +164,21 @@ const DRUNK = {
     const lv = 0.94 + 0.05 * this.edgeK();
     if (this.level > lv + 0.01) E.dur = Math.max(E.t + 3, E.dur - (this.level - lv) * 60);   // more drink: sooner
     this.level = lv;
-    if (E.t >= E.dur && !this.leave && !FALL.busy()) { this.edge = null; this.level = 1; this.blackout(); }
+    // near the end he goes down on all fours, and you crawl him about until the lights go out
+    if (!E.crawled && this.edgeK() > 0.7 && !FALL.busy() && !SIT.busy() && !this.leave) { E.crawled = true; FALL.start(false, 'edge', this.fallDir()); }
+    if (E.t >= E.dur && !this.leave && (!FALL.busy() || FALL.crawling() === 'ctl')) { this.edge = null; this.level = 1; this.blackout(); }
   },
-  // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
+  // the ground under the feet rose (a porch edge, a step up): drunk toes catch on it. Stepping down is fine.
   ground(g, dt) {
     const L = Math.min(this.level, 1), dg = g - (this.lastG === undefined ? g : this.lastG);
     this.lastG = g; this.tripCool = Math.max(0, (this.tripCool || 0) - dt);
-    if (L < 0.12 || Math.abs(dg) < 0.06 || PLAY.speed < 0.8 || this.tripCool > 0 || FALL.busy() || SIT.busy()) return;
-    if (Math.random() < Math.min(0.95, L * 1.8)) {
-      this.tripCool = 1.2;
-      // the toes catch: he pitches forward (harder stepping up) and may land on his hands
-      const moveDir = Math.atan2(PLAY.vx, PLAY.vz);
-      this.stumble(moveDir + (Math.random() - 0.5) * 0.3, true, L > 0.35 ? (L - 0.3) * (dg > 0 ? 0.9 : 0.6) : 0, 'fwd');
-      this.push(0, 0.25 * L);
+    if (L < 0.2 || dg < 0.06 || PLAY.speed < 0.8 || this.tripCool > 0 || FALL.busy() || SIT.busy()) return;
+    if (Math.random() < clamp((L - 0.2) * 0.8, 0, 0.55)) {
+      this.tripCool = 3;
+      // he pitches forward, the way he was going, and may land on his hands (or his face)
+      const moveDir = Math.atan2(PLAY.vx, PLAY.vz) + this.body.x * -0.6 + (Math.random() - 0.5) * 0.3;
+      this.push(0, 0.2 * L);
+      this.stumble(moveDir, true, L > 0.35 ? (L - 0.35) * 0.7 : 0, 'fwd');
     }
   },
   scuff() { GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.8, gain: 0.25, attack: 0.01, decay: 0.12 }); SFX.noiseHit(t + 0.13, g, { type: 'bandpass', freq: 700, q: 0.8, gain: 0.18, attack: 0.01, decay: 0.08 }); }); },
@@ -195,8 +202,14 @@ const DRUNK = {
     }
     // arms thrown up and forward in a stumble
     if (this.flail > 0 && !seated) {
-      const f = Math.sin(Math.PI * (this.flail / 0.6)) * Math.min(1, L * 2);
-      for (let i = 0; i < 2; i++) { const a = P.arm[i]; a.sw += f * (0.9 + i * 0.3); a.out += f * 0.5; a.el += f * 0.6; }
+      // the arm on the side he lurches to goes out wide, the other one up; forwards both go out in front
+      const f = Math.sin(Math.PI * (this.flail / 0.6)) * Math.min(1, L * 2) * (this.flailK || 1), fx = this.flailX || 0;
+      for (let i = 0; i < 2; i++) {
+        const a = P.arm[i], toward = (i === 0 ? 1 : -1) * fx;   // +: this arm is on the side of the lurch
+        a.sw += f * (0.9 * (1 - Math.abs(fx)) + 0.3 * i + (toward < 0 ? 0.5 * -toward : 0));
+        a.out += f * (0.4 + Math.max(0, toward) * 1.1); a.el += f * (0.5 + Math.max(0, -toward) * 0.6);
+      }
+      P.spRoll += -fx * f * 0.15;
       this.flail = Math.max(0, this.flail - 1 / 60);
     }
     if (this.hicPose > 0) { P.hdPitch -= this.hicPose * 0.6; P.spPitch -= this.hicPose * 0.15; this.hicPose = Math.max(0, this.hicPose - 1 / 60); }
@@ -229,7 +242,8 @@ const DRUNK = {
     this.out = { t: 0, phase: 'fade', where: null };
     GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
     DRINK.cancel();
-    if (!FALL.busy() && !SIT.busy()) { const r = Math.random(); FALL.start(true, r < 0.4 ? 'fwd' : r < 0.8 ? 'side' : 'back', this.body.x >= 0 ? 1 : -1); }
+    if (FALL.crawling()) FALL.collapse();
+    else if (!FALL.busy() && !SIT.busy()) FALL.start(true, Math.random() < 0.85 ? 'auto' : 'back', this.fallDir());
     worldEvent('passout', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   updateBlackout(dt) {

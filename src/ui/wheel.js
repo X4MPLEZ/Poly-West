@@ -30,7 +30,7 @@ const WHEEL = {
       : { icon: 'fist', label: 'Revolver wegstecken', run: () => GUN.toggleHolster(), ok: true });
     for (const id of Object.keys(INV.items)) {
       const it = ITEMS[id];
-      if (it.kind === 'carry') s.push({ icon: it.vessel === 'bottle' ? 'bottle' : 'bottle', label: it.name, sub: (INV.sips[id] ?? it.sips) + ' Schlucke', run: () => DRINK.start(id), ok: !DRINK.busy() && !DRUNK.blocked() });
+      if (it.kind === 'carry') s.push({ icon: it.vessel === 'bottle' ? 'bottle' : 'bottle', label: it.name, sub: (INV.sips[id] ?? it.sips) + ' Schlucke', run: () => DRINK.start(id), ok: !DRUNK.blocked() && !(DRINK.busy() && DRINK.src === 'glass') });
     }
     return s;
   },
