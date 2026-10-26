@@ -14,6 +14,17 @@ const DEV = {
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
     $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
     $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
+    $('devMem').addEventListener('click', () => this.showMem(this.memBox.hidden));
+    $('devGlass').addEventListener('click', () => BREAK.restoreAll());
+    this.memBox = $('devMemBox');
+    this.memBox.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-act]'); if (!b) return;
+      const n = NPCS.list.find((x) => x.id === b.dataset.npc); if (!n || !n.persona) return;
+      if (b.dataset.act === 'del') n.persona.forgetEvent(+b.dataset.i);
+      else if (b.dataset.act === 'delTalk') n.talkLog.splice(+b.dataset.i, 1);
+      else if (b.dataset.act === 'forget') { n.talkLog = []; n.persona.forget(); }
+      SAVE.write(); this.memKey = ''; this.renderMem();
+    });
     $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; DRUNK.edge = null; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
@@ -23,6 +34,36 @@ const DEV = {
     sel.addEventListener('change', () => { if (sel.value !== '') this.teleport(this.places[+sel.value]); sel.value = ''; });
     SETTINGS.on('dev', (on) => { if (!on) this.toggle(false); });
     this.setSpeed(1);
+  },
+  /* ---- what the people who can talk keep about you: Hank's memories exactly as they are stored and sent ---- */
+  showMem(on) {
+    this.memBox.hidden = !on; document.getElementById('devMem').setAttribute('aria-pressed', on ? 'true' : 'false');
+    this.memKey = ''; if (on) this.renderMem();
+  },
+  renderMem() {
+    const ppl = NPCS.list.filter((n) => n.persona && n.persona.memory);
+    const data = ppl.map((n) => ({ n, m: n.persona.memory(), log: (n.talkLog || []).slice(), ctx: n.persona.context() }));
+    const key = JSON.stringify(data.map((d) => [d.m, d.log, d.ctx]));
+    if (key === this.memKey) return;   // unchanged: keep the panel as it is (open details, scroll)
+    this.memKey = key;
+    const box = this.memBox, open = new Set([...box.querySelectorAll('details[open]')].map((d) => d.dataset.k));
+    box.textContent = '';
+    const el = (tag, cls, txt, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; (parent || box).appendChild(e); return e; };
+    const btn = (parent, label, act, npc, i, title) => { const b = el('button', '', label, parent); b.type = 'button'; b.dataset.act = act; b.dataset.npc = npc; if (i !== undefined) b.dataset.i = i; if (title) b.title = title; return b; };
+    if (!ppl.length) el('p', 'dmEmpty', 'Niemand hier, der sich etwas merkt.');
+    for (const { n, m, log, ctx } of data) {
+      el('h4', '', n.name);
+      for (const [k, v] of m.facts) { const r = el('div', 'dmF'); el('span', '', k, r); el('b', '', v, r); }
+      el('p', 'dmT', 'Erlebnisse – gespeichert ' + m.events.length + ' von 10, die KI bekommt die letzten ' + m.inPrompt + ':');
+      if (!m.events.length) el('p', 'dmEmpty', 'keine');
+      else { const ol = el('ol'); m.events.forEach((t, i) => { const li = el('li', i < m.events.length - m.inPrompt ? 'old' : '', t, ol); btn(li, '×', 'del', n.id, i, 'Diese Erinnerung löschen'); }); }
+      el('p', 'dmT', 'Gespräch – ' + log.length + ' Zeilen, gespeichert werden die letzten 10, die KI sieht die letzten 12:');
+      if (!log.length) el('p', 'dmEmpty', 'noch nichts gesagt');
+      else { const ol = el('ol'); log.forEach((l, i) => { const li = el('li', i < log.length - 12 ? 'old' : '', (l.who === 'p' ? 'Du: ' : n.name + ': ') + l.text, ol); btn(li, '×', 'delTalk', n.id, i, 'Diese Zeile löschen'); }); }
+      const det = el('details'); det.dataset.k = n.id; if (open.has(n.id)) det.open = true;
+      el('summary', '', 'Was die KI gerade über die Lage bekommt', det); el('pre', '', ctx, det);
+      const row = el('div', 'devRow'); btn(row, n.name + ' alles vergessen lassen', 'forget', n.id);
+    }
   },
   toggle(on) {
     if (on === undefined) on = !this.on;
@@ -96,6 +137,7 @@ const DEV = {
     this.infoT -= dt / (G.timeScale || 1);
     if (this.infoT > 0) return;
     this.infoT = 0.25;
+    if (!this.memBox.hidden) this.renderMem();
     const p = PLAY.pos, d = G.drawInfo || { calls: 0, tris: 0 }, R = G.room;
     const lines = [
       `x ${p.x.toFixed(1)}  y ${p.y.toFixed(2)}  z ${p.z.toFixed(1)}  ↻ ${Math.round(((PLAY.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`,

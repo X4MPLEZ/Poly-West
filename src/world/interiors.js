@@ -48,7 +48,7 @@ const FURNISH = {
       at(mb, 2.6, 1.05, 0, 0, () => shelfUnit(mb, 1.3, 1.6, 0.35, 4, rnd, 'bottles', rgb(0x5a3422)));
     });
     rColl(R, x1 - 0.6, x1, -9.9, -3.1, 2);
-    for (let i = 0; i < 9; i++) mb.cyl(3.4 + (rnd() - 0.5) * 0.4, F + 1.12, -3.3 - i * 0.8, 0.035, 0.035, 0.24, 6, rgb(GOODS[i % GOODS.length]), 0);
+    for (let i = 0; i < 9; i++) glassy(mb, 'bottle', rgb(GOODS[i % GOODS.length]), () => mb.cyl(3.4 + (rnd() - 0.5) * 0.4, F + 1.12, -3.3 - i * 0.8, 0.035, 0.035, 0.24, 6, rgb(GOODS[i % GOODS.length]), 0));
     // tables
     const tables = [[-3.6, -2.6], [-1.0, -4.6], [-3.9, -6.9], [0.6, -8.4]];
     tables.forEach(([tx, tz], i) => {
@@ -61,8 +61,8 @@ const FURNISH = {
         for (let c = 0; c < 6; c++) mb.box(tx + (rnd() - 0.5) * 0.6, F + 0.8, tz + (rnd() - 0.5) * 0.6, 0.07, 0.006, 0.1, IC.cream, 0);
         for (let c = 0; c < 5; c++) mb.cyl(tx + 0.25, F + 0.8 + c * 0.012, tz - 0.25, 0.03, 0.03, 0.012, 8, c % 2 ? IC.red : IC.cream, 0);
       } else {
-        mb.cyl(tx + 0.12, F + 0.79, tz, 0.035, 0.035, 0.24, 6, rgb(0x3a5a2a), 0);
-        mb.cyl(tx - 0.15, F + 0.79, tz + 0.1, 0.04, 0.035, 0.1, 6, IC.glass, 0);
+        glassy(mb, 'bottle', rgb(0x3a5a2a), () => mb.cyl(tx + 0.12, F + 0.79, tz, 0.035, 0.035, 0.24, 6, rgb(0x3a5a2a), 0));
+        glassy(mb, 'glass', IC.glass, () => mb.cyl(tx - 0.15, F + 0.79, tz + 0.1, 0.04, 0.035, 0.1, 6, IC.glass, 0));
       }
     });
     // self-playing piano against the left wall
@@ -97,7 +97,7 @@ const FURNISH = {
     });
     U.lights = [[2.6, F + 1.5, z0 - 0.6, 1.0], [-5.7, F + 1.5, z0 - 0.6, 0.9], [5.0, F + 1.5, z0 - 0.6, 0.8], [-2.7, P.ceilY - 0.4, z0 + 0.6, 0.5]];
     rug(mb, 0.4, F, z0 + 2.0, 10.6, 0.85, rgb(0x6a2424), rgb(0x3a1a14));
-    at(mb, x1 - 0.45, F, z0 + 0.5, 0, () => { squareTable(mb, 0.6, 0.5, 0.75, IC.walnut); mb.cyl(0, 0.75, 0, 0.08, 0.06, 0.25, 7, rgb(0x2f5a6a), 0); });
+    at(mb, x1 - 0.45, F, z0 + 0.5, 0, () => { squareTable(mb, 0.6, 0.5, 0.75, IC.walnut); glassy(mb, 'vase', rgb(0x2f5a6a), () => mb.cyl(0, 0.75, 0, 0.08, 0.06, 0.25, 7, rgb(0x2f5a6a), 0)); });
     rColl(U, x1 - 0.8, x1, z0, z0 + 0.8, 1);
     at(mb, 3.8, F, z0 + 0.45, 0, () => chair(mb, IC.walnut)); rCircle(U, 3.8, z0 + 0.45, 0.3);
     for (const x of [-2.0, 2.0]) at(mb, x, F + 1.45, zc - 0.06, 0, () => picture(mb, 0.8, 0.6, x < 0 ? rgb(0xb08a6a) : rgb(0x7a8a6a)));
@@ -115,7 +115,7 @@ const FURNISH = {
     U.lights = [[-3.83, 5.5, z1 + 0.6, 1.0], [-4.2, F + 1.5, z0 - 0.6, 0.9], [x0 + 0.6, P.ceilY - 0.4, -4.5, 0.5]];
     rug(mb, x0 + 1.95, F, -4.5, 0.75, 4.2, rgb(0x2f4a5a), rgb(0x1e2e3a));
     at(mb, x0 + 0.5, F, z0 + 1.4, Math.PI / 2, () => bench(mb, 1.4, IC.walnut)); rColl(U, x0, x0 + 0.85, z0 + 0.6, z0 + 2.2, 0.8);
-    at(mb, x0 + 0.45, F, -0.6, 0, () => { squareTable(mb, 0.6, 0.5, 0.75, IC.walnut); mb.cyl(0, 0.75, 0, 0.08, 0.05, 0.3, 7, rgb(0x8a3a3a), 0); });
+    at(mb, x0 + 0.45, F, -0.6, 0, () => { squareTable(mb, 0.6, 0.5, 0.75, IC.walnut); glassy(mb, 'vase', rgb(0x8a3a3a), () => mb.cyl(0, 0.75, 0, 0.08, 0.05, 0.3, 7, rgb(0x8a3a3a), 0)); });
     rColl(U, x0, x0 + 0.8, -1.0, -0.2, 1);
     at(mb, x0 + 0.07, F + 1.45, -9.0, Math.PI / 2, () => picture(mb, 0.9, 0.65, rgb(0x8a9a7a)));
     lantern(mb, x0 + 1.95, -4.5, C, 0.5); lantern(mb, x0 + 1.4, -9.4, C, 0.5); lantern(mb, x0 + 1.4, -1.0, C, 0.5);
@@ -204,7 +204,7 @@ const FURNISH = {
       counter(mb, 3.4, 0.5, 0.9, rgb(0xe6dccb), rgb(0x6a4a32));
       mb.box(0, 1.3, -0.22, 3.0, 1.2, 0.03, rgb(0xa8bcc0), 30);
       mb.box(0, 1.25, -0.24, 3.2, 1.3, 0.02, IC.walnut, 0);
-      for (let i = 0; i < 8; i++) mb.cyl(-1.3 + i * 0.36, 0.9, 0.05, 0.04, 0.04, 0.18 + rnd() * 0.08, 6, rgb(GOODS[(i * 3) % GOODS.length]), 0);
+      for (let i = 0; i < 8; i++) glassy(mb, 'bottle', rgb(GOODS[(i * 3) % GOODS.length]), () => mb.cyl(-1.3 + i * 0.36, 0.9, 0.05, 0.04, 0.04, 0.18 + rnd() * 0.08, 6, rgb(GOODS[(i * 3) % GOODS.length]), 0));
       mb.cyl(0.6, 0.9, 0.1, 0.18, 0.12, 0.12, 10, IC.cream, 0);
     });
     rColl(R, x1 - 0.6, x1, -6.3, -2.9, 1);
@@ -303,7 +303,7 @@ const FURNISH = {
       mb.cyl(-0.9, 1.0, 0, 0.12, 0.08, 0.14, 10, rgb(0xd8d2c0), 0); mb.beam([-0.9, 1.08, 0], [-0.82, 1.3, 0.05], 0.03, rgb(0xd8d2c0), 0);
       mb.box(0.8, 1.0, 0, 0.35, 0.04, 0.2, IC.brass, 0); mb.box(0.8, 1.04, 0, 0.04, 0.3, 0.04, IC.brass, 0); mb.box(0.8, 1.34, 0, 0.42, 0.03, 0.03, IC.brass, 0);
       for (const s of [-1, 1]) mb.cyl(0.8 + s * 0.2, 1.2, 0, 0.08, 0.08, 0.02, 8, IC.brass, 0);
-      for (let i = 0; i < 4; i++) mb.cyl(0 + i * 0.16, 1.0, 0.15, 0.06, 0.06, 0.22, 8, IC.glass, 0, { top: IC.cream });
+      for (let i = 0; i < 4; i++) glassy(mb, 'jar', IC.glass, () => mb.cyl(0 + i * 0.16, 1.0, 0.15, 0.06, 0.06, 0.22, 8, IC.glass, 0, { top: IC.cream }));
     });
     rColl(R, -1.7, 1.7, -6.0, -5.2, 1.1);
     // show globes in the front windows, the sign of a druggist

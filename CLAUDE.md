@@ -41,7 +41,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `world/decor.js` | Schilder, Embleme, Dinge vor den Läden (`decorate`), Verandabänke |
 | `world/town.js` | Scheune, Kirche, Wasserturm, Windrad, Wagen, Zäune und `buildTown()` |
 | `world/rooms.js` | Räume: Raumrahmen (`rwp`/`rLocal`), Wände (`lining`), Treppen, Obergeschosse, Türen, `updateRooms` (Sichtbarkeit, Belichtung, Türen) |
-| `world/furniture.js` | Möbel-Bausteine (`chair`, `bench`, `stool` …), Sitzplatz-Meldung `seatHere`, **Prefabs + `place()`** |
+| `world/furniture.js` | Möbel-Bausteine (`chair`, `bench`, `stool` …), Sitzplatz-Meldung `seatHere`, Glas-Meldung `glassHere`/`glassy`, **Prefabs + `place()`** |
 | `world/interiors.js` | `FURNISH`: die Einrichtung jedes Gebäudes |
 | `world/nature.js` | Kakteen, Büsche, Felsen, Tafelberge, Steppenläufer, Geier |
 | `world/chunks.js` | statische Welt pro Zelle (96 m) zusammengefasst; `chunkKind` (aus welcher Quelle ein Dreieck stammt) |
@@ -61,6 +61,7 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `combat/gun.js` | Revolver: Holster → Ziehen → Zielen/Schießen → Nachladen, Flaschen, Treffer |
 | `combat/gun_sound.js` | `GSFX`: Aufnahmen abspielen und Mechanik-Geräusche |
 | `combat/dummy.js` | Übungspuppe |
+| `combat/breakables.js` | `BREAK`: Glas zum Zerschießen in den Gebäuden (Flaschen, Gläser, Dosen-Gläser, Vasen, das servierte Getränk). Teil des Raum-Meshes; ein Treffer klappt seine Eckpunkte zusammen, die Kugel fliegt weiter; kommt zurück, wenn man das Gebäude verlassen hat |
 | `combat/fist.js` | Faustkampf: Schläge als Faustbahnen mit Arm-IK, Overhand, Deckung, Ausdauer |
 | `interact/interact.js` | **ein System für alles Benutzbare**: Einträge mit Ort, Raum, Belegung, Verb; Fokus und Hinweis „E …“ |
 | `interact/sit.js` | Hinsetzen, Sitzen, Aufstehen (`SIT_KINDS` legt pro Sitzart Höhe, Füße und Hände fest), `SIT.warp(seat)` |
@@ -73,11 +74,11 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 | `core/items.js` | `ITEMS` (Getränke, Flasche), `INV` (Geld in Cent, Tasche), `TOAST` (Meldungen oben) |
 | `npc/npc.js` | `NPC`: Körper aus dem Rig (`buildCharacter(farben, {hat, gun, apron, bowtie, garter, hair})`), Gehen zu einem Ziel (`goTo`), Blick (`lookAt`), Hände per Arm-IK (`reach`), Ducken/Lehnen, Gesten (`gesture`); `SAY` Sprechblasen; `NPCS.bodies` Kollision mit dem Spieler |
 | `npc/barkeep.js` | `BARKEEP`: Hank. Arbeitet hinter der Theke (polieren, wischen, umsehen), kommt zum Gast, bedient von Hand (`order` ← `SHOP.buy`), duckt sich bei Schüssen, Hände hoch beim Zielen, Sprüche (`LINES`), Gedächtnis (`mem`, im Spielstand; `forget()` für den Knopf „Erinnerungen zurücksetzen“ → `TALK.resetMemories`), `persona` für Gespräche |
-| `npc/talk.js` | `TALK`: Gespräche. V / „Reden“ → Spracherkennung (de-DE), wo das Mikrofon erlaubt ist; in claude.ai nicht, dann Textzeile für das System-Diktat (Win+H, Handy-Tastatur), schickt nach Diktierpause selbst → Claude über die `sample`-Capability (schnellste Stufe `quick`, gestreamt, Format `[aktion, stimmung] Worte`) → Sprechblase wächst mit, jeder fertige Satz geht sofort an `VOICE`. Alles, was ein NPC sagt, geht über `npc.speak` → `VOICE.line` (echte Stimme, sonst sofort Browser-Stimme). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. |
+| `npc/talk.js` | `TALK`: Gespräche. V / „Reden“ → Spracherkennung (de-DE), wo das Mikrofon erlaubt ist; in claude.ai nicht, dann Textzeile für das System-Diktat (Win+H, Handy-Tastatur), schickt nach Diktierpause selbst → Claude über die `sample`-Capability (schnellste Stufe `quick`, gestreamt, Format `[aktion, stimmung] Worte`) → Sprechblase wächst mit, jeder fertige Satz geht sofort an `VOICE`. Alles, was ein NPC sagt, geht über `npc.speak` → `VOICE.line` (echte Stimme, sonst sofort Browser-Stimme). Ohne KI antwortet `persona.offline`. Die KI redet nur; Aktionen prüft `persona.act`. `TALK.remark(npc, situation, fallback)`: spontane KI-Sprüche zu Ereignissen (nur wenn die KI hier schon einmal geantwortet hat), sonst der fertige Spruch. |
 | `audio/ambient.js` | Umgebungston, im Raum verteilt |
 | `ui/hud.js`, `ui/page.html` | Anzeige, Touch-Knöpfe, CSS, Startbildschirm |
 | `ui/menu.js` | Pausenmenü (Esc/P/☰/Start): Spiel, Einstellungen (aus `SETTINGS.SPEC` gebaut), Steuerung |
-| `dev/devtools.js` | Entwickler-Werkzeuge (F2): Infos, Teleport, freie Kamera, Zeitraffer, Overlays (Kollision, Böden, Plätze, Zellen), Position kopieren |
+| `dev/devtools.js` | Entwickler-Werkzeuge (F2): Infos, Teleport, freie Kamera, Zeitraffer, Overlays (Kollision, Böden, Plätze, Zellen), Position kopieren, „Gedächtnis der Figuren“ (alles, was eine Figur über dich speichert, aus `persona.memory()`, einzeln löschbar), „Glas zurück“ |
 | `core/save.js` | Spielstand: Teile melden `collect`/`apply` an, Format mit Version und `migrate()` |
 | `main.js` | Start und Hauptschleife (Reihenfolge der Updates pro Frame) |
 
@@ -89,12 +90,13 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - **Raumkoordinaten:** `rwp(R, x, y, z)` rechnet von Raum zu Welt um, `rLocal(R, X, Z)` umgekehrt. Kollisionen im Raum: `rColl(R, x0, x1, z0, z1, h)` und `rCircle(R, x, z, r)`.
 - **Neue Räume und Möbel:** als Liste mit `place(mb, R, [[prefab, x, z, ry, {opts}], …], rnd)` (siehe `world/furniture.js`). Einzelstücke wie Klavier oder Tresor bleiben Code direkt daneben. Ältere Räume werden umgestellt, sobald man sie ohnehin anfasst. Sheriff und Post sind bereits umgestellt und können als Vorbild dienen.
 - **Zufall:** Die Welt wird mit `mulberry32(seed)` gebaut, damit sie bei jedem Start gleich ist. Die Reihenfolge der `rnd()`-Aufrufe darf sich bei Umbauten nicht ändern, sonst ändert sich die Welt (fingerprint).
+- **Glas** (alles, was zerspringen soll) wird beim Bauen mit `glassy(mb, kind, col, () => …)` umschlossen oder mit `glassHere(mb, v0, kind, col)` gemeldet; keine `rnd()`-Aufrufe dazwischen schieben.
 - **Sitzplätze** melden sich selbst über `seatHere` an. `seat.occ` enthält die Akteur-ID; so finden später auch NPCs freie Plätze.
 - **Neue Aktionen** laufen über `INTERACT` (Eintrag mit `verb`, `score(p)` und entweder `label`+`use()` oder `actions(p)` → bis zu zwei `{label, run}`), nicht über eigene Tastenabfragen. Erste Aktion: E / Y / Knopf 1, zweite: R / B / Knopf 2. Lange Dinge (Theken) stehen in `INTERACT.wide` statt im Raster.
 - **Theken:** `counterHere(mb, x0, x1, z, topY)` beim Bauen eines Tresens (Kunden auf der −z-Seite).
 - **Arm-Animationen mit Gegenstand:** wie `DRINK.pose` – nach dem Körper `torsoInverse(P)`, Ziel im Charakterraum, `armIK`, in `P.armOv[i]` mischen; der Gegenstand folgt in einer `late()`-Funktion der Hand.
 - **Was andere mitbekommen sollen** (Schuss, Schlag, Hinsetzen …): `worldEvent(type, x, y, z, {by, …})`.
-- **Neue NPCs:** `new NPC({...})` + eigenes Verhalten-Objekt (Vorbild `BARKEEP`); sprechen können sie mit `npc.persona = { rules, context(), offline(text), act(action) }`. Regel: Die KI redet nur, was passiert entscheidet `act` mit Prüfung (Geld, Zustand …).
+- **Neue NPCs:** `new NPC({...})` + eigenes Verhalten-Objekt (Vorbild `BARKEEP`); sprechen können sie mit `npc.persona = { rules, context(), offline(text), act(action), forget(), memory(), forgetEvent(i) }`; Ereignis-Reaktionen über `TALK.remark` mit fertigem Spruch als Ersatz. Flüstern nur für Vertrauliches. Regel: Die KI redet nur, was passiert entscheidet `act` mit Prüfung (Geld, Zustand …).
 - **Neue Einstellung:** eine Zeile in `SETTINGS.SPEC`, dann `SETTINGS.on('key', fn)` im System; das Menü baut den Regler selbst.
 - **Neues Entwickler-Werkzeug:** Knopf in `#dev` (page.html) + Funktion in `DEV`. Bei Fehlermeldungen von Merkel nach „Position kopieren“ fragen.
 - **Was gespeichert werden soll:** `SAVE.part(name, collect, apply)`. Ändert sich das Format, wird `SAVE.V` erhöht und `migrate` ergänzt.
@@ -102,6 +104,6 @@ Eine neue Datei muss dort eingetragen werden, sonst bricht der Build ab. Was bei
 - Three.js **r159** (letzte Version mit `three.min.js`). Kein Modul-Build.
 
 ## Stand und Plan
-- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit (Schwanken, Stolpern, Hinfallen, Krabbeln, Doppeltsehen, ungenaue Schläge) mit Filmriss, Schnellrad für die Tasche, erster NPC (Hank, Barkeeper) mit KI-Gesprächen per Sprache oder Text.
+- **Fertig:** Stadt mit 11 betretbaren Gebäuden, Treppen, Türen in beide Richtungen und Saloon-Pendeltüren, Gang-Animation, Revolver, Faustkampf mit Übungspuppe, Hinsetzen (98 Plätze), Spielstand, Pausenmenü mit Einstellungen, Entwickler-Werkzeuge, Trinken an der Theke (stehend/sitzend), Flasche aus der Tasche, Geld, Betrunkenheit (Schwanken, Stolpern, Hinfallen, Krabbeln, Doppeltsehen, ungenaue Schläge) mit Filmriss, Schnellrad für die Tasche, erster NPC (Hank, Barkeeper) mit KI-Gesprächen per Sprache oder Text und spontanen KI-Sprüchen zu dem, was passiert, zerschießbares Glas in allen Gebäuden.
 - **Als Nächstes:** Tag/Nacht mit Schlafen, weitere NPCs mit Alltag (siehe Konzept), Pferd, Soziales/Duell und Wildnis.
 - Das NPC-Konzept steht in `docs/npc-konzept.md`. Spielidee (Leben im Westen, Ruf, Beziehungen, Überraschungen) und Sprachsteuerung per Mikrofon: `docs/spielidee.md`.

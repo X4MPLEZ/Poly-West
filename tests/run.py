@@ -386,8 +386,59 @@ async def check_voice(g):
           and abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05)
     return ok, json.dumps(r)
 
+async def check_glass(g):
+    """glass in the buildings: a shot breaks it (the bullet flies on), it comes back after you left; Hank comments on
+       the damage in his own words (a stand-in for Claude here), remembers it, and the developer tools show his memory"""
+    await g.js(RESET)
+    r = await g.js('''() => { const out = {}, B = BARKEEP, R = B.R, kinds = {};
+      for (const it of BREAK.items) kinds[it.kind] = (kinds[it.kind] || 0) + 1; out.kinds = kinds; out.rooms = BREAK.byRoom.size;
+      const p0 = rwp(R, 0, R.floorY, 0.8); PLAY.pos.set(p0.x, p0.y, p0.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      // a bottle on the bar's back shelf, shot at from 1.5 m in front of it
+      const L = BREAK.byRoom.get(R), it = L.find((x) => x.kind === 'bottle');
+      const c = new THREE.Vector3(it.x, it.y0 + it.h * 0.5, it.z), o = c.clone().add(new THREE.Vector3(PLAY.pos.x - it.x, 0, PLAY.pos.z - it.z).setLength(1.5));
+      const d = c.clone().sub(o).normalize();
+      const hit = GUN.trace(o, d, 0, 30); out.hitIt = !!hit && hit.glass === it;
+      const a = R.mesh.geometry.attributes.position.array, before = a[it.v0 * 3 + 1];
+      worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' });
+      GUN.hitResult(hit, d, 0); out.broken = !it.alive; out.collapsed = a[it.v0 * 3 + 1] === it.y0 && a[it.v0 * 3] === it.lx && before !== undefined;
+      const again = GUN.trace(o, d, 0, 30); out.through = !again || again.glass !== it;
+      // a served drink on the counter can be shot as well
+      GLASS.serve('whiskey', B.C, rwp(R, 3.2, R.floorY + 1.13, -5), null); for (let k = 0; k < 120; k++) G.stepFrame(1/60);
+      const S = GLASS.obj.pos, o2 = new THREE.Vector3(S.x - 1.2, S.y + 0.06, S.z), h2 = GUN.trace(o2, new THREE.Vector3(1, 0, 0), 0, 5);
+      out.served = !!h2 && !!h2.glass && h2.glass.served; if (h2 && h2.glass) GUN.hitResult(h2, new THREE.Vector3(1, 0, 0), 0); out.drinkGone = !GLASS.obj;
+      return out; }''')
+    # Hank: three shots into his ceiling; Claude is replaced by a stand-in that records the prompt
+    h = await g.js('''async () => { const out = {}, B = BARKEEP, R = B.R; B.forget(); B.st = 'idle'; B.cool = {}; B.sc = null;
+      const pin = rwp(R, 0, R.floorY, -2); PLAY.pos.set(pin.x, pin.y, pin.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      const keep = [TALK.ai, TALK.aiOk, SETTINGS.v.aiTalk]; let prompt = '';
+      TALK.ai = async (p, o) => { prompt = p; o.onText({ text: '[shake_head, whisper] Drei Löcher in meiner Decke!' }); return { text: '[shake_head, whisper] Drei Löcher in meiner Decke!' }; };
+      TALK.aiOk = true; SETTINGS.v.aiTalk = true; TALK.remarkT = -99; TALK.seq++;
+      for (let i = 0; i < 3; i++) { worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' }); worldEvent('impact', PLAY.pos.x, 3, PLAY.pos.z, { by: 'player', part: 'ceiling', room: 'saloon' }); for (let k = 0; k < 20; k++) G.stepFrame(1/60); }
+      for (let k = 0; k < 60 * 6 && B.st === 'duck'; k++) G.stepFrame(1/60);
+      await new Promise((res) => setTimeout(res, 50)); for (let k = 0; k < 5; k++) G.stepFrame(1/60);
+      out.asked = /3 Löcher in deiner Decke/.test(prompt); out.said = (B.npc.talkLog || []).slice(-1)[0]; out.mem = B.mem.slice(-1)[0]; out.holes = B.damage.holes;
+      out.noWhisperRule = /Flüstern \\(whisper\\) NUR/.test(prompt); out.aimedMood = B.MOOD.aimed;
+      // without Claude: the ready-made line
+      TALK.ai = null; B.sc = null; worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' });
+      for (let k = 0; k < 60 * 6 && B.st === 'duck'; k++) G.stepFrame(1/60); out.canned = B.LINES.shot.includes(B.npc.said);
+      // creator mode: the memory panel lists exactly what he keeps; one can delete a single memory
+      DEV.toggle(true); DEV.showMem(true); DEV.renderMem(); const box = document.getElementById('devMemBox');
+      out.panel = box.textContent.includes('Hank') && box.textContent.includes(out.mem) && box.textContent.includes('Drei Löcher');
+      const n0 = B.mem.length; box.querySelector('button[data-act="del"]').click(); out.deleted = B.mem.length === n0 - 1;
+      DEV.showMem(false); DEV.toggle(false);
+      TALK.ai = keep[0]; TALK.aiOk = keep[1]; SETTINGS.v.aiTalk = keep[2];
+      // the broken bottle is back once you have left and the time is up
+      const it = BREAK.broken[0]; out.brokenN = BREAK.broken.length;
+      PLAY.pos.set(-8, 0, 2); GAIT.init = false; for (const b of BREAK.broken) b.back = 0; for (let k = 0; k < 5; k++) G.stepFrame(1/60);
+      out.back = !!it && it.alive && BREAK.broken.length === 0 && R.mesh.geometry.attributes.position.array[it.v0 * 3] === it.orig[0];
+      return out; }''')
+    ok = (r['hitIt'] and r['broken'] and r['collapsed'] and r['through'] and r['served'] and r['drinkGone'] and r['kinds'].get('bottle', 0) > 50 and r['rooms'] >= 5
+          and h['asked'] and h['said'] and h['said']['text'] == 'Drei Löcher in meiner Decke!' and 'in deinem Saloon herumgeschossen (3 Schüsse, 3 Löcher in der Decke)' in (h['mem'] or '') and h['holes'] == 3
+          and h['noWhisperRule'] and h['aimedMood'] != 'whisper' and h['canned'] and h['panel'] and h['deleted'] and h['back'])
+    return ok, json.dumps([r, h], ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

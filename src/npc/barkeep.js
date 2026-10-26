@@ -10,10 +10,10 @@ const BARKEEP = {
   npc: null, R: null, C: null, st: 'idle', t: 0, act: null, actT: 0, orders: [], cur: null,
   X: { stand: 4.8, pour: 4.42, back: 5.2, pourSpot: 3.82 }, Z0: -9.7, Z1: -3.3,
   props: {}, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _m: new THREE.Matrix4(), _q: new THREE.Matrix4(),
-  cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0,
+  cool: {}, atBarT: 0, attending: false, aimedT: 0, duckT: 0, mem: [], served: 0, sc: null, damage: { holes: 0, glass: 0 },
   // in which mood each kind of line is said (see VOICE.MOODS)
   MOOD: { hello: 'neutral', what: 'neutral', whiskey: 'neutral', beer: 'amused', water: 'disgusted', bottle: 'surprised', tipsy: 'amused', drunk: 'disgusted',
-    leave: 'amused', shot: 'angry', aimed: 'whisper', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
+    leave: 'amused', shot: 'angry', aimed: 'neutral', punch: 'angry', fall: 'amused', behind: 'angry', broke: 'disgusted', cheers: 'amused' },
   LINES: {
     hello: ['Howdy, Fremder.', 'Tür zu, es staubt.', 'Willkommen im Saloon.', 'Na, wieder Durst?'],
     what: ['Was darf’s sein?', 'Durstig?', 'Whiskey hilft gegen fast alles.', 'Sag einfach Bescheid.'],
@@ -58,8 +58,41 @@ const BARKEEP = {
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
+  /* a ready-made line, or now and then (chance) something of his own from Claude about what just happened
+     (situation, in words); the ready-made line stays the fallback (no Claude, too slow, an error) */
+  sayOrRemark(kind, cool, situation, chance) {
+    if (cool && (this.cool[kind] || -99) > G.time - cool) return;
+    this.cool[kind] = G.time;
+    if (situation && Math.random() < chance && TALK.remark(this.npc, situation, () => this.say(kind), this.MOOD[kind])) return;
+    this.say(kind);
+  },
+  // what a burst of shooting did, collected while he is ducking
+  scene() { return this.sc || (this.sc = { shots: 0, outside: 0, ceiling: 0, wall: 0, floor: 0, glass: {} }); },
+  describe(sc) {
+    const n = (k, one, many) => (k === 1 ? one : k + ' ' + many), out = [];
+    out.push('Der Fremde hat gerade ' + (sc.shots === 1 ? 'einmal' : sc.shots === 2 ? 'zweimal' : sc.shots + '-mal') + (sc.outside >= sc.shots ? ' draußen vor deinem Saloon' : ' in deinem Saloon') + ' mit dem Revolver geschossen, du hast dich hinter der Theke weggeduckt.');
+    const holes = [];
+    if (sc.ceiling) holes.push(n(sc.ceiling, 'ein Loch', 'Löcher') + ' in deiner Decke');
+    if (sc.wall) holes.push(n(sc.wall, 'eins', 'Löcher') + ' in den Wänden oder Möbeln');
+    if (sc.floor) holes.push(n(sc.floor, 'eins', 'Löcher') + ' im Boden');
+    if (holes.length) out.push('Einschüsse: ' + holes.join(', ') + '.');
+    const G2 = sc.glass, names = { bottle: ['eine Flasche', 'Flaschen'], glass: ['ein Glas', 'Gläser'], jar: ['ein Glas', 'Gläser'], vase: ['eine Vase', 'Vasen'], served: ['sein eigenes Getränk', 'Getränke'] };
+    const br = Object.keys(G2).map((k) => n(G2[k], names[k][0], names[k][1]));
+    if (br.length) out.push('Zerschossen hat er: ' + br.join(', ') + '.');
+    return out.join(' ');
+  },
+  memo(sc) {
+    const holes = sc.ceiling + sc.wall + sc.floor, gl = Object.values(sc.glass).reduce((a, b) => a + b, 0);
+    this.damage.holes += holes; this.damage.glass += gl;
+    const bits = [sc.shots + (sc.shots === 1 ? ' Schuss' : ' Schüsse')];
+    const pl = (k, one, many) => k + ' ' + (k === 1 ? one : many);
+    if (sc.ceiling) bits.push(pl(sc.ceiling, 'Loch', 'Löcher') + ' in der Decke');
+    if (holes - sc.ceiling) bits.push(pl(holes - sc.ceiling, 'Loch', 'Löcher') + ' in Wänden und Boden');
+    if (gl) bits.push(pl(gl, 'Flasche oder Glas', 'Flaschen und Gläser') + ' kaputt');
+    this.remember('Er hat ' + (sc.outside >= sc.shots ? 'vor deinem Saloon' : 'in deinem Saloon') + ' herumgeschossen (' + bits.join(', ') + ').');
+  },
   // the settings button: he has never seen you before
-  forget() { this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; },
+  forget() { this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
   persona() {
     const B = this;
     return {
@@ -70,7 +103,7 @@ const BARKEEP = {
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
-        'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), leise und vorsichtig bei Gefahr (whisper), überrascht (surprised), müde spät nachts (sleepy). Wähle die Stimmung, die zu deinem Satz passt.',
+        'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
         'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt; das Spiel kassiert selbst und prüft, ob sein Geld reicht. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
       ].join('\n'),
       context() {
@@ -82,6 +115,7 @@ const BARKEEP = {
         if (GLASS.obj && GLASS.obj.left > 0) lines.push('Vor ihm steht ein ' + GLASS.obj.it.name + ', noch nicht ausgetrunken.');
         if (GUN.state !== 'holster') lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
         if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
+        if (B.damage.holes || B.damage.glass) lines.push('Bisher hat er dir insgesamt ' + B.damage.holes + ' Einschusslöcher in den Saloon gemacht und ' + B.damage.glass + ' Flaschen/Gläser zerschossen.');
         if (B.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + B.mem.slice(-6).join(' '));
         return lines.join('\n');
       },
@@ -102,6 +136,12 @@ const BARKEEP = {
         return { say: r(['Hm.', 'Wenn du meinst.', 'Ich hör zu.', 'Trink was, dann reden wir.']), action: 'none' };
       },
       forget() { B.forget(); },
+      // for the developer tools: everything he keeps about the player (events: newest last; the last `inPrompt` go into each prompt)
+      memory() {
+        return { events: B.mem.slice(), inPrompt: 6,
+          facts: [['Getränke eingeschenkt', String(B.served)], ['Einschusslöcher insgesamt', String(B.damage.holes)], ['Zerschossene Flaschen/Gläser', String(B.damage.glass)]] };
+      },
+      forgetEvent(i) { B.mem.splice(i, 1); },
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
         if (m) { B.serveFromTalk(m[1]); return; }
@@ -153,10 +193,12 @@ const BARKEEP = {
   event(e) {
     if (!this.npc || e.by !== 'player') return;
     const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
-    if (e.type === 'shot' && (inside || near)) { if (this.st !== 'duck') this.remember('Er hat in deinem Saloon geschossen.'); this.duck(); }
-    else if (e.type === 'punch' && inside) this.say('punch', 8);
-    else if (e.type === 'fall' && inside) { setTimeout(() => this.say('fall', 10), 700); if ((this.cool.memFall || -99) < G.time - 60) { this.cool.memFall = G.time; this.remember('Er ist betrunken in deinem Saloon hingefallen.'); } }
-    else if (e.type === 'leave' && inside) { this.say('leave'); this.remember('Du hast gesehen, wie er sturzbetrunken aus dem Saloon getorkelt ist.'); }
+    if (e.type === 'shot' && (inside || near)) { const sc = this.scene(); sc.shots++; if (!inside) sc.outside++; this.duck(); }
+    else if (e.type === 'impact' && e.room === 'saloon' && this.sc) { const k = e.part || 'wall'; this.sc[k] = (this.sc[k] || 0) + 1; }
+    else if (e.type === 'glass' && e.room === 'saloon') { const sc = this.scene(); sc.glass[e.kind] = (sc.glass[e.kind] || 0) + 1; }
+    else if (e.type === 'punch' && inside) this.sayOrRemark('punch', 8, 'Der Fremde schlägt mitten in deinem Saloon um sich.', 0.35);
+    else if (e.type === 'fall' && inside) { setTimeout(() => this.sayOrRemark('fall', 10, 'Der Fremde ist gerade betrunken vor dir hingefallen.', 0.5), 700); if ((this.cool.memFall || -99) < G.time - 60) { this.cool.memFall = G.time; this.remember('Er ist betrunken in deinem Saloon hingefallen.'); } }
+    else if (e.type === 'leave' && inside) { this.sayOrRemark('leave', 0, 'Der Fremde torkelt gerade sturzbetrunken zur Tür hinaus.', 0.5); this.remember('Du hast gesehen, wie er sturzbetrunken aus dem Saloon getorkelt ist.'); }
     else if (e.type === 'passout') this.remember('Man erzählt, er hat irgendwo in der Stadt seinen Rausch ausgeschlafen.');
     else if (e.type === 'drink' && inside && Math.random() < 0.25) this.say('cheers', 30);
   },
@@ -181,7 +223,7 @@ const BARKEEP = {
     this.t += dt;
     const inside = G.room === this.R;
     // the player: greet him, look at him, mind him
-    if (inside && !this.wasInside) this.say('hello', 60);
+    if (inside && !this.wasInside) this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
     this.wasInside = inside;
     const head = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55 - 0.45 * (FALL.down || 0), PLAY.pos.z);
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
@@ -211,7 +253,15 @@ const BARKEEP = {
     N.stop(); N.crouchT = 1; N.reach(0, 0.18, 1.62, 0.22); N.reach(1, -0.18, 1.62, 0.22); N.lookTW = 0;
     this.props.rag.visible = false;
     this.duckT -= dt;
-    if (this.duckT <= 0) { this.st = 'idle'; this.say('shot'); this.pickIdle(); }
+    if (this.duckT <= 0) {
+      this.st = 'idle'; this.pickIdle();
+      const sc = this.sc; this.sc = null;
+      if (!sc || !sc.shots) { this.say('shot'); return; }
+      this.memo(sc);
+      // a single shot or no damage: often the quick line; real damage: his own words about it
+      const dmg = sc.ceiling + sc.wall + sc.floor + Object.keys(sc.glass).length;
+      if (!TALK.remark(this.npc, this.describe(sc), () => this.say('shot'), 'angry', dmg ? 1 : 0.5)) this.say('shot');
+    }
   },
   /* ---- idle: the bar's own small work ---- */
   updIdle(dt, inside) {
@@ -401,8 +451,9 @@ const BARKEEP = {
   }
 };
 // what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
-SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served }), (d) => {
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage }), (d) => {
   if (!d) return;
+  BARKEEP.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
   BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
   BARKEEP.served = Math.max(0, d.served | 0);
 });

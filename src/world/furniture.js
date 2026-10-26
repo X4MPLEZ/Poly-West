@@ -17,6 +17,11 @@ function builtToWorld(mb, x, y, z) {
   if (R) { const p = rwp(R, v.x, v.y, v.z); wx = p.x; wz = p.z; const ex = dx * R.c + dz * R.s, ez = -dx * R.s + dz * R.c; dx = ex; dz = ez; }
   return { x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), room: R };
 }
+/* glass one can shoot to pieces: it is built into the room mesh like everything else, and the vertices from v0 to now
+   are registered here; BREAK (combat/breakables.js) collapses them when a bullet hits and restores them later */
+const GLASSWARE = [];
+function glassHere(mb, v0, kind, col) { if (SEATCTX.R && mb.count > v0) GLASSWARE.push({ R: SEATCTX.R, v0, v1: mb.count, kind, col }); }
+function glassy(mb, kind, col, fn) { const v0 = mb.count; fn(); glassHere(mb, v0, kind, col); }
 function seatHere(mb, x, z, kind, opt) {
   const w = builtToWorld(mb, x, 0, z);
   SEATS.push(Object.assign({ x: w.x, y: w.y, z: w.z, yaw: w.yaw, kind, room: w.room }, opt || {}));
@@ -85,8 +90,8 @@ function shelfUnit(mb, len, ht, dep, levels, rnd, fill, col) {
       const kind = fill === 'bottles' ? (rnd() < 0.8 ? 1 : 0) : fill === 'jars' ? 2 : Math.floor(rnd() * 3);
       const col2 = rgb(GOODS[Math.floor(rnd() * GOODS.length)]);
       if (kind === 0) { const sw = 0.14 + rnd() * 0.14, sh = 0.12 + rnd() * 0.18; mb.box(x + sw / 2, y + 0.04, 0, sw, sh, dep * 0.7, col2, 9); x += sw + 0.03; }
-      else if (kind === 1) { const r = 0.035 + rnd() * 0.02, h = 0.2 + rnd() * 0.12; mb.cyl(x + r, y + 0.04, 0, r, r, h, 6, col2, 0); mb.cyl(x + r, y + 0.04 + h, 0, r * 0.45, r * 0.45, 0.07, 5, col2, 0); x += 2 * r + 0.035; }
-      else { const r = 0.06 + rnd() * 0.03, h = 0.12 + rnd() * 0.1; mb.cyl(x + r, y + 0.04, 0, r, r, h, 7, col2, 0, { top: IC.cream }); x += 2 * r + 0.04; }
+      else if (kind === 1) { const r = 0.035 + rnd() * 0.02, h = 0.2 + rnd() * 0.12, v0 = mb.count; mb.cyl(x + r, y + 0.04, 0, r, r, h, 6, col2, 0); mb.cyl(x + r, y + 0.04 + h, 0, r * 0.45, r * 0.45, 0.07, 5, col2, 0); glassHere(mb, v0, 'bottle', col2); x += 2 * r + 0.035; }
+      else { const r = 0.06 + rnd() * 0.03, h = 0.12 + rnd() * 0.1, v0 = mb.count; mb.cyl(x + r, y + 0.04, 0, r, r, h, 7, col2, 0, { top: IC.cream }); glassHere(mb, v0, 'jar', col2); x += 2 * r + 0.04; }
       if (rnd() < 0.12) x += 0.15;
     }
   }

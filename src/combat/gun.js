@@ -60,6 +60,7 @@ const GUN = {
   init(scene) {
     FX.init(scene);
     buildBottles(scene);
+    BREAK.init();
     DUMMY.build(scene);
     this.P = W.ch.pose;
     W.ch.pose.armOv = [null, null];
@@ -134,6 +135,7 @@ const GUN = {
     this.recoil += this.recoilV * dt;
     // the gunsmith tops up your cartridges
     if (G.room && G.room.type === 'gunsmith' && this.reserve < this.MAX) { this.reserve = this.MAX; GSFX.box(); HUD.hint('Munition aufgefüllt'); HUD.hintTimer = setTimeout(() => HUD.hideHint(), 1800); }
+    BREAK.update(dt);
     for (const b of BOTTLES) if (!b.alive && (b.back -= dt) <= 0) { const d = Math.hypot(PLAY.pos.x - b.x, PLAY.pos.z - b.z); if (d > 4) { b.alive = true; b.mesh.visible = true; } }
   },
   updateReload(dt) {
@@ -259,7 +261,8 @@ const GUN = {
       const ang = Math.acos(clamp(u.dot(fwd), -1, 1));
       if (ang < maxAng && (!best || ang < best.ang)) best = { b, ang, dist: d, dir: u.clone() };
     }
-    return best;
+    const g = BREAK.near(cam, fwd, best ? best.ang : maxAng, maxDist, u);
+    return g || best;
   },
   fire() {
     if (this.ammo <= 0) { GSFX.dry(); this.cool = 0.3; return; }
@@ -290,14 +293,22 @@ const GUN = {
     setTimeout(() => GSFX.cock(), 260);
     worldEvent('shot', mz.x, mz.y, mz.z, { by: 'player', room: G.room ? G.room.type : null });
     if (!hit) return;
-    if (hit.bottle) {
+    this.hitResult(hit, dir, 0);
+  },
+  // what the bullet does where it lands; glass does not stop it, it flies on to whatever is behind
+  hitResult(hit, dir, depth) {
+    if (hit.glass) {
+      BREAK.shatter(hit.glass, dir);
+      if (depth < 3) { const o = hit.point.clone().addScaledVector(dir, 0.02), nx = this.trace(o, dir, 0, 40); if (nx) this.hitResult(nx, dir, depth + 1); }
+    } else if (hit.bottle) {
       shatterBottle(hit.bottle, dir);
     } else if (hit.dummy) {
       DUMMY.shot(hit.point, dir);
     } else {
       const S = FX.impact(hit.hit, dir);
       GSFX.impact(hit.point, S.kind || (S.splinter ? 'wood' : 'dirt'));
-      worldEvent('impact', hit.point.x, hit.point.y, hit.point.z, { by: 'player', surface: S.kind });
+      const ny = hit.hit.face ? hit.hit.face.normal.y : 0;
+      worldEvent('impact', hit.point.x, hit.point.y, hit.point.z, { by: 'player', surface: S.kind, part: ny < -0.7 ? 'ceiling' : ny > 0.7 ? 'floor' : 'wall', room: G.room ? G.room.type : null });
     }
   },
   trace(o, d, near, far) {
@@ -322,6 +333,8 @@ const GUN = {
     for (const D of DOORS) for (const m of D.meshes) objs.push(m);
     this.ray.set(o, d); this.ray.near = near; this.ray.far = best ? best.t : far;
     const hits = this.ray.intersectObjects(objs, false);
+    const gl = BREAK.trace(o, d, near, hits.length ? hits[0].distance : this.ray.far, hits[0]);
+    if (gl && !(best && best.t <= gl.t)) return { t: gl.t, point: new THREE.Vector3().copy(o).addScaledVector(d, gl.t), glass: gl.glass };
     if (hits.length && !(best && best.t <= hits[0].distance)) return { t: hits[0].distance, point: hits[0].point.clone(), bottle: null, hit: hits[0] };
     return best;
   },

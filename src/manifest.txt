@@ -34,6 +34,7 @@ combat/gun.js
 combat/gun_sound.js
 combat/dummy.js
 combat/fist.js
+combat/breakables.js
 interact/interact.js
 interact/sit.js
 interact/drink.js

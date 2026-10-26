@@ -13,7 +13,7 @@
    A person who can talk has npc.persona = { rules, context(), offline(text), act(action) } and npc.voiceProfile. */
 const TALK = {
   open: false, npc: null, ai: null, aiOff: false, aiOk: false, busy: false, rec: null, listening: false, heard: '', final: '',
-  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0,
+  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
   ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
@@ -189,18 +189,7 @@ const TALK = {
     n.thinking = true; SAY.show(n, '…', 60);
     this.setState(n.name + ' überlegt …', 'think');
     // the answer, as it comes: words into the bubble, finished sentences to the voice
-    let queued = 0, shown = '';
-    const feed = (raw, done) => {
-      if (seq !== this.seq) return;
-      const pr = this.parse(raw), say = pr.say.replace(/\s+/g, ' ');
-      if (say && say !== shown) { shown = say; n.thinking = false; SAY.show(n, say, 60); if (this.el.dataset.st === 'think') this.setState('', 'idle'); }
-      if (VOICE.ready()) {
-        const rest = say.slice(queued), re = /[^.!?…]*[.!?…]+["'“”)]*(\s+|$)/g; let m, used = 0;
-        while ((m = re.exec(rest)) && m[0]) { if (!m[1] && !done) break; VOICE.push(n, m[0], pr.mood); used = re.lastIndex; }
-        if (done && used < rest.length && rest.slice(used).trim()) { VOICE.push(n, rest.slice(used), pr.mood); used = rest.length; }
-        queued += used;
-      }
-    };
+    const F = this.stream(n, seq), feed = F.feed;
     let raw = null;
     if (this.aiOn()) raw = await this.ask(n, text, (t) => feed(t, false));
     if (seq !== this.seq) { n.thinking = false; return; }   // ended or walked off meanwhile
@@ -213,7 +202,7 @@ const TALK = {
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
-    if (VOICE.ready() && raw !== null && queued > 0) feed(raw, true);   // the rest of what was already being spoken
+    if (VOICE.ready() && raw !== null && F.queued() > 0) feed(raw, true);   // the rest of what was already being spoken
     else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, out.mood || (out.action === 'laugh' ? 'amused' : out.action === 'shake_head' ? 'disgusted' : 'neutral')); }
     if (this.lastErr) this.setState(this.lastErr, 'err');
     else if (MICWIN.connected()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
@@ -222,6 +211,59 @@ const TALK = {
     const act = String(out.action || 'none');
     n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
     if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
+  },
+  /* a streamed answer for person n: words into the bubble as they come, each finished sentence to the voice.
+     Stops by itself once another answer has started (seq). noWhisper: say it out loud whatever mood comes back */
+  stream(n, seq, noWhisper) {
+    let queued = 0, shown = '';
+    const feed = (raw, done) => {
+      if (seq !== this.seq) return;
+      const pr = this.parse(raw), say = pr.say.replace(/\s+/g, ' ');
+      if (noWhisper && pr.mood === 'whisper') pr.mood = 'neutral';
+      if (say && say !== shown) { shown = say; n.thinking = false; SAY.show(n, say, 60); if (this.el.dataset.st === 'think') this.setState('', 'idle'); }
+      if (VOICE.ready()) {
+        const rest = say.slice(queued), re = /[^.!?…]*[.!?…]+["'“”)]*(\s+|$)/g; let m, used = 0;
+        while ((m = re.exec(rest)) && m[0]) { if (!m[1] && !done) break; VOICE.push(n, m[0], pr.mood); used = re.lastIndex; }
+        if (done && used < rest.length && rest.slice(used).trim()) { VOICE.push(n, rest.slice(used), pr.mood); used = rest.length; }
+        queued += used;
+      }
+    };
+    return { feed, queued: () => queued, shown: () => shown };
+  },
+  /* something a person says unasked, in his own words: `situation` tells what just happened. Only when Claude has
+     answered here before (so no permission question pops up in the middle of a gunfight), not while a conversation
+     is waiting for its answer, and at most every few seconds. Returns false when it does not ask (the caller then
+     says a ready-made line); fallback() is said instead when the answer fails or is too slow. */
+  remark(n, situation, fallback, mood, chance) {
+    if (chance !== undefined && Math.random() >= chance) return false;
+    if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
+    if (G.time - (this.remarkT || -99) < 6) return false;
+    this.remarking = true; this.remarkT = G.time;
+    const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
+    const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
+    const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
+    const prompt = P.rules + '\n\nWas gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
+      '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
+      '\nSag spontan von dir aus etwas dazu, direkt zu ihm, so wie du bist und mit dem, was du über ihn weißt. Nenn ruhig konkrete Zahlen oder Dinge. Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
+      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
+    const ctl = new AbortController();
+    let failed = false;
+    const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown()) fallback(); };
+    const timer = setTimeout(() => { if (!F.shown()) { ctl.abort(); fail(); } }, 7000);
+    this.ai(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
+      const raw = r && r.text;
+      if (!raw || !raw.trim() || seq !== this.seq) { fail(); return; }
+      const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!say) { fail(); return; }
+      if (out.mood === 'whisper') out.mood = 'neutral';
+      n.talkLog = n.talkLog || []; n.talkLog.push({ who: 'n', text: say });
+      if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
+      SAY.show(n, say);
+      if (VOICE.ready() && F.queued() > 0) F.feed(raw, true);
+      else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say, this.MOODS.includes(out.mood) ? out.mood : mood || 'neutral'); }
+      if (acts.includes(out.action) && out.action !== 'none') n.persona.act(out.action);
+    }).catch(() => fail()).finally(() => { clearTimeout(timer); this.remarking = false; });
+    return true;
   },
   async ask(n, text, onText) {
     const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
@@ -235,7 +277,7 @@ const TALK = {
       const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
       try {
         const r = await this.ai(prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, onText: ({ text: t }) => onText(t) });
-        this.aiOk = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
+        this.aiOk = this.aiEver = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
       } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
     };
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -269,7 +311,9 @@ TALK.resetMemories = function () {
 SAVE.part('talk', () => {
   const o = {};
   for (const n of NPCS.list) if (n.talkLog && n.talkLog.length) o[n.id] = n.talkLog.slice(-10);
+  if (TALK.aiEver) o._ai = 1;
   return o;
 }, (d) => {
+  TALK.aiEver = !!(d && d._ai);
   for (const n of NPCS.list) if (d && Array.isArray(d[n.id])) n.talkLog = d[n.id].filter((l) => l && typeof l.text === 'string').map((l) => ({ who: l.who === 'p' ? 'p' : 'n', text: String(l.text).slice(0, 300) }));
 });
