@@ -59,8 +59,8 @@ const TALK = {
     const t = this.can() && !DRUNK.blocked() && !MENU.open ? this.target() : null;
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
-    // the voice loads early: as soon as someone who can talk is near
-    if (VOICE.st === 'off' && VOICE.wanted()) for (const n of NPCS.list) if (n.persona && (G.room === n.room || Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z) < 25)) { VOICE.load(); break; }
+    // the voice loads early: a few seconds after the start, so it is there when someone speaks
+    if (VOICE.st === 'off' && VOICE.wanted() && G.time > 3) VOICE.load();
     if (VOICE.st === 'failed' && !this.toldVoice && VOICE.wanted()) { this.toldVoice = true; TOAST.show('Echte Stimme geht hier nicht (' + VOICE.why + '). Es spricht die Browser-Stimme.', 'long'); }
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
@@ -110,8 +110,9 @@ const TALK = {
   // no microphone for the page: a text line that the system's dictation can fill
   typeMode() {
     this.typeRow.hidden = false;
-    document.getElementById('talkMicWin').hidden = MICWIN.connected();
-    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Mikrofon der Tastatur oder 🎤-Fenster' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
+    // (on phones the extra window would be a background tab that cannot listen: there the keyboard's microphone does it)
+    document.getElementById('talkMicWin').hidden = MICWIN.connected() || GUN.touch;
+    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Tipp ins Feld, dann aufs Mikrofon der Tastatur' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
     setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
   close() {
@@ -164,7 +165,7 @@ const TALK = {
     } catch (e) { this.noMic(''); this.typeMode(); }
   },
   stopListen(drop) { if (this.rec && this.listening) { this.dropNext = !!drop; try { this.rec.stop(); } catch (e) { /* ignore */ } } },
-  sendTyped() { const t = this.inp.value.trim(); this.dictT = 0; if (!t || this.busy) return; this.inp.value = ''; this.heardEl.textContent = '„' + t + '“'; this.send(t); },
+  sendTyped() { try { if (SFX.ctx && SFX.ctx.state !== 'running') SFX.ctx.resume(); } catch (e) { /* ignore */ } const t = this.inp.value.trim(); this.dictT = 0; if (!t || this.busy) return; this.inp.value = ''; this.heardEl.textContent = '„' + t + '“'; this.send(t); },
   /* ---- one exchange ---- */
   // "[nod] Klar. Kommt sofort." -> { action, say }; while streaming the bracket may not be complete yet
   parse(raw) {

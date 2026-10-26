@@ -100,8 +100,11 @@ const VOICE = {
   },
   // called every frame: a load that stops moving is given up (and said why)
   tick() {
-    if (this.st !== 'loading') return;
     const now = performance.now();
+    // a sentence that never reports its end (the sound was taken away mid-way): go on with the next one
+    if (this.playing && now > this.playing.end + 1500) { try { this.playing.src.onended = null; this.playing.src.stop(); } catch (e) { /* ignore */ } this.playing = null; this.pump(); }
+    if (this.q.length && !this.playing) this.pump();
+    if (this.st !== 'loading') return;
     if (now - this.lastProg > 25000) this.fail('Laden hängt bei ' + this.pct() + ' %');
     else if (now - this.startAt > 150000) this.fail('Laden dauert zu lange (' + this.pct() + ' %)');
   },
@@ -116,9 +119,12 @@ const VOICE = {
   // a person says something: every word is heard
   line(npc, text) {
     if (!SETTINGS.v.voice || !text || text === '\u2026') return;
-    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s); }
+    if (this.ready() || (this.st === 'loading' && this.IOS)) { for (const s of this.sentences(text)) this.push(npc, s); }   // (iPhone: wait for it, see IOS)
     else this.browser(npc, text);
   },
+  // On iPhones the browser voice takes the sound away from the game's audio until the next tap, so there nothing
+  // is said with it while the real voice is loading: those lines wait (a short while) for the real voice instead.
+  IOS: /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
   sentences(text) { return (text.match(/[^.!?\u2026]+[.!?\u2026]*["'\u201c\u201d)]*\s*/g) || [text]).map((s) => s.trim()).filter(Boolean); },
   /* the browser's own voices: the best fitting German one of the device (preferred names, the right sex,
      natural/neural ones first); pitch and pace from the profile */
@@ -169,7 +175,7 @@ const VOICE = {
   push(npc, sentence) {
     const text = this.clean(sentence);
     if (!text || !/[\p{L}\d]/u.test(text)) return;
-    const job = { npc, text, pcm: null, err: false };
+    const job = { npc, text, pcm: null, err: false, at: performance.now() };
     this.synth(text, npc.voiceProfile).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
     this.q.push(job); this.pump();
   },
@@ -207,10 +213,13 @@ const VOICE = {
   speaking(npc) { return (this.playing && this.playing.npc === npc) || this.q.some((j) => j.npc === npc); },
   pump() {
     if (this.playing || !this.q.length) return;
-    const job = this.q[0];
-    if (job.err) { this.q.shift(); this.pump(); return; }
+    const job = this.q[0], now = performance.now();
+    // a line that could not be made, or came too late to still fit (said while the voice was loading): skip it
+    if (job.err || (job.pcm && now - job.at > 20000) || (!job.pcm && this.ready() && now - job.at > 25000)) { this.q.shift(); this.pump(); return; }
     if (!job.pcm || !SFX.ctx) return;
     this.q.shift();
+    // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
+    if (SFX.ctx.state !== 'running') { try { SFX.ctx.resume(); } catch (e) { /* ignore */ } }
     const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
     // the model speaks quietly (peaks around 0.3): bring every sentence up to a full, even level
     let peak = 1e-4; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); if (a > peak) peak = a; }
@@ -223,7 +232,7 @@ const VOICE = {
     src.connect(g); g.connect(this.output());
     const dur = buf.duration / (P.pitch || 1);
     job.npc.talkT = dur + 0.15;
-    this.playing = { npc: job.npc, src };
+    this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
     src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), 90); };
     src.start();
   }

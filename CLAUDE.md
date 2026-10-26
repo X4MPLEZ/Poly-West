@@ -23,7 +23,7 @@ python3 tests/run.py --golden     # gewollte Änderung an der Welt als neue Refe
 - **fingerprint** prüft, ob die gebaute Welt exakt gleich geblieben ist: Meshes, Kollisionen, Plattformen, Sitzplätze, Türen. Nach reinen Umbauten muss das Ergebnis „identical“ sein. Nach gewollten Änderungen `--golden` ausführen.
 - **budget**: Zeichenaufrufe und Dreiecke in festen Ansichten. Liegt ein Wert über der Grenze, gilt die Prüfung als nicht bestanden.
 - Bilder zum Ansehen landen in `tests/out/`; der Ordner ist nicht im Repo.
-- **Stimmen:** `python3 tools/voices.py [thorsten karlsson kerstin]` baut die Stimm-Dateien nach `vendor/voice/` (nicht im Repo, ca. 45 MB für Laufzeit + Thorsten). `build.py` verlinkt sie nach `dist/voice/`; die Prüfung `voice` lädt sie über einen lokalen http-Server.
+- **Stimmen:** `python3 tools/voices.py [thorsten karlsson kerstin]` baut die Stimm-Dateien nach `vendor/voice/` (nicht im Repo, ca. 45 MB für Laufzeit + Thorsten medium, 22 kHz; Quellen: sherpa-onnx-Releases (alle Piper-Stimmen) bzw. rhasspy/piper v0.0.2). `build.py` verlinkt sie nach `dist/voice/`; die Prüfung `voice` lädt sie über einen lokalen http-Server.
 - Veröffentlichen: Artefakt-Tool mit `dist/poly-west.html` (immer derselbe Pfad, damit der Link bleibt). Das Artefakt deklariert `capabilities: {sample: {}}` (KI-Gespräche); beim erneuten Veröffentlichen `capabilities` weglassen, dann bleibt die Deklaration. Die Stimm-Dateien gehen als `files` mit (`voice/<name>` → `vendor/voice/<name>`, `.wasm` als `application/wasm`, Binärdateien als `application/octet-stream`); weggelassene Dateien bleiben beim nächsten Veröffentlichen erhalten, also nur mitschicken, wenn sie sich geändert haben.
 
 ## Aufbau

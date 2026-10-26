@@ -51,7 +51,7 @@ const BARKEEP = {
     onWorldEvent((e) => this.event(e));
     this.npc.persona = this.persona();
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
-    this.npc.voiceProfile = { male: true, piper: 'thorsten', pitch: 0.9, length: 1.06, noise: 0.6, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
+    this.npc.voiceProfile = { male: true, piper: 'thorsten', pitch: 0.94, length: 1.04, noise: 0.62, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },

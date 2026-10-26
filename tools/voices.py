@@ -15,7 +15,14 @@ import json, pathlib, re, shutil, subprocess, sys, tarfile, tempfile, urllib.req
 import numpy as np
 root = pathlib.Path(__file__).resolve().parent.parent
 out = root / 'vendor' / 'voice'
-VOICES = {'thorsten': 'voice-de-thorsten-low', 'karlsson': 'voice-de-karlsson-low', 'kerstin': 'voice-de-kerstin-low'}
+# name -> where it comes from: rhasspy/piper v0.0.2 releases (low voices, .tar.gz) or the k2-fsa/sherpa-onnx
+# 'tts-models' release (all Piper voices incl. medium/high, .tar.bz2; same models, same inputs)
+VOICES = {
+    'thorsten': ('sherpa', 'vits-piper-de_DE-thorsten-medium'),           # male, 22 kHz, the main Thorsten dataset
+    'thorsten_emo': ('sherpa', 'vits-piper-de_DE-thorsten_emotional-medium'),  # male, 8 moods (sid): amused angry disgusted drunk neutral sleepy surprised whisper
+    'karlsson': ('rhasspy', 'voice-de-karlsson-low'), 'pavoque': ('rhasspy', 'voice-de-pavoque-low'),
+    'kerstin': ('rhasspy', 'voice-de-kerstin-low'), 'ramona': ('rhasspy', 'voice-de-ramona-low'), 'eva': ('rhasspy', 'voice-de-eva_k-x-low'),
+}
 want = [a for a in sys.argv[1:] if not a.startswith('-')] or ['thorsten']
 CHUNK = 14_000_000
 
@@ -36,20 +43,24 @@ def runtime():
         keep, blob = [], bytearray()
         for f in d['files']:
             fn = f['filename']
-            if (fn.endswith('_dict') and not fn.endswith('/de_dict')) or '/mbrola_ph/' in fn: continue
+            # German, plus English for the English words German knows (Whiskey, Saloon, Howdy …)
+            if (fn.endswith('_dict') and not fn.endswith(('/de_dict', '/en_dict'))) or '/mbrola_ph/' in fn: continue
             seg = data[f['start']:f['end']]; keep.append({'filename': fn, 'start': len(blob), 'end': len(blob) + len(seg)}); blob += seg
         d['files'] = keep; d['remote_package_size'] = len(blob)
         (out / 'piper_phonemize.js').write_text(s[:m.start(1)] + json.dumps(d, separators=(',', ':')) + s[m.end(1):])
         (out / 'piper_phonemize.data.wasm').write_bytes(blob); shutil.copy(b / 'piper_phonemize.wasm', out)
 
-def voice(name, rel):
+def voice(name, src):
     import onnx
+    kind, rel = src
+    url = (f'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/{rel}.tar.bz2' if kind == 'sherpa'
+           else f'https://github.com/rhasspy/piper/releases/download/v0.0.2/{rel}.tar.gz')
     with tempfile.TemporaryDirectory() as tmp:
-        tgz = pathlib.Path(tmp) / 'v.tgz'
-        urllib.request.urlretrieve(f'https://github.com/rhasspy/piper/releases/download/v0.0.2/{rel}.tar.gz', tgz)
-        with tarfile.open(tgz) as t: t.extractall(tmp)
-        onx = next(pathlib.Path(tmp).glob('*.onnx')); cfg = json.loads(next(pathlib.Path(tmp).glob('*.onnx.json')).read_text())
-        card = next(pathlib.Path(tmp).glob('MODEL_CARD'), None); card = card.read_text() if card else ''
+        arc = pathlib.Path(tmp) / 'v.tar'
+        urllib.request.urlretrieve(url, arc)
+        with tarfile.open(arc) as t: t.extractall(tmp, filter=lambda m, p: m if not m.name.endswith(('espeak-ng-data',)) and '/espeak-ng-data/' not in m.name else None)
+        onx = next(pathlib.Path(tmp).rglob('*.onnx')); cfg = json.loads(next(pathlib.Path(tmp).rglob('*.onnx.json')).read_text())
+        card = next(pathlib.Path(tmp).rglob('MODEL_CARD'), None); card = card.read_text() if card else ''
         B = onx.read_bytes(); mdl = onnx.load_from_string(B)
     ranges, pos = [], 0
     for t in mdl.graph.initializer:
