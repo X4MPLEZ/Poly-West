@@ -132,6 +132,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
 .touch #toasts { top: 58px; }
 
+/* the voice's loading status, top left under the frame rate */
+#voiceSt { position: absolute; left: calc(12px + env(safe-area-inset-left, 0px)); top: 48px; max-width: min(360px, 60vw); pointer-events: none;
+  background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; color: var(--bone); }
 /* speech bubbles over people */
 #says { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .say { position: absolute; left: 0; top: 0; max-width: min(300px, 46vw); background: var(--bone); color: var(--ink); border-radius: 12px; padding: 6px 11px 7px;
@@ -281,6 +284,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
   <div id="drunkFx" aria-hidden="true"></div>
   <div id="says" aria-live="polite"></div>
+  <div id="voiceSt" hidden aria-live="polite"></div>
   <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">

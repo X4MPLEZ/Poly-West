@@ -348,7 +348,7 @@ async def check_npc(g):
         MICWIN.onMsg({ data: { pw: 'mic-ready' }, source: null }); MICWIN.win = { closed: false, focus() {} };
         TALK.start(); B.npc.talkT = 0; try { speechSynthesis.cancel(); } catch (e) {} const n0 = (B.npc.talkLog || []).length;
         VOICE.q = []; VOICE.playing = null; B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', false); B.npc.talkT = 0; TALK.remoteHeard('Wie heißt du?', true);
-        return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.said;
+        return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.talkLog[B.npc.talkLog.length - 1].text;
           TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null; return out; }); }); }''')
     ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.7 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
           and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5

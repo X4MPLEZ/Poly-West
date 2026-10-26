@@ -35,7 +35,8 @@ def npm(pkg, tmp):
 def runtime():
     with tempfile.TemporaryDirectory() as tmp:
         p = npm('onnxruntime-web@1.18.0', tmp)
-        for f in ('ort.wasm.min.js', 'ort-wasm-simd.wasm'): shutil.copy(p / 'dist' / f, out / f)
+        # (ort-wasm.wasm: for older phones without WebAssembly SIMD)
+        for f in ('ort.wasm.min.js', 'ort-wasm-simd.wasm', 'ort-wasm.wasm'): shutil.copy(p / 'dist' / f, out / f)
     with tempfile.TemporaryDirectory() as tmp:
         b = npm('@diffusionstudio/piper-wasm@1.0.0', tmp) / 'build'
         s = (b / 'piper_phonemize.js').read_text(); data = (b / 'piper_phonemize.data').read_bytes()

@@ -132,6 +132,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
 .touch #toasts { top: 58px; }
 
+/* the voice's loading status, top left under the frame rate */
+#voiceSt { position: absolute; left: calc(12px + env(safe-area-inset-left, 0px)); top: 48px; max-width: min(360px, 60vw); pointer-events: none;
+  background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; color: var(--bone); }
 /* speech bubbles over people */
 #says { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .say { position: absolute; left: 0; top: 0; max-width: min(300px, 46vw); background: var(--bone); color: var(--ink); border-radius: 12px; padding: 6px 11px 7px;
@@ -281,6 +284,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
   <div id="drunkFx" aria-hidden="true"></div>
   <div id="says" aria-live="polite"></div>
+  <div id="voiceSt" hidden aria-live="polite"></div>
   <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
@@ -4897,16 +4901,20 @@ function VOICE_WORKER() {
     const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
     return out;
   }
+  const phase = (name) => postMessage({ t: 'phase', name });
   async function init(m) {
     const base = m.base;
+    phase('Laufzeit');
     importScripts(base + 'ort.wasm.min.js', base + 'piper_phonemize.js');
     ort.env.wasm.numThreads = 1; ort.env.wasm.wasmPaths = base;
+    phase('Download');
     cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg')));
     const tmpl = await get(base + m.voice + '.tmpl.wasm', 'tmpl'), parts = [];
     for (const p of cfg.parts) parts.push(await get(base + p, p));
     let hl = 0; for (const p of parts) hl += p.length;
     const half = new Uint8Array(hl); { let o = 0; for (const p of parts) { half.set(p, o); o += p.length; } }
     // the model again: the template with the weights put back in as float32 (they are not 4-byte aligned in the file)
+    phase('Zusammensetzen');
     const full = new Uint8Array(cfg.size), H = new Uint16Array(half.buffer);
     let t = 0, h = 0, last = 0, f = null;
     for (const [i, n] of cfg.segs) {
@@ -4916,7 +4924,9 @@ function VOICE_WORKER() {
       full.set(new Uint8Array(f.buffer, 0, n), i); h += n / 4; last = i + n;
     }
     full.set(tmpl.subarray(t), last);
+    phase('Modell startet');
     sess = await ort.InferenceSession.create(full, { executionProviders: ['wasm'] });
+    phase('Aussprache');
     phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
     readyRes();
     postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate });
@@ -4942,14 +4952,14 @@ function VOICE_WORKER() {
 }
 
 const VOICE = {
-  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
+  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
   wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
   ready() { return this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
   load() {
     if (this.st !== 'off' || !this.wanted()) return;
-    this.st = 'loading'; this.got = 0; this.parts = {}; this.startAt = this.lastProg = performance.now();
+    this.st = 'loading'; this.got = 0; this.parts = {}; this.startAt = this.lastProg = performance.now(); this.tries++; this.phase = 'Start';
     try {
       const base = new URL('voice/', location.href).href;
       if (!/^https?:/.test(base)) throw new Error('nur über http(s) möglich');
@@ -4969,8 +4979,9 @@ const VOICE = {
     this.waits = {}; this.q = [];
   },
   msg(m) {
-    if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
-    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); TOAST.show('Echte Stimme geladen.'); }
+    if (m.t === 'phase') { this.phase = m.name; this.lastProg = performance.now(); }
+    else if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
+    else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.readyAt = performance.now(); this.pump(); }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
@@ -4981,15 +4992,20 @@ const VOICE = {
     // a sentence that never reports its end (the sound was taken away mid-way): go on with the next one
     if (this.playing && now > this.playing.end + 1500) { try { this.playing.src.onended = null; this.playing.src.stop(); } catch (e) { /* ignore */ } this.playing = null; this.pump(); }
     if (this.q.length && !this.playing) this.pump();
+    this.badge(now);
+    // a voice that failed gets one more try a little later (a bad moment on a weak connection)
+    if (this.st === 'failed' && this.tries < 2 && !this.retryAt) this.retryAt = now + 4000;
+    if (this.retryAt && now > this.retryAt) { this.retryAt = 0; this.st = 'off'; this.load(); return; }
     if (this.st !== 'loading') return;
-    if (now - this.lastProg > 25000) this.fail('Laden hängt bei ' + this.pct() + ' %');
-    else if (now - this.startAt > 150000) this.fail('Laden dauert zu lange (' + this.pct() + ' %)');
+    // while downloading, bytes must keep coming; the other steps are computing (slow on phones): give them time
+    const limit = this.phase === 'Download' ? 30000 : 120000;
+    if (now - this.lastProg > limit) this.fail(this.phase === 'Download' ? 'Laden hängt bei ' + this.pct() + ' %' : 'zu langsam bei: ' + this.phase);
   },
   // for the player: which voice is speaking
   label() {
     if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
     if (this.st === 'ready') return 'echte Stimme';
-    if (this.st === 'loading') return 'echte Stimme lädt ' + this.pct() + ' %';
+    if (this.st === 'loading') return 'echte Stimme lädt ' + (this.phase === 'Download' || !this.phase ? this.pct() + ' %' : '\u00b7 ' + this.phase);
     if (this.st === 'failed') return 'Browser-Stimme (' + this.why + ')';
     return 'Browser-Stimme';
   },
@@ -5046,8 +5062,23 @@ const VOICE = {
       this.worker.postMessage({ t: 'say', id, text, length: (P.length || 1) * pitch, noise: P.noise, noiseW: P.noiseW });
     });
   },
+  /* the little status in the corner: while the voice loads, when it is ready, when it failed (and why) */
+  badge(now) {
+    const el = this.badgeEl || (this.badgeEl = document.getElementById('voiceSt'));
+    if (!el) return;
+    let t = '';
+    if (this.wanted()) {
+      if (this.st === 'loading') t = '\ud83d\udd0a Stimme lädt \u2026 ' + (this.phase === 'Download' ? this.pct() + ' %' : this.phase);
+      else if (this.st === 'ready' && now - this.readyAt < 4000) t = '\ud83d\udd0a Stimme bereit';
+      else if (this.st === 'failed') t = '\ud83d\udd0a Stimme: ' + this.why + (this.retryAt ? ' \u00b7 neuer Versuch' : '');
+    }
+    if (t !== this.badgeT) { this.badgeT = t; el.textContent = t; el.hidden = !t; }
+  },
+  // how the voices should say names and the English words of the West (both voices, the real and the browser's)
+  WORDS: [[/\bhowdy\b/gi, 'Haudi'], [/\bwhiske?y\b/gi, 'Wiski'], [/\bsaloon\b/gi, 'Saluhn'], [/\bsheriff\b/gi, 'Scheriff'], [/\bcowboys?\b/gi, 'Kauboi'],
+    [/\bdust creek\b/gi, 'Dast Kriek'], [/\bhank\b/gi, 'Hänk'], [/\bmister\b/gi, 'Misster'], [/\bcents?\b/gi, 'Zent'], [/\bokay\b/gi, 'Okeh'], [/\bbourbon\b/gi, 'Börbn'], [/\bfrisco\b/gi, 'Frisko']],
   // what the voice should not stumble over
-  clean(text) { return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
+  clean(text) { for (const [re, w] of this.WORDS) text = text.replace(re, w); return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
   // a sentence for npc to say: computed now (in order), played when its turn comes
   push(npc, sentence) {
     const text = this.clean(sentence);
@@ -5114,6 +5145,10 @@ const VOICE = {
     src.start();
   }
 };
+// iPhones let the browser voice speak only after it has once spoken inside a tap: do that (silently) on the first one
+window.addEventListener('pointerup', () => {
+  try { if (window.speechSynthesis && VOICE.IOS) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } } catch (e) { /* ignore */ }
+}, { once: true, capture: true });
 
 // ==== combat/fx.js ====
 /* ---------- shot effects: muzzle flash and its light, smoke, debris, sparks, bullet holes ----------
@@ -7631,7 +7666,7 @@ const TALK = {
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
     // the voice loads early: a few seconds after the start, so it is there when someone speaks
-    if (VOICE.st === 'off' && VOICE.wanted() && G.time > 3) VOICE.load();
+    if (VOICE.st === 'off' && VOICE.wanted() && G.time > 0.5) VOICE.load();
     if (VOICE.st === 'failed' && !this.toldVoice && VOICE.wanted()) { this.toldVoice = true; TOAST.show('Echte Stimme geht hier nicht (' + VOICE.why + '). Es spricht die Browser-Stimme.', 'long'); }
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;

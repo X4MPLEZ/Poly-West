@@ -60,7 +60,7 @@ const TALK = {
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
     // the voice loads early: a few seconds after the start, so it is there when someone speaks
-    if (VOICE.st === 'off' && VOICE.wanted() && G.time > 3) VOICE.load();
+    if (VOICE.st === 'off' && VOICE.wanted() && G.time > 0.5) VOICE.load();
     if (VOICE.st === 'failed' && !this.toldVoice && VOICE.wanted()) { this.toldVoice = true; TOAST.show('Echte Stimme geht hier nicht (' + VOICE.why + '). Es spricht die Browser-Stimme.', 'long'); }
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
