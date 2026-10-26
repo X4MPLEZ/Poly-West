@@ -1,4 +1,4 @@
-const INPUT = { keys: new Set(), joy: null, look: null, stickX: 0, stickY: 0, padRun: false, padLookX: 0, padLookY: 0, padPrev: [] };
+const INPUT = { JOY_W: 0.42, JOY_H: 0.6, lastTouch: 0, keys: new Set(), joy: null, look: null, stickX: 0, stickY: 0, padRun: false, padLookX: 0, padLookY: 0, padPrev: [] };
 
 function initInput(app, canvas, onAction) {
   const joyEl = document.getElementById('joy'), knob = document.getElementById('joyKnob');
@@ -9,7 +9,9 @@ function initInput(app, canvas, onAction) {
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
     const touchLike = e.pointerType !== 'mouse';
     if (touchLike && !app.classList.contains('touch')) { app.classList.add('touch'); GUN.touch = true; }
-    if (touchLike && !INPUT.joy && x < rect.width * 0.5) {
+    if (touchLike) INPUT.lastTouch = performance.now();
+    // the stick only comes in the lower left corner; anywhere else a finger turns the camera (a tap does nothing)
+    if (touchLike && !INPUT.joy && x < rect.width * INPUT.JOY_W && y > rect.height * (1 - INPUT.JOY_H)) {
       INPUT.joy = { id: e.pointerId, ox: x, oy: y };
       joyEl.hidden = false; joyEl.style.left = x + 'px'; joyEl.style.top = y + 'px'; knob.style.transform = 'translate(0px, 0px)';
       onAction('move');
@@ -43,6 +45,8 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('lostpointercapture', end);
   // mouse: right button aims (pointer lock if the page allows it), left button fires
   canvas.addEventListener('mousedown', (e) => {
+    // phones send a mouse click after a tap: that is not a punch (only the button punches)
+    if ((e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || performance.now() - (INPUT.lastTouch || -1e9) < 1000) return;
     if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
       GUN.setAim(true); onAction('aim');

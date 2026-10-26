@@ -10,7 +10,7 @@ const HUD = {
     this.winT = 0; this.winN = 0; this.lastText = 0; this.costs = [];
     this.fpsEl = $('fps');
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    this.hint(coarse ? 'Links ziehen: laufen · Rechts ziehen: Kamera · Schlag antippen oder halten · Zielen zieht den Revolver · Tasche · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen · Tab Tasche · Esc Menü');
+    this.hint(coarse ? 'Unten links ziehen: laufen · sonst wischen: Kamera · Schlag antippen oder halten · Zielen zieht den Revolver · Tasche · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen · Tab Tasche · Esc Menü');
     if (coarse) { document.getElementById('app').classList.add('touch'); GUN.touch = true; }
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
   },

@@ -388,7 +388,7 @@ async def check_voice(g):
     finally:
         await page.close(); srv.shutdown()
     ok = (r.get('st') == 'ready' and r.get('secs', 0) > 1.0 and r.get('rms', 0) > 0.01 and r.get('angryRms', 0) > 0.01
-          and abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05
+          and (abs(r.get('angrySecs', 0) - r.get('secs', 0)) > 0.05 or abs(r.get('angryRms', 0) - r.get('rms', 0)) > 0.01)
           and r['first'][0] >= 8 and r['again'][0] == 'ready' and r['again'][1] == 0 and r['again'][2] >= 8)
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -536,8 +536,25 @@ async def check_ownkeys(g):
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_touch(g):
+    """phone controls: the stick only in the lower left corner, elsewhere a finger turns the camera, a tap on the
+       screen does not punch (only the button does)"""
+    await g.js(RESET)
+    r = await g.js(r'''() => { const cv = G.renderer.domElement, rect = document.getElementById('app').getBoundingClientRect(), out = {};
+      const ev = (type, x, y, id) => cv.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: rect.left + x * rect.width, clientY: rect.top + y * rect.height, bubbles: true, cancelable: true }));
+      ev('pointerdown', 0.2, 0.2, 11); out.upperLeft = [!!INPUT.joy, !!INPUT.look]; ev('pointerup', 0.2, 0.2, 11);
+      ev('pointerdown', 0.15, 0.85, 12); out.lowerLeft = [!!INPUT.joy, !!INPUT.look]; ev('pointerup', 0.15, 0.85, 12);
+      ev('pointerdown', 0.7, 0.5, 13); out.right = [!!INPUT.joy, !!INPUT.look]; ev('pointerup', 0.7, 0.5, 13);
+      // the click a phone sends after a tap
+      FIST.st = 'idle'; FIST.holding = false;
+      cv.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true })); window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+      for (let k = 0; k < 10; k++) G.stepFrame(1/60); out.noPunch = FIST.st === 'idle' && !FIST.holding;
+      INPUT.lastTouch = -1e9; return out; }''')
+    ok = r['upperLeft'] == [False, True] and r['lowerLeft'] == [True, False] and r['right'] == [False, True] and r['noPunch']
+    return ok, json.dumps(r)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

@@ -104,10 +104,10 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   font-family: var(--f-ui); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .pb:active, .pb.down { background: rgba(231, 166, 64, 0.55); }
 .pb:disabled { opacity: 0.35; }
-#bFire { width: 82px; height: 82px; right: calc(22px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); font-size: 13px; border-color: rgba(231, 166, 64, 0.8); }
-#bAim { width: 64px; height: 64px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
+#bFire { width: 82px; height: 82px; right: calc(10px + env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); font-size: 13px; border-color: rgba(231, 166, 64, 0.8); }
+#bAim { width: 64px; height: 64px; right: calc(104px + env(safe-area-inset-right, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
 #bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); font-size: 8.8px; letter-spacing: -0.3px; }
-#bReload { width: 52px; height: 52px; right: calc(124px + env(safe-area-inset-right, 0px)); bottom: calc(104px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
+#bReload { width: 52px; height: 52px; right: calc(112px + env(safe-area-inset-right, 0px)); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
 .touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
@@ -119,9 +119,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #prompt kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px;
   background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
 .touch #prompt { display: none; }
-#bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(30px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
+#bUse { border-radius: 999px; height: 46px; padding: 0 18px; right: calc(184px + env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); font-size: 12px; border-color: rgba(231, 166, 64, 0.8); }
 #bUse[hidden], #bUse2[hidden] { display: none; }
-#bUse2 { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); font-size: 11px; }
+#bUse2 { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(184px + env(safe-area-inset-right, 0px)); bottom: calc(72px + env(safe-area-inset-bottom, 0px)); font-size: 11px; }
 
 /* toasts: short news at the top */
 #toasts { position: absolute; left: 50%; top: 54px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(560px, calc(100% - 32px)); }
@@ -149,7 +149,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #prompt3 { position: absolute; left: 50%; bottom: calc(18% + 40px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
 #prompt3 kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
 .touch #prompt3 { display: none; }
-#bTalk { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(198px + env(safe-area-inset-right, 0px)); bottom: calc(132px + env(safe-area-inset-bottom, 0px)); font-size: 11px; border-color: rgba(231, 166, 64, 0.8); }
+#bTalk { border-radius: 999px; height: 40px; padding: 0 16px; right: calc(184px + env(safe-area-inset-right, 0px)); bottom: calc(120px + env(safe-area-inset-bottom, 0px)); font-size: 11px; border-color: rgba(231, 166, 64, 0.8); }
 #bTalk[hidden] { display: none; }
 #talk { position: absolute; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 32px)); pointer-events: auto;
   display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 7px 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
@@ -277,7 +277,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 /* the quick wheel */
 #bagBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right, 0px)) + 112px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; }
 .touch #bagBtn { display: none; }
-#bBag { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
+#bBag { width: 52px; height: 52px; right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(108px + env(safe-area-inset-bottom, 0px)); font-size: 10px; }
 #wheel { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(12, 8, 5, 0.25), rgba(12, 8, 5, 0.6)); z-index: 3; pointer-events: auto; }
 #wheel[hidden] { display: none; }
 #wheelRing { position: relative; width: min(340px, 78vmin); height: min(340px, 78vmin); border-radius: 50%; background: rgba(22, 15, 10, 0.72); border: 1px solid var(--edge); }
@@ -391,8 +391,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
       <section data-pane="keys" class="mPane" hidden>
         <table class="mKeys">
-          <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>linker Daumen ziehen, weit = rennen</td></tr>
-          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>rechter Daumen ziehen</td></tr>
+          <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>unten links ziehen, weit = rennen</td></tr>
+          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>überall sonst wischen</td></tr>
           <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
           <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
           <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
