@@ -86,7 +86,7 @@ const BARKEEP = {
         if (/bier/.test(t)) return { say: r(['Ein Bier, kommt.', 'Bier. Gute Wahl.']), action: 'serve_beer' };
         if (/wasser/.test(t)) return { say: 'Wasser. Wie du meinst.', action: 'serve_water' };
         if (/\b(hallo|howdy|hi|hey|servus|moin|guten (tag|abend|morgen))\b/.test(t)) return { say: r(['Howdy.', 'Tag auch.']), action: 'nod' };
-        if (/name|wer bist/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
+        if (/name|wer bist|heißt du|heisst du/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
         if (/sheriff/.test(t)) return { say: 'Der Sheriff? Sitzt in seinem Büro und wartet auf Ärger.', action: 'none' };
         if (/stadt|dust creek|hier los/.test(t)) return { say: 'Dust Creek. Staub, Sonne und mein Whiskey.', action: 'none' };
         if (/danke/.test(t)) return { say: 'Schon gut.', action: 'nod' };
@@ -106,8 +106,8 @@ const BARKEEP = {
   serveFromTalk(id) {
     const it = ITEMS[id];
     if (!it) return;
-    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => SAY.show(this.npc, 'Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
-    if (INV.money < it.price) { setTimeout(() => SAY.show(this.npc, 'Das Geld reicht nicht, Freund.'), 2600); return; }
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => this.npc.speak('Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => this.npc.speak('Das Geld reicht nicht, Freund.'), 2600); return; }
     SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
     SHOP.buy(id, true);
   },
@@ -120,7 +120,7 @@ const BARKEEP = {
     const now = G.time;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; SAY.show(this.npc, L[Math.floor(Math.random() * L.length)]);
+    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)]);
     return true;
   },
   /* ---- orders: from SHOP ---- */

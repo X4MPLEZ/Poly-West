@@ -343,11 +343,16 @@ async def check_npc(g):
       const m0 = INV.money; return TALK.send('Hallo Hank, ein Bier bitte!').then(() => {
         out.reply = B.npc.said; out.log = (B.npc.talkLog || []).length;
         for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) G.stepFrame(1/60);
-        out.beer = GLASS.ready() && GLASS.obj.it.name; out.paid = m0 - INV.money; TALK.close(); out.closed = !TALK.open;
-        return out; }); }''')
+        out.beer = GLASS.ready() && GLASS.obj.it.name; out.paid = m0 - INV.money;
+        // the microphone window (simulated): connected, then a spoken line arrives and is sent by itself
+        MICWIN.onMsg({ data: { pw: 'mic-ready' }, source: null }); MICWIN.win = { closed: false, focus() {} };
+        TALK.start(); B.npc.talkT = 0; try { speechSynthesis.cancel(); } catch (e) {} const n0 = (B.npc.talkLog || []).length;
+        TALK.remoteHeard('Wie heißt du?', false); TALK.remoteHeard('Wie heißt du?', true);
+        return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.said;
+          TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null; return out; }); }); }''')
     ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.6 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
           and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5
-          and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'])
+          and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'] and r['remote'] == 2 and 'Hank' in r['remoteSaid'])
     return ok, json.dumps(r)
 
 async def check_voice(g):

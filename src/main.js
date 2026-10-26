@@ -86,6 +86,8 @@
   }
 
   async function boot() {
+    // the small microphone window (see ui/micwin.js): no game in it
+    if (location.hash === '#mic') { document.getElementById('boot').classList.add('gone'); MICWIN.run(); return; }
     try {
       if (document.fonts && document.fonts.load) {
         await Promise.race([
@@ -115,6 +117,7 @@
     MENU.init();
     SHOP.init();
     WHEEL.init();
+    MICWIN.init();
     POST.init();
     DEV.init();
     G.layout = layout;

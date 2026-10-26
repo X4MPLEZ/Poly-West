@@ -21,6 +21,7 @@ const TALK = {
     this.typeRow = $('talkType'); this.inp = $('talkIn'); this.hint = $('prompt3'); this.btn = $('bTalk');
     $('talkClose').addEventListener('click', () => this.close());
     $('talkSend').addEventListener('click', () => this.sendTyped());
+    $('talkMicWin').addEventListener('click', () => MICWIN.open());
     this.inp.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') { e.preventDefault(); this.sendTyped(); } else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
@@ -54,6 +55,7 @@ const TALK = {
   },
   can() { return !SIT.busy() || SIT.state === 'sit'; },
   update(dt) {
+    VOICE.tick();
     const t = this.can() && !DRUNK.blocked() && !MENU.open ? this.target() : null;
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
@@ -66,7 +68,7 @@ const TALK = {
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
     // dictated text: send when the dictation pauses
     if (this.dictT > 0) { this.dictT -= dt; if (this.dictT <= 0 && this.inp.value.trim() && !this.busy) this.sendTyped(); }
-    if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err') this.setState(n.name + 's Stimme lädt … ' + VOICE.pct() + ' %', 'idle');
+    if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err' && !this.dictT) this.setState((this.micOff ? '' : 'V: reden \u00b7 ') + VOICE.label(), 'idle');
     // face to face: the camera comes round over his shoulder, he turns to the one he talks to
     const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
     if (this.listening || this.busy || n.talkT > 0 || this.dictT > 0) {
@@ -86,13 +88,30 @@ const TALK = {
       this.el.hidden = false; document.getElementById('app').classList.add('talking');
       this.heardEl.textContent = ''; this.setState('');
     }
+    // the microphone window is connected: just talk (hands free while the strip is open)
+    if (MICWIN.connected()) { this.remoteMode(); return; }
     if (this.micOff) { this.typeMode(); return; }
     if (!this.busy) this.listen();
   },
+  remoteMode() {
+    this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
+    if (!this.busy) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+  },
+  micLinked() { if (this.open) this.start(); },
+  // words from the microphone window: used while the strip is open, not while the other one speaks
+  remoteHeard(text, final) {
+    if (!this.open || this.busy || !text) return;
+    const n = this.npc;
+    if (n.talkT > 0 || VOICE.speaking(n) || (window.speechSynthesis && speechSynthesis.speaking)) return;
+    this.heardEl.textContent = '\u201e' + text + (final ? '\u201c' : ' \u2026\u201c');
+    if (final) this.send(text);
+  },
+  remoteError(err) { if (this.open) this.setState('Mikrofon-Fenster: ' + err, 'err'); },
   // no microphone for the page: a text line that the system's dictation can fill
   typeMode() {
     this.typeRow.hidden = false;
-    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Sprich mit dem Mikrofon deiner Tastatur' : 'Sprechen: Windows+H \u00b7 oder tippen + Enter'), 'idle');
+    document.getElementById('talkMicWin').hidden = MICWIN.connected();
+    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Mikrofon der Tastatur oder 🎤-Fenster' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
     setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
   close() {
@@ -108,7 +127,7 @@ const TALK = {
   // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on
   key(e, k) {
     if (k === 'Escape') { this.close(); return true; }
-    if (k === 'v') { if (!e.repeat) { if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
+    if (k === 'v') { if (!e.repeat) { if (MICWIN.connected()) this.remoteMode(); else if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
     return false;
   },
   setState(s, cls) { this.state.textContent = s; this.el.dataset.st = cls || ''; },
@@ -191,13 +210,15 @@ const TALK = {
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
-    if (VOICE.ready()) { if (raw !== null) feed(raw, true); else VOICE.push(n, say); }
-    else if (VOICE.st === 'failed' || !VOICE.wanted()) this.speakBrowser(n, say);
-    this.setState(this.lastErr ? this.lastErr : this.micOff ? '' : 'V: weiterreden', this.lastErr ? 'err' : 'idle');
+    if (VOICE.ready() && raw !== null && queued > 0) feed(raw, true);   // the rest of what was already being spoken
+    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say); }
+    if (this.lastErr) this.setState(this.lastErr, 'err');
+    else if (MICWIN.connected()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+    else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
     this.lastErr = '';
     const act = String(out.action || 'none');
     n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
-    if (this.micOff && this.open) this.typeMode();
+    if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
   },
   async ask(n, text, onText) {
     const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
@@ -228,39 +249,6 @@ const TALK = {
       }
     }
     return null;
-  },
-  /* ---- the browser's own voices: only when the real voice cannot run here ----
-     The best fitting German voice of the device: preferred names, the right sex, natural (neural) ones first. */
-  MALE: /conrad|killian|florian|ralf|markus|stefan|hans|yannick|jonas|bernd|klaus|male|mann|männlich/i,
-  FEMALE: /katja|hedda|amala|louisa|seraphina|marlene|vicki|anna|petra|helena|sandy|shelley|google deutsch|female|frau|weiblich/i,
-  pickVoice(prof) {
-    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], de = vs.filter((v) => /^de/i.test(v.lang));
-    if (!de.length) return null;
-    const P = prof || { male: true };
-    const score = (v) => {
-      let s = 0;
-      if (P.prefer && P.prefer.some((x) => v.name.toLowerCase().includes(x))) s += 10;
-      const m = this.MALE.test(v.name), f = this.FEMALE.test(v.name);
-      if (P.male ? m && !f : f && !m) s += 5; else if (P.male ? f : m) s -= 5;
-      if (/natural|online|neural|premium|enhanced/i.test(v.name)) s += 3;
-      if (/de-DE/i.test(v.lang)) s += 1;
-      return s;
-    };
-    return de.slice().sort((a, b) => score(b) - score(a))[0];
-  },
-  speakBrowser(n, text) {
-    if (!SETTINGS.v.voice || !window.speechSynthesis || !SFX.on) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const P = n.voiceProfile || {}, v = this.pickVoice(P), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
-      u.lang = 'de-DE'; if (v) u.voice = v;
-      u.pitch = clamp((P.browserPitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
-      u.rate = P.rate || 1; u.volume = clamp((SETTINGS.v.volume || 30) / 60, 0.2, 1);
-      u.onstart = () => { n.talkT = 30; };
-      u.onend = () => { n.talkT = 0; };
-      speechSynthesis.speak(u);
-    } catch (e) { /* no voice */ }
   }
 };
 SAVE.part('talk', () => {

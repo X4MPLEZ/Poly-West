@@ -44,5 +44,6 @@ audio/ambient.js
 ui/hud.js
 ui/menu.js
 ui/wheel.js
+ui/micwin.js
 dev/devtools.js
 main.js

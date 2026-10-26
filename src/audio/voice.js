@@ -5,7 +5,8 @@
    the next sentence is computed while the one before plays, so speech starts after the first sentence.
    Every person has a voice profile: npc.voiceProfile = { piper: 'thorsten', pitch, length, noise }. Pitch is a
    playback-rate shift; the model is asked for a matching tempo so the pace stays as set by `length`.
-   If this cannot run here (no workers, no wasm, files missing), the browser's own voices are used (TALK.speakBrowser). */
+   Whatever a person says goes through VOICE.line(npc, text): the real voice when it is ready, otherwise (still
+   loading, or not possible here) the browser's own voice at once, so nobody ever stays silent. */
 function VOICE_WORKER() {
   let sess = null, phon = null, cfg = null, pending = null, readyRes = null;
   const ready = new Promise((r) => { readyRes = r; });
@@ -64,14 +65,14 @@ function VOICE_WORKER() {
 }
 
 const VOICE = {
-  st: 'off', why: '', got: 0, worker: null, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
+  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
   wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
   ready() { return this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
   load() {
     if (this.st !== 'off' || !this.wanted()) return;
-    this.st = 'loading'; this.got = 0; this.parts = {};
+    this.st = 'loading'; this.got = 0; this.parts = {}; this.startAt = this.lastProg = performance.now();
     try {
       const base = new URL('voice/', location.href).href;
       if (!/^https?:/.test(base)) throw new Error('nur über http(s) möglich');
@@ -91,11 +92,67 @@ const VOICE = {
     this.waits = {}; this.q = [];
   },
   msg(m) {
-    if (m.t === 'progress') { this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
+    if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
     else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
+  },
+  // called every frame: a load that stops moving is given up (and said why)
+  tick() {
+    if (this.st !== 'loading') return;
+    const now = performance.now();
+    if (now - this.lastProg > 25000) this.fail('Laden hängt bei ' + this.pct() + ' %');
+    else if (now - this.startAt > 150000) this.fail('Laden dauert zu lange (' + this.pct() + ' %)');
+  },
+  // for the player: which voice is speaking
+  label() {
+    if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
+    if (this.st === 'ready') return 'echte Stimme';
+    if (this.st === 'loading') return 'echte Stimme lädt ' + this.pct() + ' %';
+    if (this.st === 'failed') return 'Browser-Stimme (' + this.why + ')';
+    return 'Browser-Stimme';
+  },
+  // a person says something: every word is heard
+  line(npc, text) {
+    if (!SETTINGS.v.voice || !text || text === '\u2026') return;
+    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s); }
+    else this.browser(npc, text);
+  },
+  sentences(text) { return (text.match(/[^.!?\u2026]+[.!?\u2026]*["'\u201c\u201d)]*\s*/g) || [text]).map((s) => s.trim()).filter(Boolean); },
+  /* the browser's own voices: the best fitting German one of the device (preferred names, the right sex,
+     natural/neural ones first); pitch and pace from the profile */
+  MALE: /conrad|killian|florian|ralf|markus|stefan|hans|yannick|jonas|bernd|klaus|male|mann|männlich/i,
+  FEMALE: /katja|hedda|amala|louisa|seraphina|marlene|vicki|anna|petra|helena|sandy|shelley|google deutsch|female|frau|weiblich/i,
+  pickVoice(prof) {
+    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], de = vs.filter((v) => /^de/i.test(v.lang));
+    if (!de.length) return null;
+    const P = prof || { male: true };
+    const score = (v) => {
+      let s = 0;
+      if (P.prefer && P.prefer.some((x) => v.name.toLowerCase().includes(x))) s += 10;
+      const m = this.MALE.test(v.name), f = this.FEMALE.test(v.name);
+      if (P.male !== false ? m && !f : f && !m) s += 5; else if (P.male !== false ? f : m) s -= 5;
+      if (/natural|online|neural|premium|enhanced/i.test(v.name)) s += 3;
+      if (/de-DE/i.test(v.lang)) s += 1;
+      return s;
+    };
+    return de.slice().sort((a, b) => score(b) - score(a))[0];
+  },
+  browser(npc, text) {
+    if (!window.speechSynthesis || !SFX.on) return;
+    try {
+      const u = new SpeechSynthesisUtterance(this.clean(text));
+      const P = npc.voiceProfile || {}, v = this.pickVoice(P), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
+      u.lang = 'de-DE'; if (v) u.voice = v;
+      // only a female voice for a man on this device: lower it further (and the other way round)
+      u.pitch = clamp((P.browserPitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
+      u.rate = P.rate || 1; u.volume = clamp((SETTINGS.v.volume || 30) / 50, 0.3, 1);
+      u.onstart = () => { npc.talkT = 30; };
+      u.onend = () => { npc.talkT = 0; };
+      u.onerror = (e) => { this.browserErr = (e && e.error) || 'Fehler'; npc.talkT = 0; };
+      speechSynthesis.speak(u);
+    } catch (e) { this.browserErr = String(e); }
   },
   synth(text, prof) {
     return new Promise((res, rej) => {
@@ -117,6 +174,7 @@ const VOICE = {
     this.q.push(job); this.pump();
   },
   stop(npc) {
+    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     this.q = this.q.filter((j) => j.npc !== npc);
     if (this.playing && this.playing.npc === npc) { try { this.playing.src.stop(); } catch (e) { /* ignore */ } }
   },

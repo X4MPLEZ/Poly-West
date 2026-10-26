@@ -301,7 +301,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     <section id="talk" hidden aria-label="Gespräch">
       <button id="talkMic" type="button" aria-pressed="false" aria-label="Sprechen (V)" title="Sprechen (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
       <div id="talkMid"><b id="talkName">Hank</b><span id="talkState" aria-live="polite"></span><p id="talkHeard"></p>
-        <div id="talkType" hidden><input id="talkIn" type="text" maxlength="240" placeholder="Sag etwas …" autocomplete="off" enterkeyhint="send" aria-label="Was du sagst"><button id="talkSend" type="button">Sagen</button></div></div>
+        <div id="talkType" hidden><input id="talkIn" type="text" maxlength="240" placeholder="Sag etwas …" autocomplete="off" enterkeyhint="send" aria-label="Was du sagst"><button id="talkSend" type="button">Sagen</button><button id="talkMicWin" type="button" title="Ein eigenes Fenster, das für das Spiel zuhört">🎤 Fenster</button></div></div>
       <button id="talkClose" type="button" aria-label="Gespräch beenden (Esc)">×</button>
     </section>
     <div id="toasts" aria-live="polite"></div>
@@ -4876,7 +4876,8 @@ const SND_DATA = {
    the next sentence is computed while the one before plays, so speech starts after the first sentence.
    Every person has a voice profile: npc.voiceProfile = { piper: 'thorsten', pitch, length, noise }. Pitch is a
    playback-rate shift; the model is asked for a matching tempo so the pace stays as set by `length`.
-   If this cannot run here (no workers, no wasm, files missing), the browser's own voices are used (TALK.speakBrowser). */
+   Whatever a person says goes through VOICE.line(npc, text): the real voice when it is ready, otherwise (still
+   loading, or not possible here) the browser's own voice at once, so nobody ever stays silent. */
 function VOICE_WORKER() {
   let sess = null, phon = null, cfg = null, pending = null, readyRes = null;
   const ready = new Promise((r) => { readyRes = r; });
@@ -4935,14 +4936,14 @@ function VOICE_WORKER() {
 }
 
 const VOICE = {
-  st: 'off', why: '', got: 0, worker: null, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
+  st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, rate: 16000, q: [], playing: null, nextId: 1, waits: {}, EXPECT: 46e6,
   wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
   ready() { return this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
   load() {
     if (this.st !== 'off' || !this.wanted()) return;
-    this.st = 'loading'; this.got = 0; this.parts = {};
+    this.st = 'loading'; this.got = 0; this.parts = {}; this.startAt = this.lastProg = performance.now();
     try {
       const base = new URL('voice/', location.href).href;
       if (!/^https?:/.test(base)) throw new Error('nur über http(s) möglich');
@@ -4962,11 +4963,67 @@ const VOICE = {
     this.waits = {}; this.q = [];
   },
   msg(m) {
-    if (m.t === 'progress') { this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
+    if (m.t === 'progress') { this.lastProg = performance.now(); this.parts[m.part] = m.n; let s = 0; for (const k in this.parts) s += this.parts[k]; this.got = s; }
     else if (m.t === 'ready') { this.st = 'ready'; this.rate = m.rate; this.pump(); }
     else if (m.t === 'audio') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.res(m.pcm); }
     else if (m.t === 'error') { const w = this.waits[m.id]; delete this.waits[m.id]; if (w) w.rej(new Error(m.msg)); }
     else if (m.t === 'fail') this.fail(m.msg);
+  },
+  // called every frame: a load that stops moving is given up (and said why)
+  tick() {
+    if (this.st !== 'loading') return;
+    const now = performance.now();
+    if (now - this.lastProg > 25000) this.fail('Laden hängt bei ' + this.pct() + ' %');
+    else if (now - this.startAt > 150000) this.fail('Laden dauert zu lange (' + this.pct() + ' %)');
+  },
+  // for the player: which voice is speaking
+  label() {
+    if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
+    if (this.st === 'ready') return 'echte Stimme';
+    if (this.st === 'loading') return 'echte Stimme lädt ' + this.pct() + ' %';
+    if (this.st === 'failed') return 'Browser-Stimme (' + this.why + ')';
+    return 'Browser-Stimme';
+  },
+  // a person says something: every word is heard
+  line(npc, text) {
+    if (!SETTINGS.v.voice || !text || text === '\u2026') return;
+    if (this.ready()) { for (const s of this.sentences(text)) this.push(npc, s); }
+    else this.browser(npc, text);
+  },
+  sentences(text) { return (text.match(/[^.!?\u2026]+[.!?\u2026]*["'\u201c\u201d)]*\s*/g) || [text]).map((s) => s.trim()).filter(Boolean); },
+  /* the browser's own voices: the best fitting German one of the device (preferred names, the right sex,
+     natural/neural ones first); pitch and pace from the profile */
+  MALE: /conrad|killian|florian|ralf|markus|stefan|hans|yannick|jonas|bernd|klaus|male|mann|männlich/i,
+  FEMALE: /katja|hedda|amala|louisa|seraphina|marlene|vicki|anna|petra|helena|sandy|shelley|google deutsch|female|frau|weiblich/i,
+  pickVoice(prof) {
+    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], de = vs.filter((v) => /^de/i.test(v.lang));
+    if (!de.length) return null;
+    const P = prof || { male: true };
+    const score = (v) => {
+      let s = 0;
+      if (P.prefer && P.prefer.some((x) => v.name.toLowerCase().includes(x))) s += 10;
+      const m = this.MALE.test(v.name), f = this.FEMALE.test(v.name);
+      if (P.male !== false ? m && !f : f && !m) s += 5; else if (P.male !== false ? f : m) s -= 5;
+      if (/natural|online|neural|premium|enhanced/i.test(v.name)) s += 3;
+      if (/de-DE/i.test(v.lang)) s += 1;
+      return s;
+    };
+    return de.slice().sort((a, b) => score(b) - score(a))[0];
+  },
+  browser(npc, text) {
+    if (!window.speechSynthesis || !SFX.on) return;
+    try {
+      const u = new SpeechSynthesisUtterance(this.clean(text));
+      const P = npc.voiceProfile || {}, v = this.pickVoice(P), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
+      u.lang = 'de-DE'; if (v) u.voice = v;
+      // only a female voice for a man on this device: lower it further (and the other way round)
+      u.pitch = clamp((P.browserPitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
+      u.rate = P.rate || 1; u.volume = clamp((SETTINGS.v.volume || 30) / 50, 0.3, 1);
+      u.onstart = () => { npc.talkT = 30; };
+      u.onend = () => { npc.talkT = 0; };
+      u.onerror = (e) => { this.browserErr = (e && e.error) || 'Fehler'; npc.talkT = 0; };
+      speechSynthesis.speak(u);
+    } catch (e) { this.browserErr = String(e); }
   },
   synth(text, prof) {
     return new Promise((res, rej) => {
@@ -4988,6 +5045,7 @@ const VOICE = {
     this.q.push(job); this.pump();
   },
   stop(npc) {
+    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     this.q = this.q.filter((j) => j.npc !== npc);
     if (this.playing && this.playing.npc === npc) { try { this.playing.src.stop(); } catch (e) { /* ignore */ } }
   },
@@ -6926,6 +6984,8 @@ class NPC {
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
+  // say something out loud: the bubble and the voice
+  speak(text, dur) { SAY.show(this, text, dur); VOICE.line(this, text); }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
@@ -7156,7 +7216,7 @@ const BARKEEP = {
         if (/bier/.test(t)) return { say: r(['Ein Bier, kommt.', 'Bier. Gute Wahl.']), action: 'serve_beer' };
         if (/wasser/.test(t)) return { say: 'Wasser. Wie du meinst.', action: 'serve_water' };
         if (/\b(hallo|howdy|hi|hey|servus|moin|guten (tag|abend|morgen))\b/.test(t)) return { say: r(['Howdy.', 'Tag auch.']), action: 'nod' };
-        if (/name|wer bist/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
+        if (/name|wer bist|heißt du|heisst du/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
         if (/sheriff/.test(t)) return { say: 'Der Sheriff? Sitzt in seinem Büro und wartet auf Ärger.', action: 'none' };
         if (/stadt|dust creek|hier los/.test(t)) return { say: 'Dust Creek. Staub, Sonne und mein Whiskey.', action: 'none' };
         if (/danke/.test(t)) return { say: 'Schon gut.', action: 'nod' };
@@ -7176,8 +7236,8 @@ const BARKEEP = {
   serveFromTalk(id) {
     const it = ITEMS[id];
     if (!it) return;
-    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => SAY.show(this.npc, 'Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
-    if (INV.money < it.price) { setTimeout(() => SAY.show(this.npc, 'Das Geld reicht nicht, Freund.'), 2600); return; }
+    if (id !== 'water' && DRUNK.level > 0.85) { setTimeout(() => this.npc.speak('Nein. Für dich gibt’s nur noch Wasser.'), 2600); return; }
+    if (INV.money < it.price) { setTimeout(() => this.npc.speak('Das Geld reicht nicht, Freund.'), 2600); return; }
     SHOP.counter = this.C; SHOP.seat = SIT.state === 'sit' && SIT.seat && SIT.seat.bar ? SIT.seat : null;
     SHOP.buy(id, true);
   },
@@ -7190,7 +7250,7 @@ const BARKEEP = {
     const now = G.time;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     this.cool[kind] = now;
-    const L = this.LINES[kind]; SAY.show(this.npc, L[Math.floor(Math.random() * L.length)]);
+    const L = this.LINES[kind]; this.npc.speak(L[Math.floor(Math.random() * L.length)]);
     return true;
   },
   /* ---- orders: from SHOP ---- */
@@ -7488,6 +7548,7 @@ const TALK = {
     this.typeRow = $('talkType'); this.inp = $('talkIn'); this.hint = $('prompt3'); this.btn = $('bTalk');
     $('talkClose').addEventListener('click', () => this.close());
     $('talkSend').addEventListener('click', () => this.sendTyped());
+    $('talkMicWin').addEventListener('click', () => MICWIN.open());
     this.inp.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') { e.preventDefault(); this.sendTyped(); } else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
@@ -7521,6 +7582,7 @@ const TALK = {
   },
   can() { return !SIT.busy() || SIT.state === 'sit'; },
   update(dt) {
+    VOICE.tick();
     const t = this.can() && !DRUNK.blocked() && !MENU.open ? this.target() : null;
     const show = !!t && !this.open;
     if (show !== this.shown) { this.shown = show; this.hint.hidden = !show; this.btn.hidden = !show; }
@@ -7533,7 +7595,7 @@ const TALK = {
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
     // dictated text: send when the dictation pauses
     if (this.dictT > 0) { this.dictT -= dt; if (this.dictT <= 0 && this.inp.value.trim() && !this.busy) this.sendTyped(); }
-    if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err') this.setState(n.name + 's Stimme lädt … ' + VOICE.pct() + ' %', 'idle');
+    if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err' && !this.dictT) this.setState((this.micOff ? '' : 'V: reden \u00b7 ') + VOICE.label(), 'idle');
     // face to face: the camera comes round over his shoulder, he turns to the one he talks to
     const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
     if (this.listening || this.busy || n.talkT > 0 || this.dictT > 0) {
@@ -7553,13 +7615,30 @@ const TALK = {
       this.el.hidden = false; document.getElementById('app').classList.add('talking');
       this.heardEl.textContent = ''; this.setState('');
     }
+    // the microphone window is connected: just talk (hands free while the strip is open)
+    if (MICWIN.connected()) { this.remoteMode(); return; }
     if (this.micOff) { this.typeMode(); return; }
     if (!this.busy) this.listen();
   },
+  remoteMode() {
+    this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
+    if (!this.busy) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+  },
+  micLinked() { if (this.open) this.start(); },
+  // words from the microphone window: used while the strip is open, not while the other one speaks
+  remoteHeard(text, final) {
+    if (!this.open || this.busy || !text) return;
+    const n = this.npc;
+    if (n.talkT > 0 || VOICE.speaking(n) || (window.speechSynthesis && speechSynthesis.speaking)) return;
+    this.heardEl.textContent = '\u201e' + text + (final ? '\u201c' : ' \u2026\u201c');
+    if (final) this.send(text);
+  },
+  remoteError(err) { if (this.open) this.setState('Mikrofon-Fenster: ' + err, 'err'); },
   // no microphone for the page: a text line that the system's dictation can fill
   typeMode() {
     this.typeRow.hidden = false;
-    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Sprich mit dem Mikrofon deiner Tastatur' : 'Sprechen: Windows+H \u00b7 oder tippen + Enter'), 'idle');
+    document.getElementById('talkMicWin').hidden = MICWIN.connected();
+    if (!this.busy) this.setState(this.micWhy || (GUN.touch ? 'Mikrofon der Tastatur oder 🎤-Fenster' : 'Mikrofon: 🎤-Fenster \u00b7 oder Windows+H \u00b7 oder tippen'), 'idle');
     setTimeout(() => { try { this.inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 30);
   },
   close() {
@@ -7575,7 +7654,7 @@ const TALK = {
   // keys while talking (not while the text line has the focus): V = speak again, Esc = end; the rest plays on
   key(e, k) {
     if (k === 'Escape') { this.close(); return true; }
-    if (k === 'v') { if (!e.repeat) { if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
+    if (k === 'v') { if (!e.repeat) { if (MICWIN.connected()) this.remoteMode(); else if (this.micOff) this.typeMode(); else this.toggleListen(); } return true; }
     return false;
   },
   setState(s, cls) { this.state.textContent = s; this.el.dataset.st = cls || ''; },
@@ -7658,13 +7737,15 @@ const TALK = {
     n.talkLog.push({ who: 'n', text: say });
     if (n.talkLog.length > 24) n.talkLog.splice(0, n.talkLog.length - 24);
     SAY.show(n, say);
-    if (VOICE.ready()) { if (raw !== null) feed(raw, true); else VOICE.push(n, say); }
-    else if (VOICE.st === 'failed' || !VOICE.wanted()) this.speakBrowser(n, say);
-    this.setState(this.lastErr ? this.lastErr : this.micOff ? '' : 'V: weiterreden', this.lastErr ? 'err' : 'idle');
+    if (VOICE.ready() && raw !== null && queued > 0) feed(raw, true);   // the rest of what was already being spoken
+    else if (SETTINGS.v.voice) { VOICE.stop(n); VOICE.line(n, say); }
+    if (this.lastErr) this.setState(this.lastErr, 'err');
+    else if (MICWIN.connected()) this.setState('Ich höre \u2026 sprich einfach \u00b7 ' + VOICE.label(), 'listen');
+    else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
     this.lastErr = '';
     const act = String(out.action || 'none');
     n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
-    if (this.micOff && this.open) this.typeMode();
+    if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
   },
   async ask(n, text, onText) {
     const P = n.persona, hist = (n.talkLog || []).slice(-13, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
@@ -7695,39 +7776,6 @@ const TALK = {
       }
     }
     return null;
-  },
-  /* ---- the browser's own voices: only when the real voice cannot run here ----
-     The best fitting German voice of the device: preferred names, the right sex, natural (neural) ones first. */
-  MALE: /conrad|killian|florian|ralf|markus|stefan|hans|yannick|jonas|bernd|klaus|male|mann|männlich/i,
-  FEMALE: /katja|hedda|amala|louisa|seraphina|marlene|vicki|anna|petra|helena|sandy|shelley|google deutsch|female|frau|weiblich/i,
-  pickVoice(prof) {
-    const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], de = vs.filter((v) => /^de/i.test(v.lang));
-    if (!de.length) return null;
-    const P = prof || { male: true };
-    const score = (v) => {
-      let s = 0;
-      if (P.prefer && P.prefer.some((x) => v.name.toLowerCase().includes(x))) s += 10;
-      const m = this.MALE.test(v.name), f = this.FEMALE.test(v.name);
-      if (P.male ? m && !f : f && !m) s += 5; else if (P.male ? f : m) s -= 5;
-      if (/natural|online|neural|premium|enhanced/i.test(v.name)) s += 3;
-      if (/de-DE/i.test(v.lang)) s += 1;
-      return s;
-    };
-    return de.slice().sort((a, b) => score(b) - score(a))[0];
-  },
-  speakBrowser(n, text) {
-    if (!SETTINGS.v.voice || !window.speechSynthesis || !SFX.on) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const P = n.voiceProfile || {}, v = this.pickVoice(P), wrongSex = v && (P.male !== false ? this.FEMALE.test(v.name) && !this.MALE.test(v.name) : this.MALE.test(v.name));
-      u.lang = 'de-DE'; if (v) u.voice = v;
-      u.pitch = clamp((P.browserPitch || 1) * (wrongSex ? (P.male !== false ? 0.75 : 1.3) : 1), 0.1, 2);
-      u.rate = P.rate || 1; u.volume = clamp((SETTINGS.v.volume || 30) / 60, 0.2, 1);
-      u.onstart = () => { n.talkT = 30; };
-      u.onend = () => { n.talkT = 0; };
-      speechSynthesis.speak(u);
-    } catch (e) { /* no voice */ }
   }
 };
 SAVE.part('talk', () => {
@@ -8416,6 +8464,81 @@ const WHEEL = {
   pad(x, y) { if (!this.open) return; if (Math.hypot(x, y) > 0.5) { this.aim.set(x * 100, y * 100); this.pick(); } }
 };
 
+// ==== ui/micwin.js ====
+/* ---------- the microphone window ----------
+   claude.ai shows the artifact inside a frame that is not allowed to use the microphone. A window the game opens
+   itself (the same page with #mic) is a page of its own, outside that frame, where the browser asks for the
+   microphone the normal way. That small window listens all the time (speech recognition, German) and passes
+   what it hears to the game (postMessage to the window that opened it). The game decides what to use: while you
+   are talking with someone, and not while they are speaking (so they never answer themselves).
+   Game side: MICWIN.open() (from a click), connected(); the window side: MICWIN.run() instead of the game. */
+const MICWIN = {
+  win: null, ok: false,
+  init() { window.addEventListener('message', (e) => this.onMsg(e)); },
+  open() {
+    if (this.connected()) { try { this.win.focus(); } catch (e) { /* ignore */ } return true; }
+    try { this.win = window.open(location.href.split('#')[0] + '#mic', 'polywest-mic', 'popup,width=400,height=320'); } catch (e) { this.win = null; }
+    if (!this.win) { TOAST.show('Das Fenster wurde blockiert: Pop-ups für diese Seite erlauben und nochmal.', 'long'); return false; }
+    TOAST.show('Im neuen Fenster „Mikrofon einschalten“ drücken.', 'long');
+    return true;
+  },
+  connected() { return this.ok && !!this.win && !this.win.closed; },
+  onMsg(e) {
+    const d = e.data;
+    if (!d || typeof d !== 'object' || typeof d.pw !== 'string') return;
+    if (this.win && e.source && e.source !== this.win) return;
+    if (d.pw === 'mic-ready') { if (e.source) this.win = e.source; this.ok = true; TOAST.show('Mikrofon verbunden. Bei Hank: V drücken und einfach sprechen.', 'long'); TALK.micLinked(); }
+    else if (d.pw === 'mic-closed') { this.ok = false; TALK.micLinked(); }
+    else if (d.pw === 'heard') TALK.remoteHeard(String(d.text || '').slice(0, 300), !!d.final);
+    else if (d.pw === 'mic-error') TALK.remoteError(String(d.error || ''));
+  },
+  /* ---- inside the small window ---- */
+  run() {
+    document.title = 'Poly West – Mikrofon';
+    document.body.innerHTML = '<main id="mw"><h1>Mikrofon für Poly West</h1><button id="mwGo" type="button">Mikrofon einschalten</button>' +
+      '<p id="mwSt"></p><p id="mwHeard"></p></main>';
+    const st = document.createElement('style');
+    st.textContent = 'body{margin:0;background:#110b07;color:#f3e8d6;font:16px "Barlow Semi Condensed",system-ui,sans-serif}#mw{padding:18px}' +
+      'h1{font:400 20px Rye,Georgia,serif;color:#e7a640;margin:0 0 12px}button{font:700 16px inherit;padding:12px 18px;border-radius:12px;border:2px solid #e7a640;background:rgba(231,166,64,.2);color:#f3e8d6}' +
+      'button[data-on]{background:#ff7a66;border-color:#ff7a66;color:#1b120b}#mwSt{color:#bba88c;font-size:14px;line-height:1.35}#mwHeard{font-weight:600;font-size:17px;min-height:1.4em}';
+    document.head.appendChild(st);
+    const $ = (id) => document.getElementById(id), say = (t) => { $('mwSt').textContent = t; };
+    const game = window.opener, SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const send = (m) => { try { game.postMessage(m, '*'); } catch (e) { say('Keine Verbindung zum Spiel mehr. Dieses Fenster schließen und im Spiel neu öffnen.'); } };
+    if (!SR) { say('Dieser Browser kann keine Sprache erkennen. Chrome oder Edge können es.'); $('mwGo').disabled = true; return; }
+    if (!game) { say('Kein Spiel gefunden. Bitte im Spiel bei Hank auf „🎤 Fenster“ drücken.'); $('mwGo').disabled = true; return; }
+    let rec = null, on = false;
+    const start = () => {
+      rec = new SR(); rec.lang = 'de-DE'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i], text = r[0].transcript.trim();
+          if (!text) continue;
+          $('mwHeard').textContent = '„' + text + (r.isFinal ? '“' : ' …“');
+          send({ pw: 'heard', text, final: r.isFinal });
+        }
+      };
+      rec.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        say('Fehler: ' + e.error); send({ pw: 'mic-error', error: e.error });
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { on = false; $('mwGo').removeAttribute('data-on'); $('mwGo').textContent = 'Mikrofon einschalten'; }
+      };
+      // recognition stops by itself now and then: start it again while switched on
+      rec.onend = () => { if (on) setTimeout(() => { if (on) try { rec.start(); } catch (e) { /* already running */ } }, 250); };
+      rec.start();
+    };
+    $('mwGo').addEventListener('click', () => {
+      if (on) { on = false; try { rec.stop(); } catch (e) { /* ignore */ } $('mwGo').removeAttribute('data-on'); $('mwGo').textContent = 'Mikrofon einschalten'; say('Aus.'); send({ pw: 'mic-closed' }); return; }
+      on = true; $('mwGo').setAttribute('data-on', ''); $('mwGo').textContent = 'Mikrofon ausschalten';
+      try { start(); } catch (e) { say('Startet nicht: ' + e.message); return; }
+      say('Bereit. Zurück ins Spiel: bei Hank V drücken (oder „Reden“) und einfach sprechen. Dieses Fenster offen lassen, es darf im Hintergrund sein.');
+      send({ pw: 'mic-ready' });
+    });
+    window.addEventListener('beforeunload', () => send({ pw: 'mic-closed' }));
+    say('Dieses Fenster hört für das Spiel zu, denn im claude.ai-Rahmen ist das Mikrofon gesperrt.');
+  }
+};
+
 // ==== dev/devtools.js ====
 /* ---------- developer tools (F2, or the pause menu once switched on in the settings) ----------
    A small panel: where you are and what the renderer costs, teleport to any place, a free-flying camera,
@@ -8522,7 +8645,8 @@ const DEV = {
       `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
       `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
       `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
-      `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`
+      `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`,
+      `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
     ];
     this.info.textContent = lines.join('\n');
   },
@@ -8666,6 +8790,8 @@ const DEV = {
   }
 
   async function boot() {
+    // the small microphone window (see ui/micwin.js): no game in it
+    if (location.hash === '#mic') { document.getElementById('boot').classList.add('gone'); MICWIN.run(); return; }
     try {
       if (document.fonts && document.fonts.load) {
         await Promise.race([
@@ -8695,6 +8821,7 @@ const DEV = {
     MENU.init();
     SHOP.init();
     WHEEL.init();
+    MICWIN.init();
     POST.init();
     DEV.init();
     G.layout = layout;
