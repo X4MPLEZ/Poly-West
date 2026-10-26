@@ -118,7 +118,19 @@ async def check_gun(g):
       const empty = GUN.ammo; GUN.setAim(false); GUN.pressReload(); for (let k = 0; k < 400 && GUN.reload; k++) G.stepFrame(1/60);
       const after = [GUN.ammo, GUN.reserve]; GUN.toggleHolster(); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
       return { drawn, empty, after, end: GUN.state }; }''')
-    return r['drawn'] == 'drawn' and r['empty'] == 0 and r['after'][0] == 6 and r['end'] == 'holster', json.dumps(r)
+    if not (r['drawn'] == 'drawn' and r['empty'] == 0 and r['after'][0] == 6 and r['end'] == 'holster'): return False, json.dumps(r)
+    # reload while holstered: draw, reload, put it back
+    h = await g.js('''() => { GUN.ammo = 2; GUN.reserve = 12; GUN.pressReload(); let saw = false;
+      for (let k = 0; k < 600; k++) { G.stepFrame(1/60); if (GUN.reload) saw = true; if (saw && GUN.state === 'holster') break; }
+      return { saw, ammo: GUN.ammo, st: GUN.state }; }''')
+    # touch aim button: press = draw and aim, press again = straight back into the holster (also mid-draw)
+    t = await g.js('''() => { GUN.aimButton(); for (let k = 0; k < 40; k++) G.stepFrame(1/60);
+      const a = [GUN.state, GUN.wantAim, HUD.$('bAim').textContent];
+      GUN.aimButton(); const b = HUD.$('bAim').textContent; for (let k = 0; k < 40; k++) G.stepFrame(1/60); const c = GUN.state;
+      GUN.aimButton(); for (let k = 0; k < 15; k++) G.stepFrame(1/60); GUN.aimButton(); for (let k = 0; k < 70; k++) G.stepFrame(1/60);
+      return { a, b: HUD.$('bAim').textContent, c, d: GUN.state }; }''')
+    ok = h['saw'] and h['ammo'] == 6 and h['st'] == 'holster' and t['a'][1] and t['a'][2] == 'Wegstecken' and t['c'] == 'holster' and t['d'] == 'holster' and t['b'] == 'Zielen'
+    return ok, json.dumps([h, t])
 
 async def check_doors(g):
     await g.js(RESET)

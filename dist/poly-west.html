@@ -106,7 +106,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .pb:disabled { opacity: 0.35; }
 #bFire { width: 82px; height: 82px; right: calc(22px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); font-size: 13px; border-color: rgba(231, 166, 64, 0.8); }
 #bAim { width: 64px; height: 64px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
-#bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); }
+#bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); font-size: 8.8px; letter-spacing: -0.3px; }
 #bReload { width: 52px; height: 52px; right: calc(36px + env(safe-area-inset-right, 0px)); bottom: calc(122px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
 .touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
@@ -5042,9 +5042,17 @@ const GUN = {
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
+  // touch aim button: first press draws and aims, the second puts the revolver straight away
+  aimButton() {
+    if (!this.wantAim) { this.setAim(true); return; }
+    this.wantAim = false; this.hipT = 0;
+    if (this.state === 'draw') { if (this.t < 0.17) { this.state = 'holster'; this.inHand = false; } else this.holsterQ = true; }
+    else if (this.state === 'drawn' || this.state === 'reload') this.toggleHolster();
+  },
   setAim(on) {
     if (on && (SIT.busy() || DRINK.busy() || DRUNK.blocked())) return;
     this.wantAim = on;
+    if (on) this.holsterQ = false;
     if (on) {
       if (this.state === 'holster') this.startDraw();
       if (this.reload && this.ammo > 0) this.reload.stop = true;
@@ -5080,7 +5088,7 @@ const GUN = {
     else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
-      if (this.t > 0.42) { this.state = 'drawn'; if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
+      if (this.t > 0.42) { this.state = 'drawn'; if (this.holsterQ) { this.holsterQ = false; this.toggleHolster(); } else if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
     } else if (this.state === 'holstering') {
       if (this.inHand && this.t > 0.26) { this.inHand = false; GSFX.leather(); }
       if (this.t > 0.45) this.state = 'holster';
@@ -5302,7 +5310,8 @@ const GUN = {
       HUD.$('bReload').disabled = this.ammo >= 6 || this.reserve <= 0;
       HUD.$('bFire').textContent = this.state === 'holster' ? 'Schlag' : 'Feuer';
     }
-    HUD.$('bAim').setAttribute('aria-pressed', this.wantAim ? 'true' : 'false');
+    const ba = HUD.$('bAim');
+    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); ba.textContent = this.wantAim ? 'Wegstecken' : 'Zielen'; }
   }
 };
 
@@ -6968,7 +6977,7 @@ function initGunPad(onAction) {
   on('bFire', () => { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); });
   const bf = document.getElementById('bFire');
   for (const ev of ['pointerup', 'pointercancel']) bf.addEventListener(ev, () => FIST.up());
-  on('bAim', () => GUN.setAim(!GUN.wantAim));
+  on('bAim', () => GUN.aimButton());
   on('bReload', () => GUN.pressReload());
 
 }

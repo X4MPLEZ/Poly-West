@@ -74,9 +74,17 @@ const GUN = {
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
+  // touch aim button: first press draws and aims, the second puts the revolver straight away
+  aimButton() {
+    if (!this.wantAim) { this.setAim(true); return; }
+    this.wantAim = false; this.hipT = 0;
+    if (this.state === 'draw') { if (this.t < 0.17) { this.state = 'holster'; this.inHand = false; } else this.holsterQ = true; }
+    else if (this.state === 'drawn' || this.state === 'reload') this.toggleHolster();
+  },
   setAim(on) {
     if (on && (SIT.busy() || DRINK.busy() || DRUNK.blocked())) return;
     this.wantAim = on;
+    if (on) this.holsterQ = false;
     if (on) {
       if (this.state === 'holster') this.startDraw();
       if (this.reload && this.ammo > 0) this.reload.stop = true;
@@ -112,7 +120,7 @@ const GUN = {
     else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
-      if (this.t > 0.42) { this.state = 'drawn'; if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
+      if (this.t > 0.42) { this.state = 'drawn'; if (this.holsterQ) { this.holsterQ = false; this.toggleHolster(); } else if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
     } else if (this.state === 'holstering') {
       if (this.inHand && this.t > 0.26) { this.inHand = false; GSFX.leather(); }
       if (this.t > 0.45) this.state = 'holster';
@@ -334,6 +342,7 @@ const GUN = {
       HUD.$('bReload').disabled = this.ammo >= 6 || this.reserve <= 0;
       HUD.$('bFire').textContent = this.state === 'holster' ? 'Schlag' : 'Feuer';
     }
-    HUD.$('bAim').setAttribute('aria-pressed', this.wantAim ? 'true' : 'false');
+    const ba = HUD.$('bAim');
+    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); ba.textContent = this.wantAim ? 'Wegstecken' : 'Zielen'; }
   }
 };

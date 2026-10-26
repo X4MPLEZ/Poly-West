@@ -64,7 +64,7 @@ function initGunPad(onAction) {
   on('bFire', () => { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); });
   const bf = document.getElementById('bFire');
   for (const ev of ['pointerup', 'pointercancel']) bf.addEventListener(ev, () => FIST.up());
-  on('bAim', () => GUN.setAim(!GUN.wantAim));
+  on('bAim', () => GUN.aimButton());
   on('bReload', () => GUN.pressReload());
 
 }
