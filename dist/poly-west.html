@@ -1,4 +1,4 @@
-<title>Dust Creek</title>
+<title>Poly West</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Rye&display=swap">
@@ -132,7 +132,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 </style>
 
 <div id="app">
-  <canvas id="gl" tabindex="0" aria-label="Spielszene Dust Creek"></canvas>
+  <canvas id="gl" tabindex="0" aria-label="Spielszene Poly West"></canvas>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
@@ -163,13 +163,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     </div>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
   </div>
-  <div id="boot"><div class="bootIn"><b>Dust Creek</b><span id="bootMsg">wird aufgebaut …</span></div>
+  <div id="boot"><div class="bootIn"><b>Poly West</b><span id="bootMsg">wird aufgebaut …</span></div>
     <small id="credits">Schuss-Aufnahme: „9mm Gunshot“ von GoodSoundForYou (soundbible.com), CC BY 3.0, bearbeitet · Schlag-Luftzug: kwahmah_02 (freesound.org), CC BY 3.0 · Glas, Leerklick und Schläge: CC0 (freesound.org)</small></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>if (!window.THREE) document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+<script>if (!window.THREE) document.write('<script src="https://unpkg.com/three@0.159.0/build/three.min.js"><\/script>');</script>
 <script>
+// ==== core/util.js ====
 'use strict';
 if (typeof THREE === 'undefined') { document.getElementById('bootMsg').textContent = 'Three.js konnte nicht geladen werden'; throw new Error('THREE missing'); }
 /* ---------- small helpers ---------- */
@@ -385,6 +386,50 @@ class MB {
   }
 }
 
+// ==== core/world.js ====
+/* ---------- shared world services: events, a spatial grid, the actors ----------
+   Small on purpose; every system uses these instead of keeping its own copies, so that NPCs, horses and saving
+   can plug in later without touching the systems that already exist. */
+
+/* world events: what happened where (a shot, a punch, someone sat down). Kept for a while for NPCs to notice,
+   and handed to listeners at once. */
+const WORLD_EVENTS = [];
+const EVENT_LISTENERS = [];
+function worldEvent(type, x, y, z, extra) {
+  const e = Object.assign({ type, x, y, z, t: G.time }, extra || {});
+  WORLD_EVENTS.push(e);
+  if (WORLD_EVENTS.length > 60) WORLD_EVENTS.shift();
+  for (const fn of EVENT_LISTENERS) fn(e);
+  return e;
+}
+function onWorldEvent(fn) { EVENT_LISTENERS.push(fn); }
+
+/* a grid of square cells for anything with x, z: ask for everything near a point without looking at everything */
+class Grid {
+  constructor(cell) { this.cell = cell; this.map = new Map(); this._out = []; }
+  key(x, z) { return Math.floor(x / this.cell) + ',' + Math.floor(z / this.cell); }
+  add(it) { const k = this.key(it.x, it.z); it._cell = k; (this.map.get(k) || (this.map.set(k, []), this.map.get(k))).push(it); return it; }
+  remove(it) { const L = this.map.get(it._cell); if (L) { const i = L.indexOf(it); if (i >= 0) L.splice(i, 1); } }
+  // for things that move (NPCs): call after changing it.x / it.z
+  moved(it) { if (this.key(it.x, it.z) !== it._cell) { this.remove(it); this.add(it); } }
+  // everything in the cells touching the circle (callers check the exact distance); the array is reused
+  near(x, z, r) {
+    const out = this._out, c = this.cell; out.length = 0;
+    for (let i = Math.floor((x - r) / c); i <= Math.floor((x + r) / c); i++)
+      for (let j = Math.floor((z - r) / c); j <= Math.floor((z + r) / c); j++) { const L = this.map.get(i + ',' + j); if (L) for (const it of L) out.push(it); }
+    return out;
+  }
+}
+
+/* actors: everyone who acts in the world. The player is the first; NPCs and horses get the same shape
+   { id, kind, pos, yaw, room, seat }, so seats, events, memory and saving treat them all alike. */
+const ACTORS = {
+  list: [], byId: new Map(),
+  add(a) { this.list.push(a); this.byId.set(a.id, a); return a; },
+  get(id) { return this.byId.get(id); }
+};
+
+// ==== world/terrain.js ====
 /* ---------- terrain: a stretched grid (4 m cells near town, growing towards the horizon) ---------- */
 const TOWN = { cx: -8, cz: 2, rx: 72, rz: 36 };
 const GRID_N = 46;
@@ -534,6 +579,7 @@ function buildRoad() {
   return mb.build();
 }
 
+// ==== world/town_data.js ====
 /* ---------- Dust Creek: buildings and street props ---------- */
 const COL = {
   wood: rgb(0x8b5a3c), woodLight: rgb(0xb08055), woodDark: rgb(0x5a3a28), plank: rgb(0x9d7653),
@@ -584,6 +630,7 @@ function frontWins(b) {
 function crownTop(b) { return b.crown === 'arch' ? b.front + 1.15 : b.crown === 'step' ? b.front + 1.53 : b.front + 0.87; }
 function porchHasPosts(b) { return b.two || !b.porch || b.porch === 'roof'; }
 
+// ==== world/facades.js ====
 function windowAt(mb, x, y, w, h, frame) {
   mb.box(x, y - 0.12, 0.05, w + 0.3, h + 0.24, 0.1, frame, 0);
   mb.box(x, y, 0.1, w, h, 0.08, COL.glass, 0, { faceUV: 'pz', tilePz: 12 });
@@ -714,6 +761,7 @@ function storefront(mb, b, R) {
   return fz;
 }
 
+// ==== world/decor.js ====
 /* lettering: a framed board, or paint straight on a surface (the box takes the surface colour) */
 function signBoard(mb, x, y, z, w, h, col, idx, frame) {
   if (frame) mb.box(x, y - 0.07, z - 0.05, w + 0.18, h + 0.14, 0.1, frame, 0);
@@ -955,6 +1003,7 @@ function decorate(mb, b, f, coll, poles) {
   }
 }
 
+// ==== world/town.js ====
 function barn(mb, b, R) {
   const wall = rgb(b.wall), w = b.w, d = b.d, h = b.h, t = 0.2;
   mb.box(0, 0, -d + t / 2, w, h, t, wall, 3, { ao: 0.22 });
@@ -1249,6 +1298,7 @@ function buildTown() {
   return { geo: mb.build(), poles, rotorPos: new THREE.Vector3(wmx, wmy + 10.4, wmz + 0.52), bridge: { x: bx, z: bz, y: deckY } };
 }
 
+// ==== world/rooms.js ====
 /* ---------- enterable buildings ----------
    Every building is a shell of walls with a door opening. Each interior is its own mesh, drawn only when you are
    near or inside, with an indoor shader that is lit from the door and windows. Entering raises the exposure slowly
@@ -1310,109 +1360,6 @@ function shellStorefront(mb, b, R, wall, tile) {
   for (const wd of frontWins(b)) R.wins.push(Object.assign({ wall: 'f' }, wd));
   R.wins.push({ wall: 'r', u: -d / 4, y: 1.3, w: 1.0, h: 1.3 }, { wall: 'r', u: -3 * d / 4, y: 1.3, w: 1.0, h: 1.3 }, { wall: 'l', u: -d / 2, y: 1.3, w: 1.0, h: 1.3 });
 }
-
-/* ---------- small helpers for furniture: everything built in room space, y = 0 at ground ---------- */
-const IC = {
-  dark: rgb(0x4a3020), mid: rgb(0x7a5234), light: rgb(0xa77a4f), oak: rgb(0x8f6239), walnut: rgb(0x5c3a24), iron: rgb(0x2f2c2b),
-  brass: rgb(0xc9a043), glass: rgb(0xb8d0d0), cream: rgb(0xe9dfc8), red: rgb(0x8e2a24), green: rgb(0x355a40), canvas: rgb(0xd8c8a2),
-  glow: rgb(0xffe2a6), window: rgb(0xfff1d6), paper: rgb(0xeee4cc), felt: rgb(0x2f6a3e), black: rgb(0x1a1716)
-};
-function at(mb, x, y, z, ry, fn) { mb.push(new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationY(ry || 0))); fn(); mb.pop(); }
-/* ---------- seats: every chair, bench and stool tells the world where and how one sits on it ----------
-   x, z in the current building matrix; facing = the matrix' +z. kind decides the pose (see SIT_KINDS). */
-const SEATS = [];
-const SEATCTX = { R: null };
-function seatHere(mb, x, z, kind, opt) {
-  const v = new THREE.Vector3(x, 0, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
-  const R = SEATCTX.R;
-  let wx = v.x, wz = v.z, dx = d.x, dz = d.z;
-  if (R) { const p = rwp(R, v.x, v.y, v.z); wx = p.x; wz = p.z; const ex = dx * R.c + dz * R.s, ez = -dx * R.s + dz * R.c; dx = ex; dz = ez; }
-  SEATS.push(Object.assign({ x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), kind, room: R }, opt || {}));
-}
-function rot90(ry, hx, hz) { return Math.abs(Math.sin(ry)) > 0.5 ? [hz, hx] : [hx, hz]; }
-function chair(mb, col) {
-  for (const sx of [-0.18, 0.18]) for (const sz of [-0.18, 0.18]) mb.box(sx, 0, sz, 0.05, 0.45, 0.05, col, 3);
-  mb.box(0, 0.45, 0, 0.44, 0.05, 0.44, col, 2);
-  for (const sx of [-0.18, 0.18]) mb.box(sx, 0.5, -0.19, 0.05, 0.5, 0.05, col, 3);
-  mb.box(0, 0.78, -0.19, 0.4, 0.07, 0.04, col, 3); mb.box(0, 0.95, -0.19, 0.4, 0.07, 0.04, col, 3);
-  seatHere(mb, 0, 0.02, 'chair');
-}
-// a saloon bar stool: round seat, four legs and a ring to put the boots on
-function stool(mb, col, opt) {
-  for (const [sx, sz] of [[-0.14, -0.14], [0.14, -0.14], [-0.14, 0.14], [0.14, 0.14]]) mb.beam([sx, 0, sz], [sx * 0.6, 0.73, sz * 0.6], 0.045, col, 3);
-  for (const [a, b] of [[[-0.12, 0.28, -0.12], [0.12, 0.28, -0.12]], [[0.12, 0.28, -0.12], [0.12, 0.28, 0.12]], [[0.12, 0.28, 0.12], [-0.12, 0.28, 0.12]], [[-0.12, 0.28, 0.12], [-0.12, 0.28, -0.12]]]) mb.beam(a, b, 0.035, IC.brass, 0);
-  mb.cyl(0, 0.72, 0, 0.2, 0.2, 0.06, 9, mulc(col, 1.15), 2, { top: rgb(0x7a2a24) });
-  seatHere(mb, 0, 0, 'stool', opt);
-}
-function roundTable(mb, r, col) {
-  mb.cyl(0, 0, 0, 0.25, 0.25, 0.04, 8, col, 3);
-  mb.cyl(0, 0.04, 0, 0.06, 0.06, 0.7, 6, col, 3);
-  mb.cyl(0, 0.74, 0, r, r, 0.05, 12, col, 2);
-}
-function squareTable(mb, w, d, h, col) {
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) mb.box(sx * (w / 2 - 0.06), 0, sz * (d / 2 - 0.06), 0.07, h - 0.05, 0.07, col, 3);
-  mb.box(0, h - 0.05, 0, w, 0.05, d, col, 2);
-}
-function lantern(mb, x, z, ceil, len) {
-  const y = ceil - (len || 0.7);
-  mb.box(x, y + 0.3, z, 0.02, ceil - y - 0.3, 0.02, IC.iron, 0);
-  mb.box(x, y + 0.27, z, 0.2, 0.04, 0.2, IC.iron, 0);
-  mb.box(x, y, z, 0.16, 0.27, 0.16, IC.glow, 30);
-  mb.box(x, y - 0.03, z, 0.2, 0.04, 0.2, IC.iron, 0);
-}
-function crate(mb, x, y, z, s, col) { mb.box(x, y, z, s, s, s, col || IC.light, 3, { ao: 0.15 }); mb.box(x, y + s * 0.45, z, s + 0.01, s * 0.1, s + 0.01, mulc(col || IC.light, 0.8), 3); }
-function sack(mb, x, y, z, col) {
-  const c = col || IC.canvas;
-  mb.box(x, y, z, 0.45, 0.5, 0.32, c, 9, { ao: 0.12 });
-  mb.box(x, y + 0.5, z, 0.3, 0.1, 0.2, mulc(c, 0.92), 9);
-  mb.box(x, y + 0.55, z, 0.12, 0.08, 0.12, mulc(c, 0.75), 9);
-}
-function keg(mb, x, y, z, r, h, col) {
-  mb.cyl(x, y, z, r, r, h, 9, col || rgb(0x8a5a38), 3, { top: rgb(0x6b4630) });
-  mb.cyl(x, y + h * 0.18, z, r + 0.02, r + 0.02, 0.05, 9, IC.iron, 0, { noTop: true });
-  mb.cyl(x, y + h * 0.76, z, r + 0.02, r + 0.02, 0.05, 9, IC.iron, 0, { noTop: true });
-}
-const GOODS = [0x9a3a2a, 0x2f5a7a, 0xc9a043, 0x5a7a3a, 0xd8c8a2, 0x7a4a8a, 0xb86a2a, 0xe0d8c0, 0x3a6a6a];
-function shelfUnit(mb, len, ht, dep, levels, rnd, fill, col) {
-  const c = col || IC.walnut;
-  mb.box(0, 0, -dep / 2 + 0.02, len, ht, 0.04, mulc(c, 0.85), 3);
-  for (const s of [-1, 1]) mb.box(s * (len / 2 - 0.03), 0, 0, 0.06, ht, dep, c, 3);
-  for (let i = 0; i < levels; i++) {
-    const y = 0.12 + (i * (ht - 0.25)) / (levels - 1);
-    mb.box(0, y, 0, len - 0.06, 0.04, dep, c, 2);
-    if (i === levels - 1) continue;
-    let x = -len / 2 + 0.1;
-    while (x < len / 2 - 0.15) {
-      const kind = fill === 'bottles' ? (rnd() < 0.8 ? 1 : 0) : fill === 'jars' ? 2 : Math.floor(rnd() * 3);
-      const col2 = rgb(GOODS[Math.floor(rnd() * GOODS.length)]);
-      if (kind === 0) { const sw = 0.14 + rnd() * 0.14, sh = 0.12 + rnd() * 0.18; mb.box(x + sw / 2, y + 0.04, 0, sw, sh, dep * 0.7, col2, 9); x += sw + 0.03; }
-      else if (kind === 1) { const r = 0.035 + rnd() * 0.02, h = 0.2 + rnd() * 0.12; mb.cyl(x + r, y + 0.04, 0, r, r, h, 6, col2, 0); mb.cyl(x + r, y + 0.04 + h, 0, r * 0.45, r * 0.45, 0.07, 5, col2, 0); x += 2 * r + 0.035; }
-      else { const r = 0.06 + rnd() * 0.03, h = 0.12 + rnd() * 0.1; mb.cyl(x + r, y + 0.04, 0, r, r, h, 7, col2, 0, { top: IC.cream }); x += 2 * r + 0.04; }
-      if (rnd() < 0.12) x += 0.15;
-    }
-  }
-}
-function counter(mb, len, dep, h, col, top) {
-  mb.box(0, 0, 0, len, h - 0.05, dep, col || IC.oak, 3, { ao: 0.18 });
-  mb.box(0, h - 0.05, 0, len + 0.08, 0.06, dep + 0.08, top || IC.walnut, 2);
-}
-function picture(mb, w, h, col) { mb.box(0, 0, 0, w + 0.08, h + 0.08, 0.03, IC.brass, 0); mb.box(0, 0.04, 0.01, w, h, 0.03, col, 9); }
-function poster(mb, w, h) { mb.box(0, 0, 0, w, h, 0.01, IC.paper, 9); mb.box(0, h * 0.62, 0.006, w * 0.6, h * 0.25, 0.01, mulc(IC.paper, 0.55), 0); mb.box(0, h * 0.12, 0.006, w * 0.7, h * 0.05, 0.01, mulc(IC.paper, 0.6), 0); }
-function rug(mb, x, y, z, w, d, col, border) { mb.box(x, y, z, w, 0.012, d, border, 9); mb.box(x, y + 0.004, z, w - 0.25, 0.012, d - 0.25, col, 9); }
-function stove(mb, x, y, z, ceil) {
-  for (const s of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) mb.box(x + s[0], y, z + s[1], 0.05, 0.18, 0.05, IC.iron, 0);
-  mb.cyl(x, y + 0.18, z, 0.26, 0.32, 0.45, 10, IC.iron, 0);
-  mb.cyl(x, y + 0.63, z, 0.32, 0.22, 0.3, 10, IC.iron, 0);
-  mb.box(x, y + 0.3, z + 0.3, 0.16, 0.14, 0.03, rgb(0xff8a3a), 30);
-  mb.cyl(x, y + 0.93, z, 0.08, 0.08, ceil - y - 0.93, 7, IC.iron, 0);
-}
-function bench(mb, len, col, kind) {
-  for (const s of [-1, 1]) mb.box(s * (len / 2 - 0.1), 0, 0, 0.06, 0.42, 0.34, col, 3);
-  mb.box(0, 0.42, 0, len, 0.05, 0.36, col, 2); mb.box(0, 0.5, -0.17, len, 0.4, 0.04, col, 3);
-  const n = Math.max(1, Math.round(len / 0.66));
-  for (let k = 0; k < n; k++) seatHere(mb, -len / 2 + ((k + 0.5) * len) / n, 0.02, kind || 'bench');
-}
-function bars(mb, len, h, y0) { const n = Math.round(len / 0.14); for (let i = 0; i <= n; i++) mb.box(-len / 2 + (len * i) / n, y0, 0, 0.03, h, 0.03, IC.iron, 0); mb.box(0, y0 + h - 0.04, 0, len, 0.05, 0.05, IC.iron, 0); mb.box(0, y0, 0, len, 0.05, 0.05, IC.iron, 0); }
 
 /* ---------- lining: interior walls, ceiling, window panes ---------- */
 function lining(mb, R, upper, lower, tileU, ceilCol) {
@@ -1550,6 +1497,276 @@ function setupUpper(R, hole, walk) {
   return U;
 }
 
+/* ---------- build the interiors, doors and the indoor material ---------- */
+function makeIndoorMat(R, forFigure) {
+  const u = Object.assign({}, U, { uOpen: { value: lightOpenings(R) }, uRoomAmb: { value: v3(R.amb || 0xffd9a8, 0.1) },
+    uTex: { value: forFigure ? 0 : 0.85 }, uK: { value: forFigure ? 0.4 : 0.5 } });
+  return new THREE.ShaderMaterial({ uniforms: u, vertexShader: SH.litV, fragmentShader: SH.inF, vertexColors: true });
+}
+function doorLeafMesh(len, h, kind, dir) {
+  const mb = new MB(), sx = dir;
+  if (kind === 'saloon') {
+    // batwing doors: a short leaf from the knee to the chest, the doorway above stays open
+    const y0 = 0.5, lh = 1.1;
+    mb.box(sx * len / 2, y0, 0, len - 0.04, lh - 0.1, 0.05, IC.light, 3);
+    for (let i = 0; i < 5; i++) mb.box(sx * (0.12 + i * (len - 0.24) / 4), y0 + 0.15, 0.03, 0.05, lh - 0.4, 0.03, mulc(IC.light, 0.8), 0);
+    const top = (i) => y0 + lh - 0.1 - Math.sin((i / 8) * Math.PI) * 0.16;   // scalloped top, low in the middle
+    for (let i = 0; i < 8; i++) mb.box(sx * (len * (i + 0.5) / 8), top(i), 0, len / 8 + 0.01, 0.1, 0.06, IC.light, 3);
+    mb.box(sx * 0.04, y0 + 0.1, 0, 0.08, lh - 0.2, 0.08, mulc(IC.light, 0.7), 0);   // the hinge stile
+  } else {
+    mb.box(sx * len / 2, 0, 0, len - 0.02, h, 0.07, rgb(0x5a3a26), 13, { faceUV: 'pz', tilePz: 13 });
+    for (const y of [0.3, h - 0.4]) mb.box(sx * len / 2, y, 0.045, len - 0.1, 0.1, 0.03, mulc(rgb(0x5a3a26), 0.8), 0);
+    mb.box(sx * (len - 0.13), h * 0.45, 0.06, 0.05, 0.05, 0.06, IC.brass, 0);
+    mb.box(sx * (len - 0.13), h * 0.45, -0.06, 0.05, 0.05, 0.06, IC.brass, 0);
+  }
+  return new THREE.Mesh(mb.build(), G.litMat);
+}
+function addDoor(scene, R, kind, z, y0, width, height) {
+  const half = kind === 'single' ? [[-width / 2, width, 1]] : [[-width / 2, width / 2, 1], [width / 2, width / 2, -1]];
+  const D = { R, kind, leaves: [], z, center: rwp(R, 0, y0 + 1.2, z), angle: 0, vel: 0, target: 0, hold: 0, sgn: 1, wasOpen: false, inZone: false, meshes: [] };
+  R.door = D;
+  for (const [hx, len, dir] of half) {
+    const pivot = new THREE.Group();
+    pivot.position.copy(rwp(R, hx, y0, z));
+    pivot.rotation.y = R.ry;
+    const lm = doorLeafMesh(len, height, kind, dir); pivot.add(lm); D.meshes.push(lm);
+    scene.add(pivot);
+    D.leaves.push({ pivot, dir, angle: 0, vel: 0 });
+  }
+  DOORS.push(D);
+  return D;
+}
+
+function buildInteriors(scene) {
+  for (const R of ROOMS) {
+    const mb = new MB(), rnd = mulberry32(1000 + R.idx * 77), nc = COLL.length;
+    SEATCTX.R = R;
+    FURNISH[R.type](mb, R, rnd);
+    SEATCTX.R = null;
+    if (R.upper) for (let i = nc; i < COLL.length; i++) if (COLL[i].top === undefined && COLL[i].y0 === undefined) COLL[i].top = R.ceilY - 0.2;
+    if (R.parent) for (let i = nc; i < COLL.length; i++) if (COLL[i].y0 === undefined) COLL[i].y0 = R.floorY - 0.5;
+    R.mat = makeIndoorMat(R);
+    R.figMat = makeIndoorMat(R, true);
+    R.mesh = new THREE.Mesh(mb.build(), R.mat);
+    R.mesh.position.set(R.bx, 0, R.bz); R.mesh.rotation.y = R.ry;
+    R.mesh.updateMatrix(); R.mesh.matrixAutoUpdate = false;
+    R.mesh.visible = false;
+    scene.add(R.mesh);
+    if (R.doorKind) addDoor(scene, R, R.doorKind, R.doorZ, R.floorY, R.holeW || DOOR_W, R.doorH || (DOOR_H - R.floorY - 0.02));
+  }
+}
+
+/* ---------- per frame: where are you, doors, exposure ---------- */
+const ROOMSTATE = { cur: null, expo: 1 };
+function roomAt(x, z, pad, y) {
+  for (const R of ROOMS) {
+    if (y !== undefined && (y < (R.lvMin === undefined ? -1e9 : R.lvMin) || y >= (R.lvMax === undefined ? 1e9 : R.lvMax))) continue;
+    const [lx, lz] = rLocal(R, x, z);
+    for (const r of R.rects) if (lx > r[0] - pad && lx < r[1] + pad && lz > r[2] - pad && lz < r[3] + pad) return R;
+  }
+  return null;
+}
+function updateRooms(dt) {
+  const p = PLAY.pos;
+  const cur = roomAt(p.x, p.z, 0, p.y);
+  ROOMSTATE.cur = cur;
+  G.room = cur;
+  // interiors are drawn only where they can be seen; the two floors of a house see each other through the stairwell
+  for (const R of ROOMS) {
+    if (R.parent) { R.mesh.visible = cur === R || cur === R.parent; continue; }
+    const dDoor = Math.hypot(p.x - R.doorW.x, p.z - R.doorW.z);
+    R.mesh.visible = R === cur || dDoor < 18 || (cur && cur.parent === R);
+  }
+  // eyes: open up slowly in the dark, close down fast in the sun
+  const target = cur ? (cur.expo || 2.5) : 1;
+  const rate = target > ROOMSTATE.expo ? 0.6 : 1.5;
+  ROOMSTATE.expo += (target - ROOMSTATE.expo) * (1 - Math.exp(-dt * rate));
+  U.uBright.value = ROOMSTATE.expo;
+  // the cowboy takes on the light of the room he stands in
+  const cm = cur ? cur.figMat : G.litMat;
+  if (W.ch.parts[0].material !== cm) for (const part of W.ch.parts) part.material = cm;
+  // doors
+  for (const D of DOORS) {
+    const R = D.R;
+    const m = R === cur ? R.figMat : G.litMat;
+    if (D.meshes[0].material !== m) for (const dm of D.meshes) dm.material = m;
+    const [lx, lz] = rLocal(R, p.x, p.z);
+    const dz = lz - D.z;
+    if (D.kind === 'saloon') {
+      const inZone = Math.abs(lx) < 0.9 && Math.abs(dz) < 0.6;
+      const vIn = -(PLAY.vx * R.s + PLAY.vz * R.c); // speed towards the inside
+      for (const L of D.leaves) {
+        if (inZone) {
+          const push = Math.abs(vIn) > 0.2 ? Math.sign(vIn) : (dz > 0 ? 1 : -1);
+          const tgt = push * 1.3 * (1 - Math.min(1, Math.abs(dz) / 0.6) * 0.4);
+          const prev = L.angle;
+          L.angle += (tgt - L.angle) * (1 - Math.exp(-dt * 16));
+          L.vel = dt > 0 ? (L.angle - prev) / dt : 0;
+        } else {
+          L.vel += (-55 * L.angle - 2.4 * L.vel) * dt;
+          const prev = L.angle;
+          L.angle += L.vel * dt;
+          if (Math.sign(prev) !== Math.sign(L.angle) && Math.abs(L.vel) > 1.2 && L === D.leaves[0]) AMB.saloonClack(D.center, Math.min(1, Math.abs(L.vel) / 6));
+        }
+        L.pivot.rotation.y = R.ry + L.dir * L.angle;
+      }
+      if (inZone && !D.inZone) AMB.saloonPush(D.center);
+      D.inZone = inZone;
+      continue;
+    }
+    const dist = Math.hypot(lx, dz);
+    if (dist < 1.9 && Math.abs(p.y - R.floorY) < 1.2) {
+      // a closed door swings away from whoever comes: inwards from the street, outwards from inside
+      if (D.target === 0 && Math.abs(D.angle) < 0.3) D.sgn = dz >= 0 ? 1 : -1;
+      D.target = 1.62 * D.sgn; D.hold = 0.7;
+    } else if (dist > 2.7 || Math.abs(p.y - R.floorY) >= 1.2) { D.hold -= dt; if (D.hold <= 0) D.target = 0; }
+    if (D.target !== 0 && !D.wasOpen) { D.wasOpen = true; AMB.doorOpen(D.center); }
+    const prev = D.angle;
+    D.vel += (40 * (D.target - D.angle) - 11 * D.vel) * dt;
+    D.angle = clamp(D.angle + D.vel * dt, -1.7, 1.7);
+    if (D.target === 0 && D.wasOpen && Math.abs(D.angle) < 0.03 && Math.abs(prev) >= 0.03) { D.wasOpen = false; D.angle = 0; D.vel = 0; AMB.doorClose(D.center); }
+    for (const L of D.leaves) L.pivot.rotation.y = R.ry + L.dir * D.angle;
+  }
+}
+
+// ==== world/furniture.js ====
+/* ---------- small helpers for furniture: everything built in room space, y = 0 at ground ---------- */
+const IC = {
+  dark: rgb(0x4a3020), mid: rgb(0x7a5234), light: rgb(0xa77a4f), oak: rgb(0x8f6239), walnut: rgb(0x5c3a24), iron: rgb(0x2f2c2b),
+  brass: rgb(0xc9a043), glass: rgb(0xb8d0d0), cream: rgb(0xe9dfc8), red: rgb(0x8e2a24), green: rgb(0x355a40), canvas: rgb(0xd8c8a2),
+  glow: rgb(0xffe2a6), window: rgb(0xfff1d6), paper: rgb(0xeee4cc), felt: rgb(0x2f6a3e), black: rgb(0x1a1716)
+};
+function at(mb, x, y, z, ry, fn) { mb.push(new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationY(ry || 0))); fn(); mb.pop(); }
+/* ---------- seats: every chair, bench and stool tells the world where and how one sits on it ----------
+   x, z in the current building matrix; facing = the matrix' +z. kind decides the pose (see SIT_KINDS). */
+const SEATS = [];
+const SEATCTX = { R: null };
+function seatHere(mb, x, z, kind, opt) {
+  const v = new THREE.Vector3(x, 0, z).applyMatrix4(mb.m), d = new THREE.Vector3(0, 0, 1).transformDirection(mb.m);
+  const R = SEATCTX.R;
+  let wx = v.x, wz = v.z, dx = d.x, dz = d.z;
+  if (R) { const p = rwp(R, v.x, v.y, v.z); wx = p.x; wz = p.z; const ex = dx * R.c + dz * R.s, ez = -dx * R.s + dz * R.c; dx = ex; dz = ez; }
+  SEATS.push(Object.assign({ x: wx, y: v.y, z: wz, yaw: Math.atan2(dx, dz), kind, room: R }, opt || {}));
+}
+function rot90(ry, hx, hz) { return Math.abs(Math.sin(ry)) > 0.5 ? [hz, hx] : [hx, hz]; }
+function chair(mb, col) {
+  for (const sx of [-0.18, 0.18]) for (const sz of [-0.18, 0.18]) mb.box(sx, 0, sz, 0.05, 0.45, 0.05, col, 3);
+  mb.box(0, 0.45, 0, 0.44, 0.05, 0.44, col, 2);
+  for (const sx of [-0.18, 0.18]) mb.box(sx, 0.5, -0.19, 0.05, 0.5, 0.05, col, 3);
+  mb.box(0, 0.78, -0.19, 0.4, 0.07, 0.04, col, 3); mb.box(0, 0.95, -0.19, 0.4, 0.07, 0.04, col, 3);
+  seatHere(mb, 0, 0.02, 'chair');
+}
+// a saloon bar stool: round seat, four legs and a ring to put the boots on
+function stool(mb, col, opt) {
+  for (const [sx, sz] of [[-0.14, -0.14], [0.14, -0.14], [-0.14, 0.14], [0.14, 0.14]]) mb.beam([sx, 0, sz], [sx * 0.6, 0.73, sz * 0.6], 0.045, col, 3);
+  for (const [a, b] of [[[-0.12, 0.28, -0.12], [0.12, 0.28, -0.12]], [[0.12, 0.28, -0.12], [0.12, 0.28, 0.12]], [[0.12, 0.28, 0.12], [-0.12, 0.28, 0.12]], [[-0.12, 0.28, 0.12], [-0.12, 0.28, -0.12]]]) mb.beam(a, b, 0.035, IC.brass, 0);
+  mb.cyl(0, 0.72, 0, 0.2, 0.2, 0.06, 9, mulc(col, 1.15), 2, { top: rgb(0x7a2a24) });
+  seatHere(mb, 0, 0, 'stool', opt);
+}
+function roundTable(mb, r, col) {
+  mb.cyl(0, 0, 0, 0.25, 0.25, 0.04, 8, col, 3);
+  mb.cyl(0, 0.04, 0, 0.06, 0.06, 0.7, 6, col, 3);
+  mb.cyl(0, 0.74, 0, r, r, 0.05, 12, col, 2);
+}
+function squareTable(mb, w, d, h, col) {
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) mb.box(sx * (w / 2 - 0.06), 0, sz * (d / 2 - 0.06), 0.07, h - 0.05, 0.07, col, 3);
+  mb.box(0, h - 0.05, 0, w, 0.05, d, col, 2);
+}
+function lantern(mb, x, z, ceil, len) {
+  const y = ceil - (len || 0.7);
+  mb.box(x, y + 0.3, z, 0.02, ceil - y - 0.3, 0.02, IC.iron, 0);
+  mb.box(x, y + 0.27, z, 0.2, 0.04, 0.2, IC.iron, 0);
+  mb.box(x, y, z, 0.16, 0.27, 0.16, IC.glow, 30);
+  mb.box(x, y - 0.03, z, 0.2, 0.04, 0.2, IC.iron, 0);
+}
+function crate(mb, x, y, z, s, col) { mb.box(x, y, z, s, s, s, col || IC.light, 3, { ao: 0.15 }); mb.box(x, y + s * 0.45, z, s + 0.01, s * 0.1, s + 0.01, mulc(col || IC.light, 0.8), 3); }
+function sack(mb, x, y, z, col) {
+  const c = col || IC.canvas;
+  mb.box(x, y, z, 0.45, 0.5, 0.32, c, 9, { ao: 0.12 });
+  mb.box(x, y + 0.5, z, 0.3, 0.1, 0.2, mulc(c, 0.92), 9);
+  mb.box(x, y + 0.55, z, 0.12, 0.08, 0.12, mulc(c, 0.75), 9);
+}
+function keg(mb, x, y, z, r, h, col) {
+  mb.cyl(x, y, z, r, r, h, 9, col || rgb(0x8a5a38), 3, { top: rgb(0x6b4630) });
+  mb.cyl(x, y + h * 0.18, z, r + 0.02, r + 0.02, 0.05, 9, IC.iron, 0, { noTop: true });
+  mb.cyl(x, y + h * 0.76, z, r + 0.02, r + 0.02, 0.05, 9, IC.iron, 0, { noTop: true });
+}
+const GOODS = [0x9a3a2a, 0x2f5a7a, 0xc9a043, 0x5a7a3a, 0xd8c8a2, 0x7a4a8a, 0xb86a2a, 0xe0d8c0, 0x3a6a6a];
+function shelfUnit(mb, len, ht, dep, levels, rnd, fill, col) {
+  const c = col || IC.walnut;
+  mb.box(0, 0, -dep / 2 + 0.02, len, ht, 0.04, mulc(c, 0.85), 3);
+  for (const s of [-1, 1]) mb.box(s * (len / 2 - 0.03), 0, 0, 0.06, ht, dep, c, 3);
+  for (let i = 0; i < levels; i++) {
+    const y = 0.12 + (i * (ht - 0.25)) / (levels - 1);
+    mb.box(0, y, 0, len - 0.06, 0.04, dep, c, 2);
+    if (i === levels - 1) continue;
+    let x = -len / 2 + 0.1;
+    while (x < len / 2 - 0.15) {
+      const kind = fill === 'bottles' ? (rnd() < 0.8 ? 1 : 0) : fill === 'jars' ? 2 : Math.floor(rnd() * 3);
+      const col2 = rgb(GOODS[Math.floor(rnd() * GOODS.length)]);
+      if (kind === 0) { const sw = 0.14 + rnd() * 0.14, sh = 0.12 + rnd() * 0.18; mb.box(x + sw / 2, y + 0.04, 0, sw, sh, dep * 0.7, col2, 9); x += sw + 0.03; }
+      else if (kind === 1) { const r = 0.035 + rnd() * 0.02, h = 0.2 + rnd() * 0.12; mb.cyl(x + r, y + 0.04, 0, r, r, h, 6, col2, 0); mb.cyl(x + r, y + 0.04 + h, 0, r * 0.45, r * 0.45, 0.07, 5, col2, 0); x += 2 * r + 0.035; }
+      else { const r = 0.06 + rnd() * 0.03, h = 0.12 + rnd() * 0.1; mb.cyl(x + r, y + 0.04, 0, r, r, h, 7, col2, 0, { top: IC.cream }); x += 2 * r + 0.04; }
+      if (rnd() < 0.12) x += 0.15;
+    }
+  }
+}
+function counter(mb, len, dep, h, col, top) {
+  mb.box(0, 0, 0, len, h - 0.05, dep, col || IC.oak, 3, { ao: 0.18 });
+  mb.box(0, h - 0.05, 0, len + 0.08, 0.06, dep + 0.08, top || IC.walnut, 2);
+}
+function picture(mb, w, h, col) { mb.box(0, 0, 0, w + 0.08, h + 0.08, 0.03, IC.brass, 0); mb.box(0, 0.04, 0.01, w, h, 0.03, col, 9); }
+function poster(mb, w, h) { mb.box(0, 0, 0, w, h, 0.01, IC.paper, 9); mb.box(0, h * 0.62, 0.006, w * 0.6, h * 0.25, 0.01, mulc(IC.paper, 0.55), 0); mb.box(0, h * 0.12, 0.006, w * 0.7, h * 0.05, 0.01, mulc(IC.paper, 0.6), 0); }
+function rug(mb, x, y, z, w, d, col, border) { mb.box(x, y, z, w, 0.012, d, border, 9); mb.box(x, y + 0.004, z, w - 0.25, 0.012, d - 0.25, col, 9); }
+function stove(mb, x, y, z, ceil) {
+  for (const s of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) mb.box(x + s[0], y, z + s[1], 0.05, 0.18, 0.05, IC.iron, 0);
+  mb.cyl(x, y + 0.18, z, 0.26, 0.32, 0.45, 10, IC.iron, 0);
+  mb.cyl(x, y + 0.63, z, 0.32, 0.22, 0.3, 10, IC.iron, 0);
+  mb.box(x, y + 0.3, z + 0.3, 0.16, 0.14, 0.03, rgb(0xff8a3a), 30);
+  mb.cyl(x, y + 0.93, z, 0.08, 0.08, ceil - y - 0.93, 7, IC.iron, 0);
+}
+function bench(mb, len, col, kind) {
+  for (const s of [-1, 1]) mb.box(s * (len / 2 - 0.1), 0, 0, 0.06, 0.42, 0.34, col, 3);
+  mb.box(0, 0.42, 0, len, 0.05, 0.36, col, 2); mb.box(0, 0.5, -0.17, len, 0.4, 0.04, col, 3);
+  const n = Math.max(1, Math.round(len / 0.66));
+  for (let k = 0; k < n; k++) seatHere(mb, -len / 2 + ((k + 0.5) * len) / n, 0.02, kind || 'bench');
+}
+function bars(mb, len, h, y0) { const n = Math.round(len / 0.14); for (let i = 0; i <= n; i++) mb.box(-len / 2 + (len * i) / n, y0, 0, 0.03, h, 0.03, IC.iron, 0); mb.box(0, y0 + h - 0.04, 0, len, 0.05, 0.05, IC.iron, 0); mb.box(0, y0, 0, len, 0.05, 0.05, IC.iron, 0); }
+
+/* ---------- prefabs: furniture by name, so a room can be written as a list ----------
+   place(mb, R, [[name, x, z, ry, opts], ...]) puts each piece on the room floor (opts.y lifts it) and adds its collider:
+   opts.box = [x0, x1, z0, z1, h] (room coordinates), opts.circle = radius around (x, z).
+   New rooms should be lists like this; one-off pieces (a piano, a vault) stay as code next to the list. */
+const PREFAB = {
+  chair: (mb, o) => chair(mb, o.col || IC.walnut),
+  stool: (mb, o) => stool(mb, o.col || rgb(0x5a3422), o.bar ? { bar: o.bar } : undefined),
+  bench: (mb, o) => bench(mb, o.len || 1.6, o.col || IC.walnut, o.kind),
+  roundTable: (mb, o) => roundTable(mb, o.r || 0.55, o.col || IC.walnut),
+  table: (mb, o) => squareTable(mb, o.w || 1.2, o.d || 0.8, o.h || 0.78, o.col || IC.oak),
+  counter: (mb, o) => counter(mb, o.len, o.dep || 0.7, o.h || 1.05, o.col, o.top),
+  shelf: (mb, o, R, rnd) => shelfUnit(mb, o.len, o.h || 2.4, o.dep || 0.45, o.levels || 5, rnd, o.fill || 'mixed', o.col),
+  crate: (mb, o) => crate(mb, 0, 0, 0, o.s || 0.5, o.col),
+  sack: (mb, o) => sack(mb, 0, 0, 0, o.col),
+  keg: (mb, o) => keg(mb, 0, 0, 0, o.r || 0.35, o.h || 0.85, o.col),
+  stove: (mb, o, R) => stove(mb, 0, 0, 0, R.ceilY - R.floorY - (o.y || 0)),
+  bars: (mb, o) => bars(mb, o.len, o.h || 2.4, 0),
+  picture: (mb, o) => picture(mb, o.w || 1.0, o.h || 0.7, o.col || rgb(0x8a7a6a)),
+  poster: (mb, o) => poster(mb, o.w || 0.45, o.h || 0.6),
+  rug: (mb, o) => rug(mb, 0, 0, 0, o.w, o.d, o.col, o.border),
+  // hangs from the ceiling: its height comes from the room, not the floor
+  lantern: (mb, o, R) => lantern(mb, 0, 0, R.ceilY, o.len || 0.8)
+};
+function place(mb, R, list, rnd) {
+  for (const [name, x, z, ry, o0] of list) {
+    const o = o0 || {}, fn = PREFAB[name];
+    if (!fn) throw new Error('unknown prefab ' + name);
+    at(mb, x, name === 'lantern' ? 0 : R.floorY + (o.y || 0), z, ry || 0, () => fn(mb, o, R, rnd));
+    if (o.box) rColl(R, o.box[0], o.box[1], o.box[2], o.box[3], o.box[4]);
+    if (o.circle) rCircle(R, x, z, o.circle);
+  }
+}
+
+// ==== world/interiors.js ====
 /* ---------- interiors by trade ---------- */
 const FURNISH = {
   store(mb, R, rnd) {
@@ -1723,26 +1940,27 @@ const FURNISH = {
     at(mb, -0.5, F + 1.7, z0 + 0.05, 0, () => picture(mb, 1.1, 0.75, rgb(0x6a8aa0)));
   },
   sheriff(mb, R, rnd) {
-    const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
+    const { x0, x1, z0, floorY: F } = R;
     lining(mb, R, rgb(0xcfc4a8), rgb(0x6a4a32), 3);
-    at(mb, -1.6, F, -3.6, 0, () => { squareTable(mb, 1.5, 0.8, 0.78, IC.oak); mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
-    at(mb, -1.6, F, -4.3, 0, () => chair(mb, IC.walnut));
-    rColl(R, -2.4, -0.8, -4.0, -3.2, 0.8);
-    // jail cell with bunk and bucket
-    at(mb, 1.9, F, -5.4, 0, () => bars(mb, 3.9, 2.4, 0)); rColl(R, 0, x1, -5.45, -5.35, 3);
-    at(mb, 0.15, F, -6.9, Math.PI / 2, () => bars(mb, 3.0, 2.4, 0)); rColl(R, 0.1, 0.2, z0, -5.4, 3);
+    place(mb, R, [
+      ['table', -1.6, -3.6, 0, { w: 1.5, box: [-2.4, -0.8, -4.0, -3.2, 0.8] }],                 // the sheriff's desk
+      ['chair', -1.6, -4.3, 0],
+      ['bars', 1.9, -5.4, 0, { len: 3.9, box: [0, x1, -5.45, -5.35, 3] }],                      // jail cell
+      ['bars', 0.15, -6.9, Math.PI / 2, { len: 3.0, box: [0.1, 0.2, z0, -5.4, 3] }],
+      ...[0, 1, 2, 3].map((i) => ['poster', x0 + 0.05, -1.6 - i * 0.7, Math.PI / 2, { y: 1.5 + (i % 2) * 0.1 }]),
+      ['stove', -2.9, -6.8, 0, { circle: 0.38 }],
+      ['lantern', -1.6, -3.6, 0, { len: 0.8 }], ['lantern', 2.0, -7.0, 0, { len: 0.8 }]
+    ], rnd);
+    // one-offs: things on the desk, bunk and bucket in the cell, gun rack, coffee pot, filing cabinet
+    at(mb, -1.6, F, -3.6, 0, () => { mb.box(0.3, 0.78, 0, 0.35, 0.02, 0.25, IC.paper, 0); mb.box(-0.3, 0.78, 0.1, 0.25, 0.12, 0.18, rgb(0x3a3a3a), 0); mb.cyl(-0.55, 0.78, -0.2, 0.05, 0.05, 0.1, 7, rgb(0x6a6a6a), 0); });
     mb.box(2.9, F + 0.4, -7.9, 1.8, 0.08, 0.7, IC.oak, 2); mb.box(2.9, F + 0.48, -7.9, 1.7, 0.1, 0.6, rgb(0x6a6a5a), 9);
     for (const s of [-1, 1]) mb.box(2.9 + s * 0.85, F, -7.9, 0.06, 0.4, 0.6, IC.oak, 3);
     rColl(R, 1.95, x1, -8.3, -7.5, 0.6);
     mb.cyl(0.8, F, -8.2, 0.15, 0.13, 0.28, 8, rgb(0x6a6a6a), 0);
-    // gun rack and wanted posters
     at(mb, x1 - 0.06, F + 1.0, -2.6, -Math.PI / 2, () => { mb.box(0, 0, 0, 1.4, 0.08, 0.15, IC.walnut, 3); mb.box(0, 1.1, 0, 1.4, 0.08, 0.15, IC.walnut, 3); for (let i = 0; i < 4; i++) { mb.box(-0.5 + i * 0.33, 0.05, 0.08, 0.06, 1.2, 0.04, IC.walnut, 3); mb.box(-0.5 + i * 0.33, 0.6, 0.08, 0.04, 0.65, 0.05, IC.iron, 0); } });
-    for (let i = 0; i < 4; i++) at(mb, x0 + 0.05, F + 1.5 + (i % 2) * 0.1, -1.6 - i * 0.7, Math.PI / 2, () => poster(mb, 0.45, 0.6));
-    stove(mb, -2.9, F, -6.8, C); rCircle(R, -2.9, -6.8, 0.38);
     mb.cyl(-2.9, F + 0.93, -6.65, 0.08, 0.06, 0.2, 7, rgb(0x5a6a7a), 0);
     at(mb, x0 + 0.35, F, -7.8, Math.PI / 2, () => { mb.box(0, 0, 0, 0.8, 1.3, 0.5, rgb(0x5a5a52), 0); for (let i = 0; i < 3; i++) mb.box(0, 0.2 + i * 0.4, 0.26, 0.6, 0.3, 0.02, rgb(0x6a6a62), 0); });
     rColl(R, x0, x0 + 0.65, -8.3, -7.3, 1.4);
-    lantern(mb, -1.6, -3.6, C, 0.8); lantern(mb, 2.0, -7.0, C, 0.8);
   },
   barber(mb, R, rnd) {
     const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
@@ -1805,11 +2023,14 @@ const FURNISH = {
     lantern(mb, -0.2, -3.4, C, 0.9); lantern(mb, 0, -7.0, C, 0.9);
   },
   post(mb, R, rnd) {
-    const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
-    lining(mb, R, rgb(0xb79a6e), rgb(0x5e4030), 3);
-    at(mb, 0, F, -5.2, 0, () => { counter(mb, x1 - x0 - 2.2, 0.7, 1.05, rgb(0x5e4030)); for (let i = 0; i < 3; i++) at(mb, -2.6 + i * 2.6, 1.08, 0, 0, () => bars(mb, 0.8, 0.6, 0)); });
-    rColl(R, x0 + 1.1 - 0.05, x1 - 1.1 + 0.05, -5.6, -4.8, 1.2);
-    rColl(R, x1 - 1.15, x1, -5.25, -5.15, 1.1); mb.box(x1 - 0.6, F, -5.2, 1.0, 1.05, 0.06, rgb(0x5e4030), 3);
+    const { x0, x1, z0, floorY: F } = R;
+    const wood = rgb(0x5e4030);
+    lining(mb, R, rgb(0xb79a6e), wood, 3);
+    place(mb, R, [
+      ['counter', 0, -5.2, 0, { len: x1 - x0 - 2.2, col: wood, box: [x0 + 1.05, x1 - 1.05, -5.6, -4.8, 1.2] }],
+      ...[0, 1, 2].map((i) => ['bars', -2.6 + i * 2.6, -5.2, 0, { len: 0.8, h: 0.6, y: 1.08 }]),   // teller grilles on the counter
+    ], rnd);
+    rColl(R, x1 - 1.15, x1, -5.25, -5.15, 1.1); mb.box(x1 - 0.6, F, -5.2, 1.0, 1.05, 0.06, wood, 3);
     // pigeonholes full of letters
     at(mb, 0, F + 0.9, z0 + 0.25, 0, () => {
       mb.box(0, 0, -0.18, 4.4, 2.0, 0.04, IC.walnut, 3);
@@ -1818,16 +2039,18 @@ const FURNISH = {
       for (let i = 0; i < 10; i++) for (let j = 0; j < 5; j++) if (rnd() < 0.55) mb.box(-1.98 + i * 0.44, j * 0.4 + 0.04, 0.05, 0.3, 0.06 + rnd() * 0.15, 0.25, IC.paper, 0);
     });
     rColl(R, -2.3, 2.3, z0, z0 + 0.5, 3);
-    // telegraph desk, parcels, mail sacks, scale
+    // telegraph desk (one-off), parcels, mail sacks, waiting bench, picture, lamps
     at(mb, x0 + 0.6, F, -7.6, Math.PI / 2, () => { squareTable(mb, 1.4, 0.7, 0.78, IC.oak); mb.box(0, 0.78, 0.05, 0.25, 0.06, 0.18, IC.brass, 0); mb.box(0.05, 0.84, 0.05, 0.14, 0.03, 0.03, IC.black, 0); mb.box(-0.4, 0.78, 0, 0.3, 0.2, 0.22, rgb(0x3a3a3a), 0); });
     rColl(R, x0, x0 + 1.0, -8.4, -6.8, 0.8);
-    for (let i = 0; i < 5; i++) crate(mb, x1 - 0.5 - (i % 3) * 0.45, F + Math.floor(i / 3) * 0.4, -7.5 - (i % 2) * 0.1, 0.4, rgb(0xb89a6a));
+    place(mb, R, [
+      ...[0, 1, 2, 3, 4].map((i) => ['crate', x1 - 0.5 - (i % 3) * 0.45, -7.5 - (i % 2) * 0.1, 0, { s: 0.4, col: rgb(0xb89a6a), y: Math.floor(i / 3) * 0.4 }]),
+      ['sack', x1 - 0.5, -3.0, 0, { col: rgb(0x8a8a6a) }], ['sack', x1 - 0.5, -3.6, 0, { col: rgb(0x8a8a6a) }],
+      ['bench', -2.0, -2.2, 0, { len: 1.8, box: [-2.9, -1.1, -2.45, -2.0, 0.8] }],
+      ['picture', x0 + 0.05, -3.0, Math.PI / 2, { w: 1.4, h: 1.0, col: rgb(0xd8c8a0), y: 1.5 }],
+      ['lantern', -2.0, -3.4, 0, { len: 0.9 }], ['lantern', 2.0, -3.4, 0, { len: 0.9 }]
+    ], rnd);
     rColl(R, x1 - 1.6, x1, -7.8, -7.2, 0.9);
-    for (let i = 0; i < 2; i++) sack(mb, x1 - 0.5, F, -3.0 - i * 0.6, rgb(0x8a8a6a));
     rColl(R, x1 - 0.8, x1, -3.9, -2.7, 0.7);
-    at(mb, -2.0, F, -2.2, 0, () => bench(mb, 1.8, IC.walnut)); rColl(R, -2.9, -1.1, -2.45, -2.0, 0.8);
-    at(mb, x0 + 0.05, F + 1.5, -3.0, Math.PI / 2, () => picture(mb, 1.4, 1.0, rgb(0xd8c8a0)));
-    lantern(mb, -2.0, -3.4, C, 0.9); lantern(mb, 2.0, -3.4, C, 0.9);
   },
   apothecary(mb, R, rnd) {
     const { x0, x1, z0, z1, floorY: F, ceilY: C } = R;
@@ -1940,138 +2163,7 @@ const FURNISH = {
   }
 };
 
-/* ---------- build the interiors, doors and the indoor material ---------- */
-function makeIndoorMat(R, forFigure) {
-  const u = Object.assign({}, U, { uOpen: { value: lightOpenings(R) }, uRoomAmb: { value: v3(R.amb || 0xffd9a8, 0.1) },
-    uTex: { value: forFigure ? 0 : 0.85 }, uK: { value: forFigure ? 0.4 : 0.5 } });
-  return new THREE.ShaderMaterial({ uniforms: u, vertexShader: SH.litV, fragmentShader: SH.inF, vertexColors: true });
-}
-function doorLeafMesh(len, h, kind, dir) {
-  const mb = new MB(), sx = dir;
-  if (kind === 'saloon') {
-    // batwing doors: a short leaf from the knee to the chest, the doorway above stays open
-    const y0 = 0.5, lh = 1.1;
-    mb.box(sx * len / 2, y0, 0, len - 0.04, lh - 0.1, 0.05, IC.light, 3);
-    for (let i = 0; i < 5; i++) mb.box(sx * (0.12 + i * (len - 0.24) / 4), y0 + 0.15, 0.03, 0.05, lh - 0.4, 0.03, mulc(IC.light, 0.8), 0);
-    const top = (i) => y0 + lh - 0.1 - Math.sin((i / 8) * Math.PI) * 0.16;   // scalloped top, low in the middle
-    for (let i = 0; i < 8; i++) mb.box(sx * (len * (i + 0.5) / 8), top(i), 0, len / 8 + 0.01, 0.1, 0.06, IC.light, 3);
-    mb.box(sx * 0.04, y0 + 0.1, 0, 0.08, lh - 0.2, 0.08, mulc(IC.light, 0.7), 0);   // the hinge stile
-  } else {
-    mb.box(sx * len / 2, 0, 0, len - 0.02, h, 0.07, rgb(0x5a3a26), 13, { faceUV: 'pz', tilePz: 13 });
-    for (const y of [0.3, h - 0.4]) mb.box(sx * len / 2, y, 0.045, len - 0.1, 0.1, 0.03, mulc(rgb(0x5a3a26), 0.8), 0);
-    mb.box(sx * (len - 0.13), h * 0.45, 0.06, 0.05, 0.05, 0.06, IC.brass, 0);
-    mb.box(sx * (len - 0.13), h * 0.45, -0.06, 0.05, 0.05, 0.06, IC.brass, 0);
-  }
-  return new THREE.Mesh(mb.build(), G.litMat);
-}
-function addDoor(scene, R, kind, z, y0, width, height) {
-  const half = kind === 'single' ? [[-width / 2, width, 1]] : [[-width / 2, width / 2, 1], [width / 2, width / 2, -1]];
-  const D = { R, kind, leaves: [], z, center: rwp(R, 0, y0 + 1.2, z), angle: 0, vel: 0, target: 0, hold: 0, sgn: 1, wasOpen: false, inZone: false, meshes: [] };
-  R.door = D;
-  for (const [hx, len, dir] of half) {
-    const pivot = new THREE.Group();
-    pivot.position.copy(rwp(R, hx, y0, z));
-    pivot.rotation.y = R.ry;
-    const lm = doorLeafMesh(len, height, kind, dir); pivot.add(lm); D.meshes.push(lm);
-    scene.add(pivot);
-    D.leaves.push({ pivot, dir, angle: 0, vel: 0 });
-  }
-  DOORS.push(D);
-  return D;
-}
-
-function buildInteriors(scene) {
-  for (const R of ROOMS) {
-    const mb = new MB(), rnd = mulberry32(1000 + R.idx * 77), nc = COLL.length;
-    SEATCTX.R = R;
-    FURNISH[R.type](mb, R, rnd);
-    SEATCTX.R = null;
-    if (R.upper) for (let i = nc; i < COLL.length; i++) if (COLL[i].top === undefined && COLL[i].y0 === undefined) COLL[i].top = R.ceilY - 0.2;
-    if (R.parent) for (let i = nc; i < COLL.length; i++) if (COLL[i].y0 === undefined) COLL[i].y0 = R.floorY - 0.5;
-    R.mat = makeIndoorMat(R);
-    R.figMat = makeIndoorMat(R, true);
-    R.mesh = new THREE.Mesh(mb.build(), R.mat);
-    R.mesh.position.set(R.bx, 0, R.bz); R.mesh.rotation.y = R.ry;
-    R.mesh.updateMatrix(); R.mesh.matrixAutoUpdate = false;
-    R.mesh.visible = false;
-    scene.add(R.mesh);
-    if (R.doorKind) addDoor(scene, R, R.doorKind, R.doorZ, R.floorY, R.holeW || DOOR_W, R.doorH || (DOOR_H - R.floorY - 0.02));
-  }
-}
-
-/* ---------- per frame: where are you, doors, exposure ---------- */
-const ROOMSTATE = { cur: null, expo: 1 };
-function roomAt(x, z, pad, y) {
-  for (const R of ROOMS) {
-    if (y !== undefined && (y < (R.lvMin === undefined ? -1e9 : R.lvMin) || y >= (R.lvMax === undefined ? 1e9 : R.lvMax))) continue;
-    const [lx, lz] = rLocal(R, x, z);
-    for (const r of R.rects) if (lx > r[0] - pad && lx < r[1] + pad && lz > r[2] - pad && lz < r[3] + pad) return R;
-  }
-  return null;
-}
-function updateRooms(dt) {
-  const p = PLAY.pos;
-  const cur = roomAt(p.x, p.z, 0, p.y);
-  ROOMSTATE.cur = cur;
-  G.room = cur;
-  // interiors are drawn only where they can be seen; the two floors of a house see each other through the stairwell
-  for (const R of ROOMS) {
-    if (R.parent) { R.mesh.visible = cur === R || cur === R.parent; continue; }
-    const dDoor = Math.hypot(p.x - R.doorW.x, p.z - R.doorW.z);
-    R.mesh.visible = R === cur || dDoor < 18 || (cur && cur.parent === R);
-  }
-  // eyes: open up slowly in the dark, close down fast in the sun
-  const target = cur ? (cur.expo || 2.5) : 1;
-  const rate = target > ROOMSTATE.expo ? 0.6 : 1.5;
-  ROOMSTATE.expo += (target - ROOMSTATE.expo) * (1 - Math.exp(-dt * rate));
-  U.uBright.value = ROOMSTATE.expo;
-  // the cowboy takes on the light of the room he stands in
-  const cm = cur ? cur.figMat : G.litMat;
-  if (W.ch.parts[0].material !== cm) for (const part of W.ch.parts) part.material = cm;
-  // doors
-  for (const D of DOORS) {
-    const R = D.R;
-    const m = R === cur ? R.figMat : G.litMat;
-    if (D.meshes[0].material !== m) for (const dm of D.meshes) dm.material = m;
-    const [lx, lz] = rLocal(R, p.x, p.z);
-    const dz = lz - D.z;
-    if (D.kind === 'saloon') {
-      const inZone = Math.abs(lx) < 0.9 && Math.abs(dz) < 0.6;
-      const vIn = -(PLAY.vx * R.s + PLAY.vz * R.c); // speed towards the inside
-      for (const L of D.leaves) {
-        if (inZone) {
-          const push = Math.abs(vIn) > 0.2 ? Math.sign(vIn) : (dz > 0 ? 1 : -1);
-          const tgt = push * 1.3 * (1 - Math.min(1, Math.abs(dz) / 0.6) * 0.4);
-          const prev = L.angle;
-          L.angle += (tgt - L.angle) * (1 - Math.exp(-dt * 16));
-          L.vel = dt > 0 ? (L.angle - prev) / dt : 0;
-        } else {
-          L.vel += (-55 * L.angle - 2.4 * L.vel) * dt;
-          const prev = L.angle;
-          L.angle += L.vel * dt;
-          if (Math.sign(prev) !== Math.sign(L.angle) && Math.abs(L.vel) > 1.2 && L === D.leaves[0]) AMB.saloonClack(D.center, Math.min(1, Math.abs(L.vel) / 6));
-        }
-        L.pivot.rotation.y = R.ry + L.dir * L.angle;
-      }
-      if (inZone && !D.inZone) AMB.saloonPush(D.center);
-      D.inZone = inZone;
-      continue;
-    }
-    const dist = Math.hypot(lx, dz);
-    if (dist < 1.9 && Math.abs(p.y - R.floorY) < 1.2) {
-      // a closed door swings away from whoever comes: inwards from the street, outwards from inside
-      if (D.target === 0 && Math.abs(D.angle) < 0.3) D.sgn = dz >= 0 ? 1 : -1;
-      D.target = 1.62 * D.sgn; D.hold = 0.7;
-    } else if (dist > 2.7 || Math.abs(p.y - R.floorY) >= 1.2) { D.hold -= dt; if (D.hold <= 0) D.target = 0; }
-    if (D.target !== 0 && !D.wasOpen) { D.wasOpen = true; AMB.doorOpen(D.center); }
-    const prev = D.angle;
-    D.vel += (40 * (D.target - D.angle) - 11 * D.vel) * dt;
-    D.angle = clamp(D.angle + D.vel * dt, -1.7, 1.7);
-    if (D.target === 0 && D.wasOpen && Math.abs(D.angle) < 0.03 && Math.abs(prev) >= 0.03) { D.wasOpen = false; D.angle = 0; D.vel = 0; AMB.doorClose(D.center); }
-    for (const L of D.leaves) L.pivot.rotation.y = R.ry + L.dir * D.angle;
-  }
-}
-
+// ==== world/nature.js ====
 /* ---------- desert: cacti, bushes, rocks, mesas; moving bits ---------- */
 const PLACED = [];
 function freeSpot(x, z, r) {
@@ -2223,6 +2315,59 @@ function buildVulture() {
   return mb.build();
 }
 
+// ==== world/chunks.js ====
+/* ---------- chunks: the static world cut into square cells ----------
+   Everything that never moves (ground, road, buildings, plants, rocks) is merged per cell into one mesh: a cell
+   costs one draw call and cells out of view are skipped by the renderer. Ground far beyond the cells stays one
+   horizon mesh. For a bigger world this is the place where far cells are dropped and near ones built on demand.
+   Each cell remembers which triangles came from which source (terrain, town, ...) for bullet impacts. */
+const CHUNKS = { size: 96, reach: 192, cells: new Map() };
+
+// parts: [{ geo, kind }] (non-indexed). Returns [{ geo, kinds, key }] cells and one 'far' geometry for the rest.
+function chunkStatic(parts, cx, cz) {
+  const S = CHUNKS.size, cells = new Map(), far = { tris: [] };
+  parts.forEach((part, pi) => {
+    const P = part.geo.attributes.position.array, n = P.length / 9;
+    for (let t = 0; t < n; t++) {
+      const x = (P[t * 9] + P[t * 9 + 3] + P[t * 9 + 6]) / 3, z = (P[t * 9 + 2] + P[t * 9 + 5] + P[t * 9 + 8]) / 3;
+      let bucket = far;
+      if (Math.abs(x - cx) < CHUNKS.reach && Math.abs(z - cz) < CHUNKS.reach) {
+        const key = Math.floor((x - cx) / S) + ',' + Math.floor((z - cz) / S);
+        bucket = cells.get(key) || (cells.set(key, { key, tris: [] }), cells.get(key));
+      }
+      bucket.tris.push(pi, t);
+    }
+  });
+  const build = (tris) => {
+    const g = new THREE.BufferGeometry(), kinds = [];
+    for (const name of Object.keys(parts[0].geo.attributes)) {
+      const sz = parts[0].geo.attributes[name].itemSize, dst = new Float32Array((tris.length / 2) * 3 * sz);
+      for (let i = 0, j = 0; i < tris.length; i += 2, j++) {
+        const src = parts[tris[i]].geo.attributes[name].array, t = tris[i + 1];
+        dst.set(src.subarray(t * 3 * sz, (t + 1) * 3 * sz), j * 3 * sz);
+      }
+      g.setAttribute(name, new THREE.BufferAttribute(dst, sz));
+    }
+    // runs of triangles from the same source: [first triangle, kind]
+    for (let i = 0, j = 0; i < tris.length; i += 2, j++) if (!kinds.length || kinds[kinds.length - 1][1] !== parts[tris[i]].kind) kinds.push([j, parts[tris[i]].kind]);
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    return { geo: g, kinds };
+  };
+  const out = [];
+  for (const c of cells.values()) out.push(Object.assign(build(c.tris), { key: c.key }));
+  if (far.tris.length) out.push(Object.assign(build(far.tris), { key: 'far' }));
+  return out;
+}
+// which source a triangle of a chunk mesh came from
+function chunkKind(obj, tri) {
+  const K = obj.userData.kinds;
+  if (!K) return obj.name;
+  let lo = 0, hi = K.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (K[m][0] <= tri) lo = m; else hi = m - 1; }
+  return K[lo][1];
+}
+
+// ==== gfx/atlas.js ====
 /* ---------- texture atlas: 8x4 grey detail tiles (32 px) + 8 shop signs (128x32) ---------- */
 function buildAtlas(signFont) {
   const S = 512;
@@ -2340,7 +2485,7 @@ function buildAtlas(signFont) {
   return tex;
 }
 
-
+// ==== char/rig.js ====
 /* ---------- the cowboy: 13 rigid parts on a procedural rig ----------
    Legs use two-bone IK towards feet that are planted in the world, so a foot on the ground never slides.
    Everything else (pelvis bob, sway, hip twist, counter-rotating shoulders, arms, head, hat) follows the feet. */
@@ -2493,6 +2638,7 @@ function applyPose(ch) {
   for (const m of ch.parts) m.matrixWorldNeedsUpdate = true;
 }
 
+// ==== char/gait.js ====
 /* ---------- gait parameters as a function of speed ---------- */
 function gaitParams(s) {
   const k = smoothstep(3.0, 4.8, s);                       // 0 = walk, 1 = run
@@ -2771,6 +2917,7 @@ function updateGait() {
   applyPose(ch);
 }
 
+// ==== gfx/dust.js ====
 /* ---------- dust kicked up by footfalls: one dynamic mesh, no transparency ---------- */
 const DUST = {
   N: 48, items: [],
@@ -2837,6 +2984,7 @@ const DUST = {
   }
 };
 
+// ==== gfx/shaders.js ====
 /* ---------- GLSL ---------- */
 const G_ATLAS = `
 uniform sampler2D uAtlas;
@@ -3004,6 +3152,7 @@ SH.trailF = `
 uniform vec3 uCol; varying float vA;
 void main() { if (vA < 0.004) discard; gl_FragColor = vec4(uCol, vA); }`;
 
+// ==== gfx/render.js ====
 /* ---------- renderer, shared uniforms, materials, scene ---------- */
 const G = {};          // global render state
 const U = {
@@ -3043,14 +3192,15 @@ function assembleScene() {
     const m = new THREE.Mesh(geo, G.litMat); m.name = name; m.layers.enable(1); m.matrixAutoUpdate = false; m.updateMatrix();
     scene.add(m); W.worldMeshes.push(m); return m;
   };
-  W.terrain = addStatic(buildTerrain(), 'terrain');
-  W.road = addStatic(buildRoad(), 'road');
-  const town = buildTown();
-  W.town = addStatic(town.geo, 'town');
+  // the static world, built in this order (the town reads the ground), then merged per cell (see chunks.js)
+  const terrain = buildTerrain(), road = buildRoad(), town = buildTown(), nat = buildNature();
   W.bridge = town.bridge;
-  const nat = buildNature();
-  W.plants = addStatic(nat.plants, 'plants');
-  W.rocks = addStatic(nat.rocks, 'rocks');
+  const parts = [{ geo: terrain, kind: 'terrain' }, { geo: road, kind: 'road' }, { geo: town.geo, kind: 'town' },
+    { geo: nat.plants, kind: 'plants' }, { geo: nat.rocks, kind: 'rocks' }];
+  for (const c of chunkStatic(parts, TOWN.cx, TOWN.cz)) {
+    const m = addStatic(c.geo, 'chunk ' + c.key); m.userData.kinds = c.kinds; CHUNKS.cells.set(c.key, m);
+  }
+  for (const p of parts) p.geo.dispose();
   // moving bits
   const addDyn = (geo) => { const m = new THREE.Mesh(geo, G.litMat); m.layers.enable(2); scene.add(m); W.dynMeshes.push(m); return m; };
   W.poles = [];
@@ -3137,7 +3287,7 @@ function updateShadow(L) {
   SHADOW.key = key;
 }
 
-
+// ==== play/player.js ====
 /* ---------- player, camera, input ---------- */
 const PLAY = {
   pos: new THREE.Vector3(36, 0, 2.6), yaw: -Math.PI / 2, vx: 0, vz: 0, speed: 0, phase: 0, amp: 0, moving: false,
@@ -3145,6 +3295,145 @@ const PLAY = {
   inYaw: null, camPush: new THREE.Vector3()
 };
 const WALK = 1.7, RUN = 5.4;
+ACTORS.add({ id: 'player', kind: 'player', pos: PLAY.pos, get yaw() { return PLAY.yaw; }, get room() { return G.room || null; }, get seat() { return SIT.seat; } });
+
+function collide(px, pz, py) {
+  const r = 0.36;
+  for (let it = 0; it < 2; it++) {
+    for (const c of COLL) {
+      if (c.y0 !== undefined && py < c.y0) continue;
+      if (c.top !== undefined && py > c.top) continue;
+      if (c.r !== undefined) {
+        const dx = px - c.cx, dz = pz - c.cz, rr = c.r + r, d2 = dx * dx + dz * dz;
+        if (d2 < rr * rr) {
+          const d = Math.sqrt(d2) || 1e-4;
+          px = c.cx + (dx / d) * rr; pz = c.cz + (dz / d) * rr;
+        }
+        continue;
+      }
+      const dx = px - c.cx, dz = pz - c.cz;
+      if (Math.abs(dx) > c.hx + c.hz + r + 1 || Math.abs(dz) > c.hx + c.hz + r + 1) continue;
+      const ca = Math.cos(c.a), sa = Math.sin(c.a);
+      let lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
+      const qx = clamp(lx, -c.hx, c.hx), qz = clamp(lz, -c.hz, c.hz);
+      const ex = lx - qx, ez = lz - qz, d2 = ex * ex + ez * ez;
+      if (d2 >= r * r) continue;
+      if (d2 > 1e-10) {
+        const d = Math.sqrt(d2);
+        lx = qx + (ex / d) * r; lz = qz + (ez / d) * r;
+      } else {
+        const penX = c.hx - Math.abs(lx), penZ = c.hz - Math.abs(lz);
+        if (penX < penZ) lx = (lx >= 0 ? 1 : -1) * (c.hx + r); else lz = (lz >= 0 ? 1 : -1) * (c.hz + r);
+      }
+      px = c.cx + lx * ca + lz * sa; pz = c.cz - lx * sa + lz * ca;
+    }
+  }
+  const d = Math.hypot(px - TOWN.cx, pz - TOWN.cz);
+  if (d > 150) { px = TOWN.cx + ((px - TOWN.cx) * 150) / d; pz = TOWN.cz + ((pz - TOWN.cz) * 150) / d; }
+  return [px, pz];
+}
+function groundAt(px, pz, py) {
+  let g = surfaceHeight(px, pz);
+  for (const p of PLATS) {
+    if (py < p.y - 0.8) continue;
+    const dx = px - p.cx, dz = pz - p.cz, ca = Math.cos(p.a), sa = Math.sin(p.a);
+    const lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
+    if (Math.abs(lx) <= p.hx && Math.abs(lz) <= p.hz) g = Math.max(g, p.y);
+  }
+  return g;
+}
+
+function updatePlayer(dt) {
+  const k = INPUT.keys;
+  let ix = 0, iy = 0;
+  if (k.has('w') || k.has('ArrowUp')) iy += 1;
+  if (k.has('s') || k.has('ArrowDown')) iy -= 1;
+  if (k.has('a') || k.has('ArrowLeft')) ix -= 1;
+  if (k.has('d') || k.has('ArrowRight')) ix += 1;
+  const keyLen = Math.hypot(ix, iy);
+  if (keyLen > 0) { ix /= keyLen; iy /= keyLen; }
+  ix += INPUT.stickX + (INPUT.padX || 0); iy += -INPUT.stickY - (INPUT.padY || 0);
+  let mag = Math.min(1, Math.hypot(ix, iy));
+  PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
+  PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
+  if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
+  const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
+  const aiming = GUN.aiming();
+  const run = !aiming && (k.has('Shift') || INPUT.padRun || touchRun);
+  const yaw = PLAY.camYaw;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
+  const ml = Math.hypot(mx, mz);
+  if (ml > 1e-4) { mx /= ml; mz /= ml; }
+  PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
+  let target = 0;
+  if (mag > 0.08) target = run ? RUN : (INPUT.joy ? WALK * clamp(mag / 0.85, 0.35, 1) : WALK);
+  if (aiming) target = Math.min(target, WALK * 0.8);
+  const punching = FIST.st !== 'idle';
+  if (punching) target = Math.min(target, WALK * 0.5);
+  const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
+  PLAY.vx += (mx * target - PLAY.vx) * a;
+  PLAY.vz += (mz * target - PLAY.vz) * a;
+  PLAY.speed = Math.hypot(PLAY.vx, PLAY.vz);
+  PLAY.moving = PLAY.speed > 0.35;
+  if (punching && FIST.faceYaw !== null) {
+    let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+    PLAY.yaw += d * (1 - Math.exp(-dt * 22));
+  } else if (aiming) {
+    // aiming: the body turns side-on to the target, right shoulder forward
+    const ty = PLAY.camYaw + Math.PI + 0.35;
+    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+    PLAY.yaw += d * (1 - Math.exp(-dt * 16));
+  } else if (PLAY.speed > 0.25) {
+    const ty = Math.atan2(PLAY.vx, PLAY.vz);
+    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+    PLAY.yaw += d * (1 - Math.exp(-dt * 14));
+  }
+  let px = PLAY.pos.x + PLAY.vx * dt, pz = PLAY.pos.z + PLAY.vz * dt;
+  const [cx, cz] = collide(px, pz, PLAY.pos.y);
+  // just up from a seat that stands close to furniture: ease out of it instead of popping
+  if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
+  const g = groundAt(px, pz, PLAY.pos.y);
+  PLAY.pos.x = px; PLAY.pos.z = pz;
+  PLAY.pos.y += (g - PLAY.pos.y) * (1 - Math.exp(-dt * (g > PLAY.pos.y ? 22 : 14)));
+  const stride = PLAY.speed > 4 ? 2.5 : 1.6;
+  PLAY.phase += (PLAY.speed * dt * TAU) / stride;
+  const tAmp = PLAY.moving ? clamp(PLAY.speed / RUN, 0.25, 1) : 0;
+  PLAY.amp += (tAmp - PLAY.amp) * (1 - Math.exp(-dt * 10));
+  W.ch.root.position.copy(PLAY.pos);
+  W.ch.root.rotation.y = PLAY.yaw;
+}
+
+function updateWorld(dt, t) {
+  W.rotor.rotation.z += dt * 2.4;
+  for (const m of W.poles) m.rotation.y -= dt * 1.6; // barber poles turn, stripes seem to climb
+  for (const m of W.weeds) {
+    const u = m.userData, len = Math.abs(u.x1 - u.x0);
+    u.t += (dt * u.speed) / len;
+    const f = u.t % 1;
+    const x = u.x0 + (u.x1 - u.x0) * f;
+    const z = u.z + Math.sin(x * 0.07 + u.x0) * u.wob;
+    const hop = Math.abs(Math.sin(t * 2.6 + u.x0)) * 0.7;
+    m.position.set(x, surfaceHeight(x, z) + 0.58 + hop, z);
+    m.rotation.z += (dt * u.speed) / 0.6;
+    m.visible = f > 0.02 && f < 0.98;
+  }
+  for (const b of W.birds) {
+    const u = b.userData, a = t * u.sp + u.ph;
+    b.position.set(-6 + Math.cos(a) * u.r, u.h + Math.sin(t * 0.3 + u.ph) * 2, 2 + Math.sin(a) * u.r);
+    b.rotation.set(0, Math.atan2(-Math.sin(a), Math.cos(a)), 0.32);
+  }
+}
+
+function updateCharacterVisual() {
+  updateGait();
+  DUST.update(GAIT.dt || 0);
+  const g = groundAt(PLAY.pos.x, PLAY.pos.z, PLAY.pos.y);
+  W.blob.position.set(PLAY.pos.x, g + 0.04, PLAY.pos.z);
+  W.blob.scale.set(1.1, 1, 0.9);
+}
+
+// ==== play/input.js ====
 const INPUT = { keys: new Set(), joy: null, look: null, stickX: 0, stickY: 0, padRun: false, padLookX: 0, padLookY: 0, padPrev: [] };
 
 function initInput(app, canvas, onAction) {
@@ -3264,113 +3553,7 @@ function pollGamepad(onAction) {
   if (INPUT.padX || INPUT.padY) onAction('move');
 }
 
-function collide(px, pz, py) {
-  const r = 0.36;
-  for (let it = 0; it < 2; it++) {
-    for (const c of COLL) {
-      if (c.y0 !== undefined && py < c.y0) continue;
-      if (c.top !== undefined && py > c.top) continue;
-      if (c.r !== undefined) {
-        const dx = px - c.cx, dz = pz - c.cz, rr = c.r + r, d2 = dx * dx + dz * dz;
-        if (d2 < rr * rr) {
-          const d = Math.sqrt(d2) || 1e-4;
-          px = c.cx + (dx / d) * rr; pz = c.cz + (dz / d) * rr;
-        }
-        continue;
-      }
-      const dx = px - c.cx, dz = pz - c.cz;
-      if (Math.abs(dx) > c.hx + c.hz + r + 1 || Math.abs(dz) > c.hx + c.hz + r + 1) continue;
-      const ca = Math.cos(c.a), sa = Math.sin(c.a);
-      let lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
-      const qx = clamp(lx, -c.hx, c.hx), qz = clamp(lz, -c.hz, c.hz);
-      const ex = lx - qx, ez = lz - qz, d2 = ex * ex + ez * ez;
-      if (d2 >= r * r) continue;
-      if (d2 > 1e-10) {
-        const d = Math.sqrt(d2);
-        lx = qx + (ex / d) * r; lz = qz + (ez / d) * r;
-      } else {
-        const penX = c.hx - Math.abs(lx), penZ = c.hz - Math.abs(lz);
-        if (penX < penZ) lx = (lx >= 0 ? 1 : -1) * (c.hx + r); else lz = (lz >= 0 ? 1 : -1) * (c.hz + r);
-      }
-      px = c.cx + lx * ca + lz * sa; pz = c.cz - lx * sa + lz * ca;
-    }
-  }
-  const d = Math.hypot(px - TOWN.cx, pz - TOWN.cz);
-  if (d > 150) { px = TOWN.cx + ((px - TOWN.cx) * 150) / d; pz = TOWN.cz + ((pz - TOWN.cz) * 150) / d; }
-  return [px, pz];
-}
-function groundAt(px, pz, py) {
-  let g = surfaceHeight(px, pz);
-  for (const p of PLATS) {
-    if (py < p.y - 0.8) continue;
-    const dx = px - p.cx, dz = pz - p.cz, ca = Math.cos(p.a), sa = Math.sin(p.a);
-    const lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
-    if (Math.abs(lx) <= p.hx && Math.abs(lz) <= p.hz) g = Math.max(g, p.y);
-  }
-  return g;
-}
-
-function updatePlayer(dt) {
-  const k = INPUT.keys;
-  let ix = 0, iy = 0;
-  if (k.has('w') || k.has('ArrowUp')) iy += 1;
-  if (k.has('s') || k.has('ArrowDown')) iy -= 1;
-  if (k.has('a') || k.has('ArrowLeft')) ix -= 1;
-  if (k.has('d') || k.has('ArrowRight')) ix += 1;
-  const keyLen = Math.hypot(ix, iy);
-  if (keyLen > 0) { ix /= keyLen; iy /= keyLen; }
-  ix += INPUT.stickX + (INPUT.padX || 0); iy += -INPUT.stickY - (INPUT.padY || 0);
-  let mag = Math.min(1, Math.hypot(ix, iy));
-  PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
-  PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
-  if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
-  const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
-  const aiming = GUN.aiming();
-  const run = !aiming && (k.has('Shift') || INPUT.padRun || touchRun);
-  const yaw = PLAY.camYaw;
-  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-  let mx = rx * ix + fx * iy, mz = rz * ix + fz * iy;
-  const ml = Math.hypot(mx, mz);
-  if (ml > 1e-4) { mx /= ml; mz /= ml; }
-  PLAY.inYaw = mag > 0.08 && ml > 1e-4 ? Math.atan2(mx, mz) : null;   // where the player is steering
-  let target = 0;
-  if (mag > 0.08) target = run ? RUN : (INPUT.joy ? WALK * clamp(mag / 0.85, 0.35, 1) : WALK);
-  if (aiming) target = Math.min(target, WALK * 0.8);
-  const punching = FIST.st !== 'idle';
-  if (punching) target = Math.min(target, WALK * 0.5);
-  const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
-  PLAY.vx += (mx * target - PLAY.vx) * a;
-  PLAY.vz += (mz * target - PLAY.vz) * a;
-  PLAY.speed = Math.hypot(PLAY.vx, PLAY.vz);
-  PLAY.moving = PLAY.speed > 0.35;
-  if (punching && FIST.faceYaw !== null) {
-    let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-    PLAY.yaw += d * (1 - Math.exp(-dt * 22));
-  } else if (aiming) {
-    // aiming: the body turns side-on to the target, right shoulder forward
-    const ty = PLAY.camYaw + Math.PI + 0.35;
-    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-    PLAY.yaw += d * (1 - Math.exp(-dt * 16));
-  } else if (PLAY.speed > 0.25) {
-    const ty = Math.atan2(PLAY.vx, PLAY.vz);
-    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-    PLAY.yaw += d * (1 - Math.exp(-dt * 14));
-  }
-  let px = PLAY.pos.x + PLAY.vx * dt, pz = PLAY.pos.z + PLAY.vz * dt;
-  const [cx, cz] = collide(px, pz, PLAY.pos.y);
-  // just up from a seat that stands close to furniture: ease out of it instead of popping
-  if (PLAY.softColl > 0) { PLAY.softColl -= dt; const f = 1 - Math.exp(-dt * 9); px += (cx - px) * f; pz += (cz - pz) * f; } else { px = cx; pz = cz; }
-  const g = groundAt(px, pz, PLAY.pos.y);
-  PLAY.pos.x = px; PLAY.pos.z = pz;
-  PLAY.pos.y += (g - PLAY.pos.y) * (1 - Math.exp(-dt * (g > PLAY.pos.y ? 22 : 14)));
-  const stride = PLAY.speed > 4 ? 2.5 : 1.6;
-  PLAY.phase += (PLAY.speed * dt * TAU) / stride;
-  const tAmp = PLAY.moving ? clamp(PLAY.speed / RUN, 0.25, 1) : 0;
-  PLAY.amp += (tAmp - PLAY.amp) * (1 - Math.exp(-dt * 10));
-  W.ch.root.position.copy(PLAY.pos);
-  W.ch.root.rotation.y = PLAY.yaw;
-}
-
+// ==== play/camera.js ====
 function updateCamera(dt) {
   const look = PLAY.pos.clone(); look.y += 1.35 - 0.32 * SIT.w;
   if (!G.lookAt) G.lookAt = look.clone();
@@ -3456,27 +3639,6 @@ function updateCamera(dt) {
   W.ch.root.visible = cam.position.distanceTo(G.lookAt) > 0.75;
 }
 
-function updateWorld(dt, t) {
-  W.rotor.rotation.z += dt * 2.4;
-  for (const m of W.poles) m.rotation.y -= dt * 1.6; // barber poles turn, stripes seem to climb
-  for (const m of W.weeds) {
-    const u = m.userData, len = Math.abs(u.x1 - u.x0);
-    u.t += (dt * u.speed) / len;
-    const f = u.t % 1;
-    const x = u.x0 + (u.x1 - u.x0) * f;
-    const z = u.z + Math.sin(x * 0.07 + u.x0) * u.wob;
-    const hop = Math.abs(Math.sin(t * 2.6 + u.x0)) * 0.7;
-    m.position.set(x, surfaceHeight(x, z) + 0.58 + hop, z);
-    m.rotation.z += (dt * u.speed) / 0.6;
-    m.visible = f > 0.02 && f < 0.98;
-  }
-  for (const b of W.birds) {
-    const u = b.userData, a = t * u.sp + u.ph;
-    b.position.set(-6 + Math.cos(a) * u.r, u.h + Math.sin(t * 0.3 + u.ph) * 2, 2 + Math.sin(a) * u.r);
-    b.rotation.set(0, Math.atan2(-Math.sin(a), Math.cos(a)), 0.32);
-  }
-}
-
 /* over the right shoulder, looking along camYaw / aimPitch; pulled in if a wall is in the way */
 function aimCamera(R) {
   const c = PLAY.camYaw, p = PLAY.aimPitch + GUN.kickP;
@@ -3502,14 +3664,7 @@ function aimCamera(R) {
   return { pos, look: piv.clone().addScaledVector(v, 20) };
 }
 
-function updateCharacterVisual() {
-  updateGait();
-  DUST.update(GAIT.dt || 0);
-  const g = groundAt(PLAY.pos.x, PLAY.pos.z, PLAY.pos.y);
-  W.blob.position.set(PLAY.pos.x, g + 0.04, PLAY.pos.z);
-  W.blob.scale.set(1.1, 1, 0.9);
-}
-
+// ==== audio/sfx.js ====
 /* ---------- footstep sounds, synthesised with Web Audio (no sound files) ----------
    Each footfall = heel thump + sand crunch (a few tiny grain clicks) + a soft spur jingle.
    Porches and the bridge sound hollow instead. Everything is varied slightly so no two steps match. */
@@ -3682,6 +3837,7 @@ function onPlanks(x, z, y) {
   return false;
 }
 
+// ==== audio/samples.js ====
 /* ---------- recorded sounds (MP3, embedded) ----------
    shot:  "9mm Gunshot" by GoodSoundForYou (soundbible.com), CC BY 3.0, via the Cataclysm-DDA CC-Sounds pack;
           trimmed, rumble filtered out, pitched down 6 %.
@@ -3703,6 +3859,7 @@ const SND_DATA = {
   swing3: 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//tQwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAGAAAFtQBISEhISEhISEhISEhISEhIbW1tbW1tbW1tbW1tbW1tbW2SkpKSkpKSkpKSkpKSkpKStra2tra2tra2tra2tra2trbb29vb29vb29vb29vb29vb2/////////////////////8AAAAATGF2YzYwLjMxAAAAAAAAAAAAAAAAJAZYAAAAAAAABbUMKS5UAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/7UMQAAAlEMTY0kwABjo6rtx7AABQsjAOAMDZOkKBQCYJgmKyduc1wQAAAghgPrB8H36w/BwEDmCH8TggCDpRygQdBAEAwrrBCD4fLg+f/BwEP/wfB8Hz//BwEAQ/KRJEWmEVpw1ppNNIohEmCdZ/nqUaSDrghiGUAyh4P5xSyWVbkEZ62tfiYfgX023sz1NuzS9nqUrfa5lZ5/HsEpyaSDMhA7R5uxLTgTFzUkKGXSuwpTX8bjfqPvfSi7tc2TtFUpYiLI0o2442RH4ZpYjX/+1LEBoALaPVlvZQAAYGQ7DmUjZBNaJIIyURoiFIKu/MSt941DsjVQ+B8BARRANDsO3BudLQY3l6JXtVJJ97wm9Fi8bGtX1zouid6RKS3P6eh/8/pX/M3Hx9wOe0mQfGUcMNlgABAAACfpqVMPeBFV2DXieIiZTHgaIQ9XjrogBrPY0TFTzPCmjGDLLMELZQhtCfXW3aBi6SGVEpOtA+JR9h+LQphGdvBQdctTLErldTQNPCnLBecxVgKwaFLRlgom7i6xADAAFWspaTeaU8Zif/7UsQGgAtAaVdsMGjBjRAp7YYNKKn0BdKPSZaKB2OhBJJ4z2uFnFiI1JHoADI2Ba2HazVHCwDFQUmp4ioqpIuKA88DAW166wEqwNTjZkK2kTLHf1aBEyrnDqbnGVoplh3otACBAMwUDL+sMW0QcV+55Q2wQ4IB6GR2WSkilFZpmG/suPXDMA+5+COpNZ0TqRtSbKAwaBcOBw0dAqWoa6Bg0551rwDKptSGYtFmvBwimysVNRssNamtulzhOyTka9LlNCzKqpAA3GizSAZPM7CV//tSxAWACwBbT4ewaQGIEmkg9I0ZMQDsnQWJWqAmnwfnQdGKlYyhI1qlSkeRB8KQFNTVLY4nAag01NYeJEUHi48IxIdLlu0zbGwLnVUP2qRb9r1p2Jnnpr7Xpa1LxTwPL5hVpJCAY0OPh4yi2qlCSdpoSGlCMes/oefFhgE3cMKKvCgv2f1rcWPyg7+pP56cpsD5jxtZqozdqz/wjjH/gZ9/3vt3b0rtTvusdeotfk8BbnoD/QX77ezoVyhv//h3iG9k5IgTNolfMADSJYQie4D/+1LEBoAK8HtLhgxRAUeG5rD2ASCVh6Bs4LqkoUhSFJ7p17K1VE8UBJYZxlXyOHIbcdShfDBZgaeZLSJIikFTtITOxoNXyFejTaofeJTuRtu9BFBKepNnUPUdd7ORUVVV/vmS1SguSckEFKN0lpuEKE2YCGFPMrS8Ix9i57a1aeKgrBVQ9xKtywkeDsS8rniw8sInwaWCruWezPctAox6h4avRdxF6w0ySy0Jgqn/5YO1BAVhCEEOhSLheKBzEA4XwMtQwNsBmKiooLCwsLCoqP/7UsQPg8jQJJRGLYIAAAA0gAAABKiopFhYW////4qKior/4qKioqLCwsLB/wqKioqKf9YqKiosLCwsLsVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
 };
 
+// ==== combat/fx.js ====
 /* ---------- shot effects: muzzle flash and its light, smoke, debris, sparks, bullet holes ----------
    Everything lives in a handful of pooled meshes that are written in place, so a shot costs no new objects
    and the draw-call count stays flat no matter how much you shoot. */
@@ -3854,9 +4011,10 @@ function surfaceOf(hit) {
   const obj = hit.object, g = obj.geometry, i = hit.face.a;
   const col = g.attributes.color ? [g.attributes.color.getX(i), g.attributes.color.getY(i), g.attributes.color.getZ(i)] : [0.6, 0.5, 0.4];
   const tile = g.attributes.tile ? Math.round(g.attributes.tile.getX(i)) : 0;
-  if (obj === W.terrain || obj === W.road) return { kind: 'dirt', col };
-  if (obj === W.rocks) return { kind: 'stone', col };
-  if (obj === W.plants) return { kind: col[1] > col[0] * 1.05 ? 'cactus' : null, col };
+  const src = chunkKind(obj, hit.faceIndex);
+  if (src === 'terrain' || src === 'road') return { kind: 'dirt', col };
+  if (src === 'rocks') return { kind: 'stone', col };
+  if (src === 'plants') return { kind: col[1] > col[0] * 1.05 ? 'cactus' : null, col };
   if (DOORS.some((D) => D.meshes.includes(obj))) return { kind: null, col, splinter: true };
   if (tile >= 32) return { kind: col[0] + col[1] + col[2] < 0.6 ? 'glass' : 'wood', col };  // lettering on a shop window is glass
   if ([2, 3, 5, 13].includes(tile)) return { kind: 'wood', col };
@@ -4043,15 +4201,11 @@ const FX = {
   }
 };
 
+// ==== combat/gun.js ====
 /* ---------- the revolver: holster, draw, aim, fire, reload; bottles to shoot at ----------
    States: holster -> draw -> drawn (lowered or aimed) -> holstering, and reload from drawn.
    The right arm is solved every frame so the barrel points where the crosshair points.
-   Every shot is also written to WORLD_EVENTS so that townsfolk can react to it later. */
-const WORLD_EVENTS = [];
-function worldEvent(type, x, y, z, extra) {
-  WORLD_EVENTS.push(Object.assign({ type, x, y, z, t: G.time }, extra || {}));
-  if (WORLD_EVENTS.length > 60) WORLD_EVENTS.shift();
-}
+   Every shot is also a world event (core/world.js) so that townsfolk can react to it later. */
 
 // gun space: origin at the top of the grip (inside the hand), barrel along +z, top along +y
 const GUNM = {
@@ -4379,6 +4533,7 @@ const GUN = {
   }
 };
 
+// ==== combat/gun_sound.js ====
 /* ---------- gun sounds: recordings for the shot, the empty click and glass, the small mechanical noises synthesised ---------- */
 const GSFX = {
   buf: {}, loading: false,
@@ -4488,6 +4643,7 @@ const GSFX = {
   }
 };
 
+// ==== combat/dummy.js ====
 /* ---------- fists and the training dummy ----------
    With the revolver holstered the attack button punches: a tap throws a jab (left and right in turn),
    holding winds up a haymaker that lands on release. Punches cost stamina. A landed blow freezes the
@@ -4563,6 +4719,7 @@ const DUMMY = {
   }
 };
 
+// ==== combat/fist.js ====
 /* Punches are paths of the fist through space, written for the right hand in the character's frame
    (x = his left, y = height above the ground, z = forward, the target straight ahead) and mirrored for the left.
    Each key also gives the way the elbow points (pole) and the body: torso turn ty (+ = right shoulder forward),
@@ -4902,6 +5059,7 @@ const FSFX = {
   }
 };
 
+// ==== interact/interact.js ====
 /* ---------- interaction: one system for everything one can use ----------
    Every usable thing is an entry with a place, the room it belongs to, an occupant and a verb. The best entry
    near you and in front of you is in focus; E (pad: Y, touch: the context button) uses it.
@@ -4921,20 +5079,9 @@ const SIT_KINDS = {
 };
 
 const INTERACT = {
-  items: [], grid: new Map(), cell: 4, focus: null, label: '', _near: [],
-  add(it) {
-    it.id = this.items.length; this.items.push(it);
-    const k = Math.floor(it.x / this.cell) + ',' + Math.floor(it.z / this.cell);
-    if (!this.grid.has(k)) this.grid.set(k, []);
-    this.grid.get(k).push(it);
-    return it;
-  },
-  near(x, z, r) {
-    const out = this._near, c = this.cell; out.length = 0;
-    for (let i = Math.floor((x - r) / c); i <= Math.floor((x + r) / c); i++)
-      for (let j = Math.floor((z - r) / c); j <= Math.floor((z + r) / c); j++) { const L = this.grid.get(i + ',' + j); if (L) for (const it of L) out.push(it); }
-    return out;
-  },
+  items: [], grid: new Grid(4), focus: null, label: '',
+  add(it) { it.id = this.items.length; this.items.push(it); return this.grid.add(it); },
+  near(x, z, r) { return this.grid.near(x, z, r); },
   init() {
     for (const S of SEATS) {
       const it = this.add(makeSeat(S));
@@ -5017,6 +5164,7 @@ function makeSeat(S) {
   });
 }
 
+// ==== interact/sit.js ====
 /* ---------- sitting down, sitting, standing up ----------
    approach: walk to the spot in front of the seat and turn round; down: hips back and down, upper body forward,
    feet shuffle to their places; sit: breathe and look about; up: the same backwards. The seat owns the pose meanwhile. */
@@ -5195,6 +5343,7 @@ function legKnee(H, A, out) {
   return out.copy(H).addScaledVector(_lk, cosA * L1).addScaledVector(_lp, sinA * L1);
 }
 
+// ==== audio/ambient.js ====
 /* ---------- ambience: everything synthesised, everything placed in the world ----------
    Beds:      desert wind (gusting, stronger outside town).
    Places:    saloon (a self-playing honky-tonk piano), windmill squeak, doors.
@@ -5623,6 +5772,7 @@ const AMB = {
   }
 };
 
+// ==== ui/hud.js ====
 /* ---------- HUD: perf readout, gait info, slow motion, sound toggle, hints ---------- */
 const HUD = {
   init(onHud) {
@@ -5694,6 +5844,51 @@ function initGunPad(onAction) {
   on('bHolster', () => GUN.toggleHolster());
 }
 
+// ==== core/save.js ====
+/* ---------- save game ----------
+   Each system that has something worth keeping registers a part: collect() returns plain data, apply(data) puts
+   it back. The whole save carries a format version; when the format changes, V goes up and migrate() converts
+   older saves step by step, so nobody loses their game with an update. Stored in this browser only. */
+const SAVE = {
+  KEY: 'polywest.save', V: 1, parts: {}, timer: 0,
+  part(name, collect, apply) { this.parts[name] = { collect, apply }; },
+  snapshot() {
+    const o = { v: this.V, at: Date.now(), parts: {} };
+    for (const [n, p] of Object.entries(this.parts)) { try { o.parts[n] = p.collect(); } catch (e) { /* skip a part that fails */ } }
+    return o;
+  },
+  raw() { return JSON.stringify(this.snapshot()); },
+  write() { try { localStorage.setItem(this.KEY, this.raw()); return true; } catch (e) { return false; } },
+  stored() { try { return localStorage.getItem(this.KEY); } catch (e) { return null; } },
+  clear() { try { localStorage.removeItem(this.KEY); } catch (e) { /* nothing to clear */ } },
+  load(raw) {
+    let o = null;
+    try { o = JSON.parse(raw); } catch (e) { return false; }
+    o = this.migrate(o);
+    if (!o) return false;
+    for (const [n, p] of Object.entries(this.parts)) if (o.parts[n] !== undefined) { try { p.apply(o.parts[n]); } catch (e) { /* keep the default */ } }
+    return true;
+  },
+  // old format -> new format, one version at a time (example for later: if (o.v === 1) { ...; o.v = 2; })
+  migrate(o) {
+    if (!o || typeof o.v !== 'number' || !o.parts || o.v > this.V) return null;
+    return o;
+  },
+  init() {
+    this.part('player', () => ({ pos: [PLAY.pos.x, PLAY.pos.y, PLAY.pos.z].map((v) => +v.toFixed(2)), yaw: +PLAY.yaw.toFixed(3), cam: +PLAY.camYaw.toFixed(3) }),
+      (d) => { PLAY.pos.set(d.pos[0], d.pos[1], d.pos[2]); PLAY.yaw = d.yaw; PLAY.camYaw = d.cam; GAIT.init = false; G.lookAt = null; });
+    this.part('gun', () => ({ ammo: GUN.ammo, reserve: GUN.reserve }), (d) => { GUN.ammo = clamp(d.ammo | 0, 0, 6); GUN.reserve = clamp(d.reserve | 0, 0, GUN.MAX); });
+    const raw = this.stored();
+    if (raw) this.load(raw);
+    // keep it fresh: now and then, and whenever the page is hidden or closed
+    const flush = () => { if (!SIT.busy()) this.write(); };
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+    window.addEventListener('pagehide', flush);
+  },
+  update(dt) { this.timer += dt; if (this.timer > 20) { this.timer = 0; if (!SIT.busy()) this.write(); } }
+};
+
+// ==== main.js ====
 /* ---------- boot, measurement, main loop ---------- */
 (function () {
   const app = document.getElementById('app');
@@ -5762,6 +5957,7 @@ function initGunPad(onAction) {
     updateCharacterVisual();
     GUN.late(dt);
     AMB.update(dt);
+    SAVE.update(dt);
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();
@@ -5795,6 +5991,7 @@ function initGunPad(onAction) {
     HUD.init(toggleHud);
     initGunPad(onAction);
     INTERACT.init();
+    SAVE.init();
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();

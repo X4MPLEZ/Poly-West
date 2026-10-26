@@ -66,6 +66,7 @@
     updateCharacterVisual();
     GUN.late(dt);
     AMB.update(dt);
+    SAVE.update(dt);
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();
@@ -99,6 +100,7 @@
     HUD.init(toggleHud);
     initGunPad(onAction);
     INTERACT.init();
+    SAVE.init();
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();

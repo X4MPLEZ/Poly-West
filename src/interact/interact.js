@@ -17,20 +17,9 @@ const SIT_KINDS = {
 };
 
 const INTERACT = {
-  items: [], grid: new Map(), cell: 4, focus: null, label: '', _near: [],
-  add(it) {
-    it.id = this.items.length; this.items.push(it);
-    const k = Math.floor(it.x / this.cell) + ',' + Math.floor(it.z / this.cell);
-    if (!this.grid.has(k)) this.grid.set(k, []);
-    this.grid.get(k).push(it);
-    return it;
-  },
-  near(x, z, r) {
-    const out = this._near, c = this.cell; out.length = 0;
-    for (let i = Math.floor((x - r) / c); i <= Math.floor((x + r) / c); i++)
-      for (let j = Math.floor((z - r) / c); j <= Math.floor((z + r) / c); j++) { const L = this.grid.get(i + ',' + j); if (L) for (const it of L) out.push(it); }
-    return out;
-  },
+  items: [], grid: new Grid(4), focus: null, label: '',
+  add(it) { it.id = this.items.length; this.items.push(it); return this.grid.add(it); },
+  near(x, z, r) { return this.grid.near(x, z, r); },
   init() {
     for (const S of SEATS) {
       const it = this.add(makeSeat(S));

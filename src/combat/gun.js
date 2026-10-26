@@ -1,12 +1,7 @@
 /* ---------- the revolver: holster, draw, aim, fire, reload; bottles to shoot at ----------
    States: holster -> draw -> drawn (lowered or aimed) -> holstering, and reload from drawn.
    The right arm is solved every frame so the barrel points where the crosshair points.
-   Every shot is also written to WORLD_EVENTS so that townsfolk can react to it later. */
-const WORLD_EVENTS = [];
-function worldEvent(type, x, y, z, extra) {
-  WORLD_EVENTS.push(Object.assign({ type, x, y, z, t: G.time }, extra || {}));
-  if (WORLD_EVENTS.length > 60) WORLD_EVENTS.shift();
-}
+   Every shot is also a world event (core/world.js) so that townsfolk can react to it later. */
 
 // gun space: origin at the top of the grip (inside the hand), barrel along +z, top along +y
 const GUNM = {

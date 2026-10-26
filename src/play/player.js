@@ -5,6 +5,7 @@ const PLAY = {
   inYaw: null, camPush: new THREE.Vector3()
 };
 const WALK = 1.7, RUN = 5.4;
+ACTORS.add({ id: 'player', kind: 'player', pos: PLAY.pos, get yaw() { return PLAY.yaw; }, get room() { return G.room || null; }, get seat() { return SIT.seat; } });
 
 function collide(px, pz, py) {
   const r = 0.36;
