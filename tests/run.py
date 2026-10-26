@@ -663,7 +663,7 @@ async def check_quick(g):
       const bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
       TALK.start(false);
       await TALK.send('Einen Whiskey bitte!'); const said = N.talkLog.slice(-1)[0].text, waiting = !!B.pending && B.pending.id === 'whiskey';
-      B.pay(); out.order = [asked, waiting, /fünfundzwanzig Cent/.test(said), B.orders.length + (B.cur ? 1 : 0) > 0];
+      B.pay(); out.order = [asked, waiting, /fünfundzwanzig Cent/i.test(said), B.orders.length + (B.cur ? 1 : 0) > 0];
       await TALK.send('Danke'); await TALK.send('Was kostet ein Bier?'); out.plain = asked;
       await TALK.send('Was hältst du eigentlich von dem Sheriff?'); out.question = asked;
       B.bags = {}; const seen = []; for (let i = 0; i < 6; i++) seen.push(B.pick('shot').text); out.noRepeat = new Set(seen).size === 6;
