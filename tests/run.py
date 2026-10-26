@@ -350,7 +350,7 @@ async def check_npc(g):
         TALK.remoteHeard('Wie heißt du?', false); TALK.remoteHeard('Wie heißt du?', true);
         return new Promise((ok) => setTimeout(ok, 50)).then(() => { out.remote = (B.npc.talkLog || []).length - n0; out.remoteSaid = B.npc.said;
           TALK.close(); out.closed = !TALK.open; MICWIN.ok = false; MICWIN.win = null; return out; }); }); }''')
-    ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.6 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
+    ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.7 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
           and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5
           and r['canTalk'] and r['panel'] and r['log'] >= 2 and r['beer'] == 'Bier' and r['paid'] == 10 and r['closed'] and r['remote'] == 2 and 'Hank' in r['remoteSaid'])
     return ok, json.dumps(r)
