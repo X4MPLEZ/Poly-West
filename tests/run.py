@@ -661,7 +661,7 @@ async def check_quick(g):
       await TALK.send('Einen Whiskey bitte!'); out.order = [asked, B.orders.length + (B.cur ? 1 : 0) > 0, B.LINES.whiskey.flat().includes(N.talkLog.slice(-1)[0].text)];
       await TALK.send('Danke'); await TALK.send('Was kostet ein Bier?'); out.plain = asked;
       await TALK.send('Was hältst du eigentlich von dem Sheriff?'); out.question = asked;
-      const seen = []; for (let i = 0; i < 6; i++) seen.push(B.pick('shot').text); out.noRepeat = new Set(seen).size === 6;
+      B.bags = {}; const seen = []; for (let i = 0; i < 6; i++) seen.push(B.pick('shot').text); out.noRepeat = new Set(seen).size === 6;
       // a shot in his saloon: he likes you less, and the AI hears about it (with the person apart as the system part)
       const a0 = B.att; worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' }); out.att = [+a0.toFixed(2), +B.att.toFixed(2)];
       TALK.via = 'key'; await TALK.send('Was ist los mit dir?'); out.ctx = /Haltung zu ihm: misstrauisch/.test(lastPrompt) && /geschossen/.test(lastPrompt) && /Du bist Hank/.test(lastSys) && !/Du bist Hank/.test(lastPrompt);
