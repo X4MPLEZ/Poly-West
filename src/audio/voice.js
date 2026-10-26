@@ -110,8 +110,10 @@ const VOICE = {
   },
   mood(name) { return this.MOODS[name] ? name : 'neutral'; },
   st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 22050, q: [], playing: null, nextId: 1, waits: {},
-  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
-  ready() { return this.st === 'ready'; },
+  // with an ElevenLabs key (own page) ElevenLabs speaks and Piper is not loaded at all; Piper again if that fails
+  eleven() { return !!SETTINGS.v.voice && DIRECT.elevenOn(); },
+  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && !this.eleven(); },
+  ready() { return this.eleven() || this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
   load() {
@@ -168,6 +170,7 @@ const VOICE = {
   },
   // for the player: which voice is speaking
   label() {
+    if (this.eleven()) return 'ElevenLabs';
     if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
     if (this.st === 'ready') return 'echte Stimme' + (this.fromStore && !this.fromNet ? ' (gespeichert)' : '');
     if (this.st === 'loading') return 'echte Stimme lädt ' + (this.phase === 'Download' || !this.phase ? this.pct() + ' %' : '\u00b7 ' + this.phase);
@@ -249,11 +252,20 @@ const VOICE = {
   clean(text) { for (const [re, w] of this.WORDS) text = text.replace(re, w); return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
   // a sentence for npc to say: computed now (in order), played when its turn comes
   push(npc, sentence, mood) {
-    const text = this.clean(sentence);
+    const el = this.eleven();
+    // (ElevenLabs reads English words and names by itself; the spelled-out sounds are for Piper and the browser)
+    const text = el ? sentence.replace(/[*_#~"„“”«»]/g, '').replace(/\s+/g, ' ').trim() : this.clean(sentence);
     if (!text || !/[\p{L}\d]/u.test(text)) return;
-    const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now() };
-    this.synth(text, npc.voiceProfile, job.mood).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
+    const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now(), rate: el ? DIRECT.RATE : 0 };
+    const made = el ? DIRECT.tts(npc, text, job.mood) : this.synth(text, npc.voiceProfile, job.mood);
+    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { job.err = true; if (el) this.elevenFailed(e, npc, sentence); this.pump(); });
     this.q.push(job); this.pump();
+  },
+  // ElevenLabs said no (key, credit, connection): tell once, say this sentence with the browser, Piper from now on
+  elevenFailed(e, npc, sentence) {
+    const hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+    if (hard) { DIRECT.elevenDead = true; DIRECT.err = e.message; if (!this.toldEleven) { this.toldEleven = true; TOAST.show('ElevenLabs: ' + e.message + ' – es spricht wieder die eingebaute Stimme.', 'long'); } }
+    this.browser(npc, sentence);
   },
   /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
      limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */
@@ -296,19 +308,21 @@ const VOICE = {
     this.q.shift();
     // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
     if (SFX.ctx.state !== 'running') { try { SFX.ctx.resume(); } catch (e) { /* ignore */ } }
-    const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
+    const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, job.rate || this.rate);
     // the model speaks quietly and each mood at its own level: bring every sentence to the same loudness (rms),
     // without letting a peak clip; the mood's own gain comes on top
     let peak = 1e-4, e = 0; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); e += a * a; if (a > peak) peak = a; }
     const k = Math.min(10, 0.16 / Math.sqrt(e / job.pcm.length + 1e-9), 0.97 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
     buf.getChannelData(0).set(job.pcm);
     const src = c.createBufferSource(), g = c.createGain();
-    src.buffer = buf; src.playbackRate.value = P.pitch || 1;
+    // (Piper's pitch is a playback-rate shift; ElevenLabs voices are played as they come)
+    const pr = job.rate ? 1 : P.pitch || 1;
+    src.buffer = buf; src.playbackRate.value = pr;
     const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
     const M = this.MOODS[job.mood] || this.MOODS.neutral;
     g.gain.value = M.gain / (1 + Math.max(0, d - 2) * 0.12);
     src.connect(g); g.connect(this.output());
-    const dur = buf.duration / (P.pitch || 1);
+    const dur = buf.duration / pr;
     job.npc.talkT = dur + 0.15;
     this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
     // a breath between sentences, as long as the mood wants it

@@ -149,7 +149,7 @@ const DEV = {
       `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
       `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
       `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`,
-      `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
+      `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.via ? ' über ' + (TALK.via === 'key' ? 'eigenen Schlüssel' : TALK.via) : '') + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
     ];
     this.info.textContent = lines.join('\n');
   },

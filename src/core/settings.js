@@ -22,6 +22,12 @@ const SETTINGS = {
     { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
+    // only on the game's own page (not in claude.ai): keys stay in this browser
+    { group: 'Eigene Schlüssel', own: true },
+    { key: 'claudeKey', label: 'Claude-API-Schlüssel (console.anthropic.com)', type: 'secret', def: '', own: true },
+    { key: 'elevenKey', label: 'ElevenLabs-Schlüssel (elevenlabs.io)', type: 'secret', def: '', own: true },
+    { key: 'elevenVoice', label: 'Hanks Stimme: Voice-ID (leer = passende wird gesucht)', type: 'text', def: '', own: true },
+    { label: 'Schlüssel prüfen', type: 'action', button: 'Prüfen', run: () => DIRECT.test(), own: true },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2 oder Knopf oben rechts)', type: 'toggle', def: false }
   ],

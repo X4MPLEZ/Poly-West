@@ -69,6 +69,7 @@ const MENU = {
     const box = document.getElementById('mSettings');
     box.textContent = '';
     for (const s of SETTINGS.SPEC) {
+      if (s.own && !DIRECT.ownPage()) continue;   // own keys: only on the game's own page
       if (s.group) { const h = document.createElement('h3'); h.textContent = s.group; box.appendChild(h); continue; }
       const row = document.createElement('div'); row.className = 'mRow';
       const id = 'set_' + (s.key || s.label.replace(/\W+/g, '_')), lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
@@ -90,6 +91,13 @@ const MENU = {
         const out = document.createElement('output'); out.className = 'mActOut';
         b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
         row.append(b, out);
+      } else if (s.type === 'secret' || s.type === 'text') {
+        // a key or an id: typed or pasted; kept on change (trimmed); the game's keys do nothing while typing here
+        const inp = document.createElement('input'); inp.type = s.type === 'secret' ? 'password' : 'text'; inp.id = id; inp.value = v || ''; inp.className = 'mText';
+        inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = s.type === 'secret' ? 'einfügen …' : 'optional';
+        inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') inp.blur(); });
+        inp.addEventListener('change', () => SETTINGS.set(s.key, inp.value.trim()));
+        row.classList.add('mRowText'); row.appendChild(inp);
       } else if (s.type === 'choice') {
         const grp = document.createElement('div'); grp.className = 'mSeg'; grp.setAttribute('role', 'radiogroup'); grp.setAttribute('aria-label', s.label);
         for (const [val, text] of s.options) {

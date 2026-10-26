@@ -1,0 +1,59 @@
+# The game on its own page: on every push to main, build the single HTML file and the voice files and put them on
+# GitHub Pages (https://<user>.github.io/<repo>/). Keys are never part of this: each player enters their own in the
+# game's settings, and they stay in that browser.
+name: Seite veröffentlichen
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # the voice files for the built-in voice (about 60 MB) are built once and then taken from the cache;
+      # if building them fails, the page still goes up (then the browser's voice or ElevenLabs speaks)
+      - id: voices
+        uses: actions/cache/restore@v4
+        with:
+          path: vendor/voice
+          key: voice-${{ hashFiles('tools/voices.py') }}
+      - id: build_voices
+        if: steps.voices.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          pip install numpy onnx
+          python3 tools/voices.py
+      - if: steps.voices.outputs.cache-hit != 'true' && steps.build_voices.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/voice
+          key: voice-${{ hashFiles('tools/voices.py') }}
+      - run: python3 build.py
+      - run: |
+          mkdir -p _site/voice
+          cp dist/poly-west.html _site/index.html
+          if [ -d vendor/voice ]; then cp -L vendor/voice/* _site/voice/ || true; fi
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

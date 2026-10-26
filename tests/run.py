@@ -490,8 +490,54 @@ async def check_manners(g):
           and r['leave'] and r['secs'] < 17 and r['outRoom'] is None and r['local'][1] > 0 and r['local'][1] < 3.5 and abs(r['local'][0]) < 2.5 and r['noAgain'])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_ownkeys(g):
+    """own page with own keys (Claude and ElevenLabs answered by stand-ins here): the settings show the key fields,
+       Claude is asked directly (streamed, the browser-access header), ElevenLabs speaks with a fitting voice, a refused
+       key falls back to the built-in voice; without keys nothing changes"""
+    await g.js(RESET)
+    r = await g.js(r'''async () => { const out = {}, calls = [], real = window.fetch;
+      const sse = (t) => new Response(new ReadableStream({ start(c) { const e = new TextEncoder();
+        for (const piece of ['[nod, ', 'neutral] Howdy, ', 'Fremder.']) c.enqueue(e.encode('event: content_block_delta\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: piece } }) + '\n\n'));
+        c.enqueue(e.encode('data: {"type":"message_stop"}\n\n')); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+      let ttsStatus = 200;
+      window.fetch = async (url, o) => { calls.push({ url: String(url), o });
+        if (/api\.anthropic\.com/.test(url)) return sse();
+        if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', labels: { gender: 'female' } }, { voice_id: 'clyde1', name: 'Clyde', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
+        if (/text-to-speech/.test(url)) { if (ttsStatus !== 200) return new Response(JSON.stringify({ detail: { message: 'invalid api key' } }), { status: ttsStatus });
+          const n = 12000, b = new Int16Array(n); for (let i = 0; i < n; i++) b[i] = Math.round(Math.sin(i * 0.05) * 8000); return new Response(b.buffer, { status: 200 }); }
+        return real(url, o); };
+      try {
+        out.own = DIRECT.ownPage();
+        MENU.buildSettings(); const ck = document.getElementById('set_claudeKey'); out.field = !!ck && ck.type === 'password' && !!document.getElementById('set_elevenKey');
+        out.noKeyVia = TALK.via || '';
+        SETTINGS.set('claudeKey', 'sk-test'); out.via = TALK.via; out.aiOn = TALK.aiOn();
+        const B = BARKEEP, R = B.R, N = B.npc, bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+        TALK.start(false); await TALK.send('Hallo Hank'); out.answer = N.talkLog.slice(-1)[0].text; TALK.close();
+        const cc = calls.find((c) => /anthropic/.test(c.url)), body = JSON.parse(cc.o.body);
+        out.req = [cc.o.headers['x-api-key'], cc.o.headers['anthropic-dangerous-direct-browser-access'], body.model, body.stream];
+        // ElevenLabs: Piper is not wanted any more, a sentence comes as 24 kHz sound in Hank's (found) voice
+        SETTINGS.set('elevenKey', 'el-test'); out.eleven = VOICE.eleven() && !VOICE.wanted() && VOICE.ready();
+        try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {} DIRECT.voiceIds = {}; DIRECT.ttsCache.clear();
+        const hank = { id: 'barkeep', name: 'Hank', pos: PLAY.pos, voiceProfile: {} }; VOICE.q = [];
+        const pcm = await DIRECT.tts(hank, 'Howdy, Fremder.', 'angry'); out.pcm = [pcm.length, +Math.max(...pcm.slice(0, 200)).toFixed(2)];
+        const tc = calls.filter((c) => /text-to-speech/.test(c.url)).pop(), tb = JSON.parse(tc.o.body);
+        out.tts = [/\/clyde1\/stream\?output_format=pcm_24000/.test(tc.url), tb.model_id, tb.language_code, tb.voice_settings.stability < 0.5, tc.o.headers['xi-api-key']];
+        VOICE.line(hank, 'Noch einen?'); await new Promise((x) => setTimeout(x, 50)); const j = VOICE.q[0] || VOICE.playing; out.job = !!j && (j.rate === 24000 || !!VOICE.playing);
+        // a refused key: told once, the built-in voice speaks again
+        ttsStatus = 401; DIRECT.ttsCache.clear(); VOICE.q = []; VOICE.line(hank, 'Und jetzt?'); await new Promise((x) => setTimeout(x, 50));
+        out.dead = DIRECT.elevenDead && !VOICE.eleven() && VOICE.wanted();
+        out.test = await DIRECT.test();
+      } finally {
+        window.fetch = real; SETTINGS.set('claudeKey', ''); SETTINGS.set('elevenKey', ''); VOICE.q = [];
+      }
+      out.after = [TALK.via || '', VOICE.eleven()];
+      return out; }''')
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-test', 'true', 'claude-haiku-5-5', True]
+          and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

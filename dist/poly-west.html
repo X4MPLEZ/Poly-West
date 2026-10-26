@@ -228,6 +228,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .mRow input[type="range"] { width: min(200px, 40vw); accent-color: var(--brass); }
 .mRow output { width: 52px; text-align: right; font-family: var(--f-mono); font-size: 12.5px; color: var(--dust); }
 .mRow:has(.mAct) { flex-wrap: wrap; padding-bottom: 6px; }
+.mRowText { flex-wrap: wrap; padding: 4px 0 8px; }
+.mRowText label { flex-basis: 100%; }
+.mText { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(243, 232, 214, 0.08); color: var(--bone); padding: 0 10px; font: 600 14px var(--f-mono); -webkit-user-select: text; user-select: text; }
 .mAct { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--brass); background: rgba(231, 166, 64, 0.15); color: var(--bone); font: 700 14px var(--f-ui); }
 .mRow output.mActOut { width: 100%; text-align: left; font-family: var(--f-ui); font-size: 13px; line-height: 1.3; }
 .mRow output.mActOut:empty { display: none; }
@@ -691,6 +694,12 @@ const SETTINGS = {
     { key: 'voiceVol', label: 'Lautstärke der Stimmen', type: 'range', min: 0, max: 150, step: 5, def: 100, unit: '%' },
     { label: 'Stimme testen', type: 'action', button: 'Abspielen', run: () => VOICE.test() },
     { label: 'Erinnerungen zurücksetzen (alle Figuren vergessen dich)', type: 'action', button: 'Zurücksetzen', run: () => TALK.resetMemories() },
+    // only on the game's own page (not in claude.ai): keys stay in this browser
+    { group: 'Eigene Schlüssel', own: true },
+    { key: 'claudeKey', label: 'Claude-API-Schlüssel (console.anthropic.com)', type: 'secret', def: '', own: true },
+    { key: 'elevenKey', label: 'ElevenLabs-Schlüssel (elevenlabs.io)', type: 'secret', def: '', own: true },
+    { key: 'elevenVoice', label: 'Hanks Stimme: Voice-ID (leer = passende wird gesucht)', type: 'text', def: '', own: true },
+    { label: 'Schlüssel prüfen', type: 'action', button: 'Prüfen', run: () => DIRECT.test(), own: true },
     { group: 'Entwicklung' },
     { key: 'dev', label: 'Entwickler-Werkzeuge (F2 oder Knopf oben rechts)', type: 'toggle', def: false }
   ],
@@ -5032,8 +5041,10 @@ const VOICE = {
   },
   mood(name) { return this.MOODS[name] ? name : 'neutral'; },
   st: 'off', why: '', got: 0, worker: null, lastProg: 0, startAt: 0, phase: '', tries: 0, rate: 22050, q: [], playing: null, nextId: 1, waits: {},
-  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ; },
-  ready() { return this.st === 'ready'; },
+  // with an ElevenLabs key (own page) ElevenLabs speaks and Piper is not loaded at all; Piper again if that fails
+  eleven() { return !!SETTINGS.v.voice && DIRECT.elevenOn(); },
+  wanted() { return SETTINGS.v.voice && SETTINGS.v.voiceHQ && !this.eleven(); },
+  ready() { return this.eleven() || this.st === 'ready'; },
   pct() { return Math.min(99, Math.round((this.got / this.EXPECT) * 100)); },
   // start loading (once); cheap to call often
   load() {
@@ -5090,6 +5101,7 @@ const VOICE = {
   },
   // for the player: which voice is speaking
   label() {
+    if (this.eleven()) return 'ElevenLabs';
     if (!this.wanted()) return SETTINGS.v.voice ? 'Browser-Stimme' : 'Stimme aus';
     if (this.st === 'ready') return 'echte Stimme' + (this.fromStore && !this.fromNet ? ' (gespeichert)' : '');
     if (this.st === 'loading') return 'echte Stimme lädt ' + (this.phase === 'Download' || !this.phase ? this.pct() + ' %' : '\u00b7 ' + this.phase);
@@ -5171,11 +5183,20 @@ const VOICE = {
   clean(text) { for (const [re, w] of this.WORDS) text = text.replace(re, w); return text.replace(/[*_#~"„“”«»]/g, '').replace(/\$\s?(\d+)[.,](\d\d)/g, '$1 Dollar $2').replace(/\$/g, ' Dollar ').replace(/\s+/g, ' ').trim(); },
   // a sentence for npc to say: computed now (in order), played when its turn comes
   push(npc, sentence, mood) {
-    const text = this.clean(sentence);
+    const el = this.eleven();
+    // (ElevenLabs reads English words and names by itself; the spelled-out sounds are for Piper and the browser)
+    const text = el ? sentence.replace(/[*_#~"„“”«»]/g, '').replace(/\s+/g, ' ').trim() : this.clean(sentence);
     if (!text || !/[\p{L}\d]/u.test(text)) return;
-    const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now() };
-    this.synth(text, npc.voiceProfile, job.mood).then((p) => { job.pcm = p; this.pump(); }, () => { job.err = true; this.pump(); });
+    const job = { npc, text, mood: this.mood(mood), pcm: null, err: false, at: performance.now(), rate: el ? DIRECT.RATE : 0 };
+    const made = el ? DIRECT.tts(npc, text, job.mood) : this.synth(text, npc.voiceProfile, job.mood);
+    made.then((p) => { job.pcm = p; this.pump(); }, (e) => { job.err = true; if (el) this.elevenFailed(e, npc, sentence); this.pump(); });
     this.q.push(job); this.pump();
+  },
+  // ElevenLabs said no (key, credit, connection): tell once, say this sentence with the browser, Piper from now on
+  elevenFailed(e, npc, sentence) {
+    const hard = ['bad_key', 'no_credit', 'network'].includes(e && e.code);
+    if (hard) { DIRECT.elevenDead = true; DIRECT.err = e.message; if (!this.toldEleven) { this.toldEleven = true; TOAST.show('ElevenLabs: ' + e.message + ' – es spricht wieder die eingebaute Stimme.', 'long'); } }
+    this.browser(npc, sentence);
   },
   /* voices have their own channel: louder than the effects (which sit low under the master volume), with a
      limiter so nothing clips; the volume follows the sound switch, the game volume a little, and its own slider */
@@ -5218,19 +5239,21 @@ const VOICE = {
     this.q.shift();
     // the sound may have been taken away (phones: another app, the keyboard's dictation): ask for it back
     if (SFX.ctx.state !== 'running') { try { SFX.ctx.resume(); } catch (e) { /* ignore */ } }
-    const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, this.rate);
+    const c = SFX.ctx, P = job.npc.voiceProfile || {}, buf = c.createBuffer(1, job.pcm.length, job.rate || this.rate);
     // the model speaks quietly and each mood at its own level: bring every sentence to the same loudness (rms),
     // without letting a peak clip; the mood's own gain comes on top
     let peak = 1e-4, e = 0; for (let i = 0; i < job.pcm.length; i++) { const a = Math.abs(job.pcm[i]); e += a * a; if (a > peak) peak = a; }
     const k = Math.min(10, 0.16 / Math.sqrt(e / job.pcm.length + 1e-9), 0.97 / peak); for (let i = 0; i < job.pcm.length; i++) job.pcm[i] *= k;
     buf.getChannelData(0).set(job.pcm);
     const src = c.createBufferSource(), g = c.createGain();
-    src.buffer = buf; src.playbackRate.value = P.pitch || 1;
+    // (Piper's pitch is a playback-rate shift; ElevenLabs voices are played as they come)
+    const pr = job.rate ? 1 : P.pitch || 1;
+    src.buffer = buf; src.playbackRate.value = pr;
     const d = Math.hypot(job.npc.pos.x - PLAY.pos.x, job.npc.pos.z - PLAY.pos.z);
     const M = this.MOODS[job.mood] || this.MOODS.neutral;
     g.gain.value = M.gain / (1 + Math.max(0, d - 2) * 0.12);
     src.connect(g); g.connect(this.output());
-    const dur = buf.duration / (P.pitch || 1);
+    const dur = buf.duration / pr;
     job.npc.talkT = dur + 0.15;
     this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
     // a breath between sentences, as long as the mood wants it
@@ -7939,6 +7962,146 @@ SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, 
   BARKEEP.served = Math.max(0, d.served | 0);
 });
 
+// ==== npc/direct.js ====
+/* ---------- own keys: Claude and ElevenLabs straight from the browser (for the game on its own page) ----------
+   In claude.ai the game talks to Claude through the artifact's `sample` capability. On its own page (GitHub Pages)
+   the player enters an Anthropic API key and an ElevenLabs key in the settings; they stay in this browser
+   (localStorage), never in the code or the repository, and the browser calls both services itself:
+   - Claude: POST /v1/messages, streamed (server-sent events), with the header Anthropic provides for direct
+     browser access. Same shape as `sample`: claude(prompt, { signal, onText }) -> { text }.
+   - ElevenLabs: POST /v1/text-to-speech/{voice}/stream as raw 16-bit PCM at 24 kHz (every plan), one sentence per
+     request, the mood as voice settings. Lines said before are kept in memory, so a ready-made line costs once.
+   Without keys nothing here is used. */
+const DIRECT = {
+  MODEL: 'claude-haiku-5-5', TTS_MODEL: 'eleven_flash_v2_5', RATE: 24000,
+  // a voice that every account has (ElevenLabs' default "George"); used when no better one is found
+  FALLBACK_VOICE: 'JBFqnCBsd6RMkjVDRZzb',
+  PREFER: /clyde|bill|george|brian|callum|daniel|arnold|adam/i,
+  ttsCache: new Map(), voiceIds: {}, err: '',
+  // is this the game on its own page (not inside claude.ai)?
+  ownPage() { return !(window.claude && window.claude.use); },
+  claudeOn() { return !!(SETTINGS.v.claudeKey || '').trim(); },
+  elevenOn() { return !!(SETTINGS.v.elevenKey || '').trim() && !this.elevenDead; },
+  fail(code, msg) { const e = new Error(msg || code); e.code = code; return e; },
+
+  /* ---- Claude ---- */
+  async claude(prompt, opt) {
+    opt = opt || {};
+    let r;
+    try {
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', signal: opt.signal,
+        headers: { 'content-type': 'application/json', 'x-api-key': SETTINGS.v.claudeKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: this.MODEL, max_tokens: opt.maxTokens || 220, stream: true, messages: [{ role: 'user', content: prompt }] })
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw this.fail('cancelled');
+      throw this.fail('network', 'keine Verbindung zu Claude');
+    }
+    if (!r.ok) {
+      let msg = ''; try { const j = await r.json(); msg = (j.error && j.error.message) || ''; } catch (e) { /* no body */ }
+      if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'Claude-Schlüssel abgelehnt');
+      if (r.status === 429) throw this.fail('rate_limited');
+      if (r.status === 400 && /credit/i.test(msg)) throw this.fail('no_credit', 'kein Guthaben bei Anthropic');
+      if (r.status === 400) throw this.fail('bad_request', msg.slice(0, 80));
+      throw this.fail('upstream_error', 'Claude ' + r.status);
+    }
+    // server-sent events: "data: {...}" lines; the text comes in content_block_delta events
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', text = '';
+    try {
+      for (;;) {
+        const { done, value } = await rd.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue;
+          let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
+          if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; if (opt.onText) opt.onText({ text }); }
+          else if (ev.type === 'error') throw this.fail(ev.error && ev.error.type === 'overloaded_error' ? 'upstream_error' : 'stream_error', (ev.error && ev.error.message) || 'Fehler');
+        }
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw this.fail('cancelled');
+      throw e.code ? e : this.fail('network', 'Verbindung abgerissen');
+    }
+    return { text, modelApplied: this.MODEL };
+  },
+
+  /* ---- ElevenLabs ---- */
+  // the voice for a person: the one set in the settings (Hank), the one found before, or a fitting one from the account
+  async voiceFor(npc) {
+    const set = (SETTINGS.v.elevenVoice || '').trim();
+    if (set && (!npc || npc.id === 'barkeep')) return set;
+    const key = (npc && npc.id) || 'any';
+    if (this.voiceIds[key]) return this.voiceIds[key];
+    let saved = null; try { saved = localStorage.getItem('polywest.elVoice.' + key); } catch (e) { /* none */ }
+    if (saved) return (this.voiceIds[key] = saved);
+    let id = this.FALLBACK_VOICE;
+    try {
+      const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
+      if (r.ok) {
+        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id);
+        const male = (v) => /male/i.test((v.labels && v.labels.gender) || '') && !/female/i.test((v.labels && v.labels.gender) || '');
+        const older = (v) => /old|middle/i.test((v.labels && v.labels.age) || '');
+        const best = vs.find((v) => this.PREFER.test(v.name || '') && male(v)) || vs.find((v) => male(v) && older(v)) || vs.find(male);
+        if (best) id = best.voice_id;
+      }
+    } catch (e) { /* keep the default */ }
+    try { localStorage.setItem('polywest.elVoice.' + key, id); } catch (e) { /* not kept */ }
+    return (this.voiceIds[key] = id);
+  },
+  // how a mood sounds: less stable = more expression; a little faster when angry, slower when tired
+  MOOD: { neutral: [0.5, 1], amused: [0.4, 1.03], angry: [0.28, 1.08], surprised: [0.35, 1.05], disgusted: [0.42, 0.98], sleepy: [0.6, 0.88], whisper: [0.55, 0.92], drunk: [0.3, 0.9] },
+  // one sentence -> Float32Array at RATE; throws with a code on failure
+  async tts(npc, text, mood) {
+    const k = (npc && npc.id) + '|' + mood + '|' + text;
+    if (this.ttsCache.has(k)) return this.ttsCache.get(k);
+    const voice = await this.voiceFor(npc), [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
+    let r;
+    try {
+      r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(voice) + '/stream?output_format=pcm_24000', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'xi-api-key': SETTINGS.v.elevenKey.trim() },
+        body: JSON.stringify({ text, model_id: this.TTS_MODEL, language_code: 'de', voice_settings: { stability, similarity_boost: 0.8, speed } })
+      });
+    } catch (e) { throw this.fail('network', 'keine Verbindung zu ElevenLabs'); }
+    if (!r.ok) {
+      let msg = ''; try { const j = await r.json(); msg = (j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* no body */ }
+      if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'ElevenLabs-Schlüssel abgelehnt' + (msg ? ' (' + msg.slice(0, 60) + ')' : ''));
+      if (r.status === 404 || /voice/i.test(msg)) {   // the stored voice is gone: look for another next time
+        try { localStorage.removeItem('polywest.elVoice.' + ((npc && npc.id) || 'any')); } catch (e) { /* ignore */ }
+        delete this.voiceIds[(npc && npc.id) || 'any'];
+      }
+      if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht');
+      throw this.fail('tts_error', 'ElevenLabs ' + r.status + (msg ? ': ' + msg.slice(0, 60) : ''));
+    }
+    const b = new Uint8Array(await r.arrayBuffer()), n = b.length >> 1, out = new Float32Array(n), dv = new DataView(b.buffer, b.byteOffset, n * 2);
+    for (let i = 0; i < n; i++) out[i] = dv.getInt16(i * 2, true) / 32768;
+    if (this.ttsCache.size > 80) this.ttsCache.delete(this.ttsCache.keys().next().value);
+    this.ttsCache.set(k, out);
+    return out;
+  },
+
+  // the settings button: are the keys good?
+  async test() {
+    const out = [];
+    if (this.claudeOn()) {
+      try { const r = await this.claude('Sag nur: Howdy.', { maxTokens: 10 }); out.push('Claude: ok (' + (r.text || '').trim().slice(0, 20) + ')'); }
+      catch (e) { out.push('Claude: ' + (e.message || e.code)); }
+    } else out.push('Claude: kein Schlüssel');
+    if ((SETTINGS.v.elevenKey || '').trim()) {
+      this.elevenDead = false;
+      const hank = { id: 'barkeep', name: 'Hank', pos: PLAY.pos, voiceProfile: {} };
+      try { await this.tts(hank, 'Howdy, Fremder. So klinge ich jetzt.', 'neutral'); out.push('ElevenLabs: ok'); VOICE.line(hank, 'Howdy, Fremder. So klinge ich jetzt.'); }
+      catch (e) { out.push('ElevenLabs: ' + (e.message || e.code)); }
+    } else out.push('ElevenLabs: kein Schlüssel');
+    return out.join(' · ');
+  }
+};
+
 // ==== npc/talk.js ====
 /* ---------- talking to people ----------
    One button: V (touch: "Reden") near someone. Where the page may use the microphone, the browser's speech
@@ -7983,10 +8146,17 @@ const TALK = {
     this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.start(); });
     this.SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
     if (!this.SR) this.noMic('');
-    // Claude, if this page may ask it
+    // Claude: with an own key (the game on its own page) straight from here, else through claude.ai if this page may ask it
+    this.sample = null;
+    const pick = () => {
+      if (DIRECT.claudeOn()) { this.ai = (p, o) => DIRECT.claude(p, o); this.aiOk = true; this.aiOff = false; this.via = 'key'; }
+      else { this.ai = this.sample; this.via = this.sample ? 'claude.ai' : ''; }
+    };
     try {
-      if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.ai = s || null; }).catch(() => { this.ai = null; });
-    } catch (e) { this.ai = null; }
+      if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.sample = s || null; pick(); }).catch(() => { this.sample = null; pick(); });
+    } catch (e) { this.sample = null; }
+    SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
+    SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; });
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now
@@ -8036,6 +8206,8 @@ const TALK = {
       document.getElementById('talkName').textContent = n.name;
       this.el.hidden = false; document.getElementById('app').classList.add('talking');
       this.heardEl.textContent = ''; this.setState('');
+      // on the game's own page without a key he can only use his phrase book: say where the key goes
+      if (!this.aiOn() && DIRECT.ownPage() && /^https?:/.test(location.protocol) && !this.toldKey) { this.toldKey = true; TOAST.show('Für echte KI-Gespräche: Menü → Einstellungen → Eigene Schlüssel', 'long'); }
     }
     // the microphone window is connected: just talk (hands free while the strip is open)
     if (MICWIN.connected()) { this.remoteMode(); return; }
@@ -8277,9 +8449,10 @@ const TALK = {
           this.aiOff = true; this.lastErr = 'KI nicht erlaubt (' + code + '). ' + n.name + ' antwortet einfacher.'; return null;
         }
         if (code === 'rate_limited') { this.lastErr = 'Zu viele Fragen gerade (rate_limited).'; return null; }
+        if (['bad_key', 'no_credit', 'bad_request'].includes(code) || (code === 'network' && attempt > 0)) { this.lastErr = 'KI: ' + (e.message || code) + '.'; return null; }
         if (this.userAbort || this.lastErr.startsWith('Keine Antwort')) return null;
         // cancelled without us, or a hiccup on the way: one more try, then tell
-        if (attempt === 0 && (code === 'cancelled' || code === 'upstream_error')) continue;
+        if (attempt === 0 && (code === 'cancelled' || code === 'upstream_error' || code === 'network' || code === 'stream_error')) continue;
         this.lastErr = 'KI-Fehler: ' + code; return null;
       }
     }
@@ -8881,6 +9054,7 @@ const MENU = {
     const box = document.getElementById('mSettings');
     box.textContent = '';
     for (const s of SETTINGS.SPEC) {
+      if (s.own && !DIRECT.ownPage()) continue;   // own keys: only on the game's own page
       if (s.group) { const h = document.createElement('h3'); h.textContent = s.group; box.appendChild(h); continue; }
       const row = document.createElement('div'); row.className = 'mRow';
       const id = 'set_' + (s.key || s.label.replace(/\W+/g, '_')), lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = s.label; row.appendChild(lab);
@@ -8902,6 +9076,13 @@ const MENU = {
         const out = document.createElement('output'); out.className = 'mActOut';
         b.addEventListener('click', () => { out.textContent = '…'; Promise.resolve(s.run()).then((t) => { out.textContent = t || ''; }); });
         row.append(b, out);
+      } else if (s.type === 'secret' || s.type === 'text') {
+        // a key or an id: typed or pasted; kept on change (trimmed); the game's keys do nothing while typing here
+        const inp = document.createElement('input'); inp.type = s.type === 'secret' ? 'password' : 'text'; inp.id = id; inp.value = v || ''; inp.className = 'mText';
+        inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = s.type === 'secret' ? 'einfügen …' : 'optional';
+        inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') inp.blur(); });
+        inp.addEventListener('change', () => SETTINGS.set(s.key, inp.value.trim()));
+        row.classList.add('mRowText'); row.appendChild(inp);
       } else if (s.type === 'choice') {
         const grp = document.createElement('div'); grp.className = 'mSeg'; grp.setAttribute('role', 'radiogroup'); grp.setAttribute('aria-label', s.label);
         for (const [val, text] of s.options) {
@@ -9218,7 +9399,7 @@ const DEV = {
       `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
       `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
       `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`,
-      `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
+      `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.via ? ' über ' + (TALK.via === 'key' ? 'eigenen Schlüssel' : TALK.via) : '') + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
     ];
     this.info.textContent = lines.join('\n');
   },

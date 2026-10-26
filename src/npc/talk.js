@@ -41,10 +41,17 @@ const TALK = {
     this.btn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.start(); });
     this.SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
     if (!this.SR) this.noMic('');
-    // Claude, if this page may ask it
+    // Claude: with an own key (the game on its own page) straight from here, else through claude.ai if this page may ask it
+    this.sample = null;
+    const pick = () => {
+      if (DIRECT.claudeOn()) { this.ai = (p, o) => DIRECT.claude(p, o); this.aiOk = true; this.aiOff = false; this.via = 'key'; }
+      else { this.ai = this.sample; this.via = this.sample ? 'claude.ai' : ''; }
+    };
     try {
-      if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.ai = s || null; }).catch(() => { this.ai = null; });
-    } catch (e) { this.ai = null; }
+      if (window.claude && window.claude.use) window.claude.use('sample').then((s) => { this.sample = s || null; pick(); }).catch(() => { this.sample = null; pick(); });
+    } catch (e) { this.sample = null; }
+    SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
+    SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; });
     try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) { /* no voices */ }
   },
   // who could be talked to right now
@@ -94,6 +101,8 @@ const TALK = {
       document.getElementById('talkName').textContent = n.name;
       this.el.hidden = false; document.getElementById('app').classList.add('talking');
       this.heardEl.textContent = ''; this.setState('');
+      // on the game's own page without a key he can only use his phrase book: say where the key goes
+      if (!this.aiOn() && DIRECT.ownPage() && /^https?:/.test(location.protocol) && !this.toldKey) { this.toldKey = true; TOAST.show('Für echte KI-Gespräche: Menü → Einstellungen → Eigene Schlüssel', 'long'); }
     }
     // the microphone window is connected: just talk (hands free while the strip is open)
     if (MICWIN.connected()) { this.remoteMode(); return; }
@@ -335,9 +344,10 @@ const TALK = {
           this.aiOff = true; this.lastErr = 'KI nicht erlaubt (' + code + '). ' + n.name + ' antwortet einfacher.'; return null;
         }
         if (code === 'rate_limited') { this.lastErr = 'Zu viele Fragen gerade (rate_limited).'; return null; }
+        if (['bad_key', 'no_credit', 'bad_request'].includes(code) || (code === 'network' && attempt > 0)) { this.lastErr = 'KI: ' + (e.message || code) + '.'; return null; }
         if (this.userAbort || this.lastErr.startsWith('Keine Antwort')) return null;
         // cancelled without us, or a hiccup on the way: one more try, then tell
-        if (attempt === 0 && (code === 'cancelled' || code === 'upstream_error')) continue;
+        if (attempt === 0 && (code === 'cancelled' || code === 'upstream_error' || code === 'network' || code === 'stream_error')) continue;
         this.lastErr = 'KI-Fehler: ' + code; return null;
       }
     }
