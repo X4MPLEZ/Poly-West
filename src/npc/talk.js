@@ -13,7 +13,7 @@
    A person who can talk has npc.persona = { rules, context(), offline(text), act(action) } and npc.voiceProfile. */
 const TALK = {
   open: false, npc: null, ai: null, aiOff: false, aiOk: false, busy: false, rec: null, listening: false, heard: '', final: '',
-  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99,
+  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99, hearWant: false, quietT: 0,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
   ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
@@ -81,6 +81,16 @@ const TALK = {
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
+    /* hands-free listening lets go of the microphone while he thinks and speaks, and takes it again after: phones
+       (iPhones above all) put all sound on the small ear speaker while a page holds the microphone, and so he is
+       heard through the real speaker, and his voice can never be taken for yours */
+    if (this.hearWant && this.hearCb) {
+      const his = this.hearCb.muted();
+      if (his) { this.quietT = 0; this.heardT = G.time; if (HEAR.active()) { HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); } }
+      // listening costs ElevenLabs credit for every second the microphone is open: after a while of silence it goes off
+      else if (HEAR.active() && G.time - (this.heardT || G.time) > this.IDLE) { this.hearWant = false; HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Mikrofon aus (Stille) \u00b7 antippen oder V zum Weiterreden', 'idle'); }
+      else if (!HEAR.active() && HEAR.wanted() && HEAR.st !== 'failed' && (this.quietT += dt) > 0.35) { this.quietT = 0; this.mic.setAttribute('aria-pressed', 'true'); HEAR.start(this.hearCb); }
+    }
     const talkingNow = this.busy || VOICE.speaking(n);
     if (talkingNow === this.stopBtn.hidden) this.stopBtn.hidden = !talkingNow;
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
@@ -117,11 +127,13 @@ const TALK = {
     if (!this.busy) this.listen();
   },
   /* ElevenLabs listening: words appear while you speak, a pause sends them; nothing is taken while he speaks */
+  IDLE: 20,
   hearMode() {
+    this.hearWant = true; this.heardT = G.time;
     this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
     if (!this.busy) this.setState('Mikrofon wird verbunden \u2026', 'think');
     const cb = this.hearCb || (this.hearCb = {
-      partial: (t) => { if (this.open && !this.busy) this.heardEl.textContent = '\u201e' + t + ' \u2026\u201c'; },
+      partial: (t) => { this.heardT = G.time; if (this.open && !this.busy) this.heardEl.textContent = '\u201e' + t + ' \u2026\u201c'; },
       final: (t) => { if (!this.open || this.busy) return; this.heardEl.textContent = '\u201e' + t + '\u201c'; this.send(t); },
       state: (k, txt) => {
         if (!this.open) return;
@@ -171,7 +183,7 @@ const TALK = {
      on the side, not a mode). Only "Stopp" takes an answer back. */
   close() {
     if (!this.open) return;
-    HEAR.stop();
+    this.hearWant = false; HEAR.stop();
     if (this.inp.value.trim() && !this.busy) this.sendTyped();   // what was typed (or dictated) still goes to him
     this.stopListen(true);
     this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
@@ -190,7 +202,7 @@ const TALK = {
   noMic(why) { this.micOff = true; this.micWhy = why; if (this.mic) this.mic.hidden = true; },
   /* ---- the microphone (where it is allowed) ---- */
   toggleListen() {
-    if (HEAR.active()) { HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Pause \u00b7 Mikrofon antippen zum Weiterreden', 'idle'); return; }
+    if (this.hearWant) { this.hearWant = false; HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Pause \u00b7 Mikrofon antippen zum Weiterreden', 'idle'); return; }
     if (this.listening) this.stopListen(); else if (this.open) this.start();
   },
   listen() {

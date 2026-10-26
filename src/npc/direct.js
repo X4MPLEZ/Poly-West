@@ -12,7 +12,7 @@ const DIRECT = {
   // a voice that every account has (ElevenLabs' default "George"); used when no better one is found
   FALLBACK_VOICE: 'JBFqnCBsd6RMkjVDRZzb',
   PREFER: /clyde|bill|george|brian|callum|daniel|arnold|adam/i,
-  ttsCache: new Map(), voiceIds: {}, err: '',
+  ttsCache: new Map(), voiceIds: {}, err: '', badVoices: new Set(),
   // is this the game on its own page (not inside claude.ai)?
   ownPage() { return !(window.claude && window.claude.use); },
   // the AI key: which service it belongs to is told by how it starts (Anthropic sk-ant-…, Groq gsk_…, OpenAI sk-…)
@@ -156,16 +156,16 @@ const DIRECT = {
   async voiceFor(npc) {
     if (npc && npc.voiceId) return npc.voiceId;   // (trying a voice out in the settings)
     const set = (SETTINGS.v.elevenVoice || '').trim();
-    if (set && (!npc || npc.id === 'barkeep')) return set;
+    if (set && !this.badVoices.has(set) && (!npc || npc.id === 'barkeep')) return set;
     const key = (npc && npc.id) || 'any';
     if (this.voiceIds[key]) return this.voiceIds[key];
     let saved = null; try { saved = localStorage.getItem('polywest.elVoice.' + key); } catch (e) { /* none */ }
-    if (saved) return (this.voiceIds[key] = saved);
+    if (saved && !this.badVoices.has(saved)) return (this.voiceIds[key] = saved);
     let id = this.FALLBACK_VOICE;
     try {
       const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
       if (r.ok) {
-        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id);
+        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id && !this.badVoices.has(v.voice_id) && (v.category === 'premade' || !this.badVoices.size));
         const male = (v) => /male/i.test((v.labels && v.labels.gender) || '') && !/female/i.test((v.labels && v.labels.gender) || '');
         const older = (v) => /old|middle/i.test((v.labels && v.labels.age) || '');
         const best = vs.find((v) => this.PREFER.test(v.name || '') && male(v)) || vs.find((v) => male(v) && older(v)) || vs.find(male);
@@ -195,6 +195,7 @@ const DIRECT = {
   },
   async tts1(npc, text, mood) {
     const v3 = this.v3(), voice = await this.voiceFor(npc), k = voice + '|' + (v3 ? 'v3' : 'f') + '|' + mood + '|' + text;
+    if (this.badVoices.has(voice) && !(npc && npc.voiceId)) throw this.fail('tts_error', 'keine nutzbare ElevenLabs-Stimme');
     if (this.ttsCache.has(k)) return this.ttsCache.get(k);
     const [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
     const body = v3 ? { text: (this.TAGS[mood] || '') + text, model_id: 'eleven_v3', voice_settings: { stability: 0.5, similarity_boost: 0.8 } }
@@ -220,7 +221,17 @@ const DIRECT = {
         try { localStorage.removeItem('polywest.elVoice.' + ((npc && npc.id) || 'any')); } catch (e) { /* ignore */ }
         delete this.voiceIds[(npc && npc.id) || 'any'];
       }
-      if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht');
+      if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht (' + msg.slice(0, 120) + ')');
+      /* the voice itself may not be used this way (a library voice on the free plan, a voice not shared any more …):
+         say why, once, and speak on with another voice (a preview just shows the reason) */
+      if (r.status !== 429 && (r.status === 402 || /library|subscription|upgrade|free user|tier|plan|payment|voice/i.test(msg)) && !(npc && npc.voiceId)) {
+        this.badVoices.add(voice); delete this.voiceIds[(npc && npc.id) || 'any'];
+        const lib = /library|subscription|upgrade|free user|tier|plan|payment/i.test(msg) || r.status === 402;
+        try { TOAST.show(lib ? 'ElevenLabs lässt diese Stimme im Gratis-Tarif nicht übers Spiel zu (Stimme aus der Bibliothek). Hank spricht mit einer Standardstimme weiter. Geht: Starter-Abo – oder eine eigene Stimme mit „Voice Design“ erstellen.'
+          : 'Diese Stimme geht nicht (' + (msg || r.status) + '). Hank spricht mit einer anderen weiter.', 'long'); } catch (e) { /* ignore */ }
+        return this.tts1(npc, text, mood);
+      }
+      if (r.status !== 429 && /library|subscription|upgrade|free user|tier|plan|payment/i.test(msg)) throw this.fail('tts_error', 'Diese Stimme geht im Gratis-Tarif nicht übers Spiel (Stimme aus der Bibliothek) – ElevenLabs: ' + msg.slice(0, 90));
       if (r.status === 429 || /concurren|too_many|rate/i.test(msg)) throw this.fail('rate_limited', 'ElevenLabs: zu viele Anfragen gleichzeitig');
       throw this.fail('tts_error', 'ElevenLabs ' + r.status + (msg ? ': ' + msg.slice(0, 60) : ''));
     }

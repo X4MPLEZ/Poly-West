@@ -207,7 +207,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 /* pause menu */
 #menu { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: rgba(12, 8, 5, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding: 12px; }
 #menu[hidden] { display: none; }
-.mPanel { width: min(560px, 100%); max-height: calc(100% - 8px); overflow: auto; background: rgba(28, 19, 13, 0.96); border: 1px solid var(--edge); border-radius: 14px; padding: 14px 16px 16px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
+.mPanel { width: min(560px, 100%); max-height: calc(100% - 8px); overflow: auto; overflow-x: hidden; background: rgba(28, 19, 13, 0.96); border: 1px solid var(--edge); border-radius: 14px; padding: 14px 16px 16px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); }
 .mPanel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .mPanel header b { font-family: var(--f-display); font-weight: 400; font-size: 24px; color: var(--brass); }
 #mClose, #devClose { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--edge); background: transparent; font-size: 20px; line-height: 1; color: var(--bone); }
@@ -230,12 +230,14 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .mRow:has(.mAct) { flex-wrap: wrap; padding-bottom: 6px; }
 .mRowText { flex-wrap: wrap; padding: 4px 0 8px; }
 .mRowText label { flex-basis: 100%; }
-.mVoices { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dust); }
-.mVoice { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; background: rgba(243, 232, 214, 0.05); }
+.mVoices { flex-basis: 100%; min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dust); }
+.mVoice { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; background: rgba(243, 232, 214, 0.05); }
 .mVoice.on { background: rgba(231, 166, 64, 0.16); }
 .mVoiceT { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.mVoiceT b { color: var(--bone); font-size: 14px; }
-.mVoiceT small { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mVoiceT b { color: var(--bone); font-size: 14px; overflow-wrap: anywhere; }
+.mVoiceT small { font-size: 11.5px; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mVoiceB { flex: none; }
+.mRowText > * { min-width: 0; }
 .mVoiceB { height: 30px; padding: 0 10px; font-size: 13px; }
 .mVoiceBtns { display: flex; gap: 8px; flex-wrap: wrap; }
 .mVoiceHelp { margin: 4px 2px 0; font-size: 12px; line-height: 1.35; }
@@ -8001,7 +8003,7 @@ const DIRECT = {
   // a voice that every account has (ElevenLabs' default "George"); used when no better one is found
   FALLBACK_VOICE: 'JBFqnCBsd6RMkjVDRZzb',
   PREFER: /clyde|bill|george|brian|callum|daniel|arnold|adam/i,
-  ttsCache: new Map(), voiceIds: {}, err: '',
+  ttsCache: new Map(), voiceIds: {}, err: '', badVoices: new Set(),
   // is this the game on its own page (not inside claude.ai)?
   ownPage() { return !(window.claude && window.claude.use); },
   // the AI key: which service it belongs to is told by how it starts (Anthropic sk-ant-…, Groq gsk_…, OpenAI sk-…)
@@ -8145,16 +8147,16 @@ const DIRECT = {
   async voiceFor(npc) {
     if (npc && npc.voiceId) return npc.voiceId;   // (trying a voice out in the settings)
     const set = (SETTINGS.v.elevenVoice || '').trim();
-    if (set && (!npc || npc.id === 'barkeep')) return set;
+    if (set && !this.badVoices.has(set) && (!npc || npc.id === 'barkeep')) return set;
     const key = (npc && npc.id) || 'any';
     if (this.voiceIds[key]) return this.voiceIds[key];
     let saved = null; try { saved = localStorage.getItem('polywest.elVoice.' + key); } catch (e) { /* none */ }
-    if (saved) return (this.voiceIds[key] = saved);
+    if (saved && !this.badVoices.has(saved)) return (this.voiceIds[key] = saved);
     let id = this.FALLBACK_VOICE;
     try {
       const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
       if (r.ok) {
-        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id);
+        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id && !this.badVoices.has(v.voice_id) && (v.category === 'premade' || !this.badVoices.size));
         const male = (v) => /male/i.test((v.labels && v.labels.gender) || '') && !/female/i.test((v.labels && v.labels.gender) || '');
         const older = (v) => /old|middle/i.test((v.labels && v.labels.age) || '');
         const best = vs.find((v) => this.PREFER.test(v.name || '') && male(v)) || vs.find((v) => male(v) && older(v)) || vs.find(male);
@@ -8184,6 +8186,7 @@ const DIRECT = {
   },
   async tts1(npc, text, mood) {
     const v3 = this.v3(), voice = await this.voiceFor(npc), k = voice + '|' + (v3 ? 'v3' : 'f') + '|' + mood + '|' + text;
+    if (this.badVoices.has(voice) && !(npc && npc.voiceId)) throw this.fail('tts_error', 'keine nutzbare ElevenLabs-Stimme');
     if (this.ttsCache.has(k)) return this.ttsCache.get(k);
     const [stability, speed] = this.MOOD[mood] || this.MOOD.neutral;
     const body = v3 ? { text: (this.TAGS[mood] || '') + text, model_id: 'eleven_v3', voice_settings: { stability: 0.5, similarity_boost: 0.8 } }
@@ -8209,7 +8212,17 @@ const DIRECT = {
         try { localStorage.removeItem('polywest.elVoice.' + ((npc && npc.id) || 'any')); } catch (e) { /* ignore */ }
         delete this.voiceIds[(npc && npc.id) || 'any'];
       }
-      if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht');
+      if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht (' + msg.slice(0, 120) + ')');
+      /* the voice itself may not be used this way (a library voice on the free plan, a voice not shared any more …):
+         say why, once, and speak on with another voice (a preview just shows the reason) */
+      if (r.status !== 429 && (r.status === 402 || /library|subscription|upgrade|free user|tier|plan|payment|voice/i.test(msg)) && !(npc && npc.voiceId)) {
+        this.badVoices.add(voice); delete this.voiceIds[(npc && npc.id) || 'any'];
+        const lib = /library|subscription|upgrade|free user|tier|plan|payment/i.test(msg) || r.status === 402;
+        try { TOAST.show(lib ? 'ElevenLabs lässt diese Stimme im Gratis-Tarif nicht übers Spiel zu (Stimme aus der Bibliothek). Hank spricht mit einer Standardstimme weiter. Geht: Starter-Abo – oder eine eigene Stimme mit „Voice Design“ erstellen.'
+          : 'Diese Stimme geht nicht (' + (msg || r.status) + '). Hank spricht mit einer anderen weiter.', 'long'); } catch (e) { /* ignore */ }
+        return this.tts1(npc, text, mood);
+      }
+      if (r.status !== 429 && /library|subscription|upgrade|free user|tier|plan|payment/i.test(msg)) throw this.fail('tts_error', 'Diese Stimme geht im Gratis-Tarif nicht übers Spiel (Stimme aus der Bibliothek) – ElevenLabs: ' + msg.slice(0, 90));
       if (r.status === 429 || /concurren|too_many|rate/i.test(msg)) throw this.fail('rate_limited', 'ElevenLabs: zu viele Anfragen gleichzeitig');
       throw this.fail('tts_error', 'ElevenLabs ' + r.status + (msg ? ': ' + msg.slice(0, 60) : ''));
     }
@@ -8390,7 +8403,7 @@ const HEAR = {
    A person who can talk has npc.persona = { rules, context(), offline(text), act(action) } and npc.voiceProfile. */
 const TALK = {
   open: false, npc: null, ai: null, aiOff: false, aiOk: false, busy: false, rec: null, listening: false, heard: '', final: '',
-  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99,
+  micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99, hearWant: false, quietT: 0,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
   ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
@@ -8458,6 +8471,16 @@ const TALK = {
     if (this.open && (!this.npc || Math.hypot(this.npc.pos.x - PLAY.pos.x, this.npc.pos.z - PLAY.pos.z) > 6 || DRUNK.blocked())) this.close();
     if (!this.open) return;
     const n = this.npc; n.talking = true;
+    /* hands-free listening lets go of the microphone while he thinks and speaks, and takes it again after: phones
+       (iPhones above all) put all sound on the small ear speaker while a page holds the microphone, and so he is
+       heard through the real speaker, and his voice can never be taken for yours */
+    if (this.hearWant && this.hearCb) {
+      const his = this.hearCb.muted();
+      if (his) { this.quietT = 0; this.heardT = G.time; if (HEAR.active()) { HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); } }
+      // listening costs ElevenLabs credit for every second the microphone is open: after a while of silence it goes off
+      else if (HEAR.active() && G.time - (this.heardT || G.time) > this.IDLE) { this.hearWant = false; HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Mikrofon aus (Stille) \u00b7 antippen oder V zum Weiterreden', 'idle'); }
+      else if (!HEAR.active() && HEAR.wanted() && HEAR.st !== 'failed' && (this.quietT += dt) > 0.35) { this.quietT = 0; this.mic.setAttribute('aria-pressed', 'true'); HEAR.start(this.hearCb); }
+    }
     const talkingNow = this.busy || VOICE.speaking(n);
     if (talkingNow === this.stopBtn.hidden) this.stopBtn.hidden = !talkingNow;
     if (this.listening && performance.now() - this.listenAt > 15000) this.stopListen();
@@ -8494,11 +8517,13 @@ const TALK = {
     if (!this.busy) this.listen();
   },
   /* ElevenLabs listening: words appear while you speak, a pause sends them; nothing is taken while he speaks */
+  IDLE: 20,
   hearMode() {
+    this.hearWant = true; this.heardT = G.time;
     this.typeRow.hidden = true; this.mic.hidden = false; this.mic.setAttribute('aria-pressed', 'true');
     if (!this.busy) this.setState('Mikrofon wird verbunden \u2026', 'think');
     const cb = this.hearCb || (this.hearCb = {
-      partial: (t) => { if (this.open && !this.busy) this.heardEl.textContent = '\u201e' + t + ' \u2026\u201c'; },
+      partial: (t) => { this.heardT = G.time; if (this.open && !this.busy) this.heardEl.textContent = '\u201e' + t + ' \u2026\u201c'; },
       final: (t) => { if (!this.open || this.busy) return; this.heardEl.textContent = '\u201e' + t + '\u201c'; this.send(t); },
       state: (k, txt) => {
         if (!this.open) return;
@@ -8548,7 +8573,7 @@ const TALK = {
      on the side, not a mode). Only "Stopp" takes an answer back. */
   close() {
     if (!this.open) return;
-    HEAR.stop();
+    this.hearWant = false; HEAR.stop();
     if (this.inp.value.trim() && !this.busy) this.sendTyped();   // what was typed (or dictated) still goes to him
     this.stopListen(true);
     this.open = false; this.el.hidden = true; this.typeRow.hidden = true; this.dictT = 0; document.getElementById('app').classList.remove('talking');
@@ -8567,7 +8592,7 @@ const TALK = {
   noMic(why) { this.micOff = true; this.micWhy = why; if (this.mic) this.mic.hidden = true; },
   /* ---- the microphone (where it is allowed) ---- */
   toggleListen() {
-    if (HEAR.active()) { HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Pause \u00b7 Mikrofon antippen zum Weiterreden', 'idle'); return; }
+    if (this.hearWant) { this.hearWant = false; HEAR.stop(); this.mic.setAttribute('aria-pressed', 'false'); this.setState('Pause \u00b7 Mikrofon antippen zum Weiterreden', 'idle'); return; }
     if (this.listening) this.stopListen(); else if (this.open) this.start();
   },
   listen() {
@@ -9386,7 +9411,7 @@ const MENU = {
         const bMine = mk('Meine Stimmen'), bDe = mk('Deutsche Stimmen suchen'); bMine.id = id;
         const box = document.createElement('div'); box.className = 'mVoices';
         const field = () => document.getElementById('set_elevenVoice');
-        const info = (L) => [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || L.description, L.use_case].filter(Boolean).join(' · ');
+        const info = (L) => [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || (L.description || '').slice(0, 80), L.use_case].filter(Boolean).join(' · ');
         const row2 = (name, sub, on, btns) => {
           const it = document.createElement('div'); it.className = 'mVoice' + (on ? ' on' : '');
           const t = document.createElement('div'); t.className = 'mVoiceT';

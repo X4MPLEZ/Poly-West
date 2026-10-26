@@ -98,7 +98,7 @@ const MENU = {
         const bMine = mk('Meine Stimmen'), bDe = mk('Deutsche Stimmen suchen'); bMine.id = id;
         const box = document.createElement('div'); box.className = 'mVoices';
         const field = () => document.getElementById('set_elevenVoice');
-        const info = (L) => [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || L.description, L.use_case].filter(Boolean).join(' · ');
+        const info = (L) => [L.gender === 'male' ? 'Mann' : L.gender === 'female' ? 'Frau' : L.gender, L.age, L.accent, L.descriptive || (L.description || '').slice(0, 80), L.use_case].filter(Boolean).join(' · ');
         const row2 = (name, sub, on, btns) => {
           const it = document.createElement('div'); it.className = 'mVoice' + (on ? ' on' : '');
           const t = document.createElement('div'); t.className = 'mVoiceT';

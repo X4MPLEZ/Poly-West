@@ -552,6 +552,14 @@ async def check_ownkeys(g):
             return new Response(new Int16Array(2400).buffer, { status: 200 }); } return new Response('{}', { status: 500 }); };
           const res = await Promise.all(['Eins.', 'Zwei.', 'Drei.', 'Vier.', 'Fünf.'].map((t) => DIRECT.tts(hank, t, 'neutral').then(() => 1, () => 0)));
           out.queue = [peak, res.reduce((a, b) => a + b, 0)]; }
+        // a library voice ElevenLabs does not allow on the free plan: the reason is told, Hank speaks on with another voice
+        { const used = []; let told = ''; const ts = TOAST.show; TOAST.show = (t) => { told = t; };
+          window.fetch = async (url, o) => { if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'lib9', name: 'Bernd', category: 'professional', labels: { gender: 'male', age: 'old' } }, { voice_id: 'george', name: 'George', category: 'premade', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
+            const m = /text-to-speech\/([^/?]+)/.exec(url); if (m) { used.push(m[1]); if (m[1] === 'lib9') return new Response(JSON.stringify({ detail: { status: 'payment_required', message: 'Free users cannot use library voices via the API. Please upgrade your subscription to use this voice.' } }), { status: 402 });
+              return new Response(new Int16Array(2400).buffer, { status: 200 }); } return new Response('{}', { status: 500 }); };
+          SETTINGS.set('elevenVoice', 'lib9'); DIRECT.ttsCache.clear(); DIRECT.badVoices.clear(); DIRECT.voiceIds = {}; try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {}
+          const pc = await DIRECT.tts(hank, 'Noch einen?', 'neutral'); TOAST.show = ts;
+          out.libVoice = [used.join(','), pc.length, /Gratis-Tarif/.test(told)]; SETTINGS.set('elevenVoice', ''); DIRECT.badVoices.clear(); }
         // trying a voice out that fails: the reason is shown, no stand-in voice speaks
         { window.fetch = async (url) => new Response(JSON.stringify({ detail: { message: 'voice not found' } }), { status: 404 }); let robot = 0; const rb = VOICE.browser; VOICE.browser = () => { robot++; };
           DIRECT.ttsCache.clear(); DIRECT.tryVoice('nope'); await new Promise((x) => setTimeout(x, 80)); VOICE.browser = rb; out.previewNoRobot = robot === 0; }
@@ -572,7 +580,7 @@ async def check_ownkeys(g):
       }
       out.after = [TALK.via || '', VOICE.eleven()];
       return out; }''')
-    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['libVoice'] == ['lib9,george', 2400, True] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -622,6 +630,11 @@ async def check_hear(g):
         // while he speaks nothing goes out
         N.talkT = 5; const n0 = sent.length; await new Promise((x) => setTimeout(x, 400)); out.mutedWhileSpeaking = sent.length === n0; N.talkT = 0;
         await new Promise((x) => setTimeout(x, 400)); out.resumed = sent.length > n0;
+        // while he speaks the microphone is let go (phones then keep the loud speaker), afterwards it is taken again
+        N.talkT = 3; G.stepFrame(1/60); out.released = HEAR.st === 'off' && !HEAR.stream; N.talkT = 0; const nSock = socks.length;
+        for (let k = 0; k < 40; k++) G.stepFrame(1/60); await new Promise((x) => setTimeout(x, 300)); out.retaken = socks.length > nSock && HEAR.st === 'open';
+        // a long silence: the microphone goes off (it costs credit while open)
+        TALK.heardT = G.time - 30; G.stepFrame(1/60); out.idleOff = HEAR.st === 'off' && !TALK.hearWant;
         TALK.close(); out.closed = HEAR.st === 'off' && !HEAR.stream;
         // a key that may not listen: told, and the browser's recognition takes over
         tokenStatus = 401; TALK.start(false); await new Promise((x) => setTimeout(x, 200)); out.dead = HEAR.dead && !HEAR.wanted(); TALK.close();
@@ -631,7 +644,7 @@ async def check_hear(g):
       }
       return out; }''')
     ok = (r['wanted'] and r['url'] and r['state'] == 'open' and r['chunks'] > 0 and r['chunk'] == ['input_audio_chunk', 16000, True] and 'Gib mir einen' in r['partial']
-          and r['sentToHank'] and r['mutedWhileSpeaking'] and r['resumed'] and r['closed'] and r['dead'])
+          and r['sentToHank'] and r['mutedWhileSpeaking'] and r['resumed'] and r['released'] and r['retaken'] and r['idleOff'] and r['closed'] and r['dead'])
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
