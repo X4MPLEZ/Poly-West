@@ -24,7 +24,7 @@ function VOICE_WORKER() {
     importScripts(base + 'ort.wasm.min.js', base + 'piper_phonemize.js');
     ort.env.wasm.numThreads = 1; ort.env.wasm.wasmPaths = base;
     cfg = JSON.parse(new TextDecoder().decode(await get(base + m.voice + '.voice.json', 'cfg')));
-    const tmpl = await get(base + m.voice + '.tmpl', 'tmpl'), parts = [];
+    const tmpl = await get(base + m.voice + '.tmpl.wasm', 'tmpl'), parts = [];
     for (const p of cfg.parts) parts.push(await get(base + p, p));
     let hl = 0; for (const p of parts) hl += p.length;
     const half = new Uint8Array(hl); { let o = 0; for (const p of parts) { half.set(p, o); o += p.length; } }
@@ -39,7 +39,7 @@ function VOICE_WORKER() {
     }
     full.set(tmpl.subarray(t), last);
     sess = await ort.InferenceSession.create(full, { executionProviders: ['wasm'] });
-    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x });
+    phon = await createPiperPhonemize({ print: (l) => { if (pending) { const p = pending; pending = null; p(JSON.parse(l).phoneme_ids); } }, printErr: () => {}, locateFile: (x) => base + x + (x.endsWith('.data') ? '.wasm' : '') });   // (data files are served as .wasm)
     readyRes();
     postMessage({ t: 'ready', rate: cfg.voice.audio.sample_rate });
   }

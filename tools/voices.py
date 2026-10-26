@@ -7,8 +7,9 @@
    - @diffusionstudio/piper-wasm 1.0.0 (npm, MIT; espeak-ng data GPL-3): piper_phonemize.js/.wasm/.data,
      the espeak data cut down to German (18 MB -> 0.8 MB)
    - Piper voices from github.com/rhasspy/piper releases v0.0.2 (MIT code; voice licences in each MODEL_CARD)
-   Each voice: <name>.tmpl (the .onnx with its float32 weights cut out), <name>.w16.N (those weights as float16 in
-   parts under 15 MB, the artifact's file limit), <name>.voice.json (where the weights go, the voice settings).
+   Each voice: <name>.tmpl.wasm (the .onnx with its float32 weights cut out), <name>.w16.N.wasm (those weights as
+   float16 in parts under 15 MB, the artifact's file limit), <name>.voice.json (where the weights go, the settings).
+   Raw data files are named .wasm because artifacts only serve web types; the game reads them as plain bytes.
    The browser puts the model back together (float16 -> float32): same sound, half the download."""
 import json, pathlib, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request
 import numpy as np
@@ -39,7 +40,7 @@ def runtime():
             seg = data[f['start']:f['end']]; keep.append({'filename': fn, 'start': len(blob), 'end': len(blob) + len(seg)}); blob += seg
         d['files'] = keep; d['remote_package_size'] = len(blob)
         (out / 'piper_phonemize.js').write_text(s[:m.start(1)] + json.dumps(d, separators=(',', ':')) + s[m.end(1):])
-        (out / 'piper_phonemize.data').write_bytes(blob); shutil.copy(b / 'piper_phonemize.wasm', out)
+        (out / 'piper_phonemize.data.wasm').write_bytes(blob); shutil.copy(b / 'piper_phonemize.wasm', out)
 
 def voice(name, rel):
     import onnx
@@ -58,10 +59,10 @@ def voice(name, rel):
     for i, n in ranges:
         tmpl += B[last:i]; segs.append([i, n]); half += np.frombuffer(B[i:i + n], np.float32).astype(np.float16).tobytes(); last = i + n
     tmpl += B[last:]
-    (out / f'{name}.tmpl').write_bytes(tmpl)
+    (out / f'{name}.tmpl.wasm').write_bytes(tmpl)
     parts = []
     for k in range(0, len(half), CHUNK):
-        pn = f'{name}.w16.{k // CHUNK}'; (out / pn).write_bytes(half[k:k + CHUNK]); parts.append(pn)
+        pn = f'{name}.w16.{k // CHUNK}.wasm'; (out / pn).write_bytes(half[k:k + CHUNK]); parts.append(pn)
     for k in ('phoneme_map',): cfg.pop(k, None)
     json.dump({'size': len(B), 'segs': segs, 'parts': parts, 'voice': cfg, 'card': card}, open(out / f'{name}.voice.json', 'w'))
     print(name, 'model', round(len(B) / 1e6, 1), 'MB -> download', round((len(tmpl) + len(half)) / 1e6, 1), 'MB')
