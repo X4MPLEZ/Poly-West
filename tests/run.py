@@ -243,17 +243,18 @@ async def check_drink(g):
       for (let k = 0; k < 10; k++) G.stepFrame(1/60); INTERACT.update(true);
       out.offer = INTERACT.acts.map(a => a.label).join(',');
       INTERACT.acts.find(a => a.label === 'Bestellen').run(); out.shop = SHOP.open; SHOP.key('2');
-      out.money = INV.money; for (let k = 0; k < 150; k++) G.stepFrame(1/60);
+      // Hank fetches the bottle, pours and pushes the glass over
+      out.money = INV.money; for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) G.stepFrame(1/60); for (let k = 0; k < 20; k++) G.stepFrame(1/60);
       out.ready = GLASS.ready(); INTERACT.update(true); out.offer2 = INTERACT.acts.map(a => a.label).join(',');
       INTERACT.use(0); let t = 0; const st = []; while ((DRINK.busy()) && t < 6) { G.stepFrame(1/60); t += 1/60; if (st[st.length - 1] !== DRINK.st) st.push(DRINK.st); }
       out.phases = st.join('>'); out.stomach = +DRUNK.stomach.toFixed(3); out.left = GLASS.obj.left;
       // a bottle: buy it, drink from it
-      SHOP.show(C, null); SHOP.buy('bottle'); out.bag = JSON.stringify(INV.items);
+      SHOP.show(C, null); SHOP.buy('bottle'); for (let k = 0; k < 60 * 14 && !INV.has('bottle'); k++) G.stepFrame(1/60); out.bag = JSON.stringify(INV.items);
       DRINK.start('bottle'); t = 0; while (DRINK.busy() && t < 6) { G.stepFrame(1/60); t += 1/60; } out.bottleSips = INV.sips.bottle;
       // on a stool: a beer, three sips
       const S = INTERACT.items.find(s => s.kind === 'stool'); SIT.warp(S); for (let k = 0; k < 5; k++) G.stepFrame(1/60); INTERACT.update(true);
       out.seatOffer = INTERACT.acts.map(a => a.label).join(',');
-      INTERACT.use(0); SHOP.buy('beer'); for (let k = 0; k < 200; k++) G.stepFrame(1/60);
+      INTERACT.use(0); SHOP.buy('beer'); for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) G.stepFrame(1/60); for (let k = 0; k < 20; k++) G.stepFrame(1/60);
       for (let i = 0; i < 3; i++) { INTERACT.update(true); INTERACT.use(0); t = 0; while (DRINK.busy() && t < 6) { G.stepFrame(1/60); t += 1/60; } }
       out.beerLeft = GLASS.obj.left; out.stillSitting = SIT.state;
       SIT.stand(); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
@@ -316,8 +317,32 @@ async def check_drunk(g):
           and r['wallSpeed'] < 0.3 and not r['wallMoving'])
     return ok, json.dumps(r)
 
+async def check_npc(g):
+    """Hank: greets, comes over, serves by hand (all steps), ducks at a shot, hands up when aimed at"""
+    await g.js(RESET)
+    r = await g.js('''() => { const out = {}, B = BARKEEP, R = B.R; INV.money = 1000; GLASS.clear(); B.orders = []; B.cur = null; B.st = 'idle'; B.cool = {};
+      const p0 = rwp(R, 0, R.floorY, 0.8); PLAY.pos.set(p0.x, p0.y, p0.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      const p = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(p.x, p.y, p.z); PLAY.yaw = B.backYaw; GAIT.init = false;
+      for (let k = 0; k < 10; k++) G.stepFrame(1/60); out.hello = B.npc.said;
+      for (let k = 0; k < 180; k++) G.stepFrame(1/60); out.attending = B.attending; out.near = +Math.abs(B.myZ() + 5.0).toFixed(2);
+      SHOP.show(B.C, null); SHOP.buy('whiskey'); const seen = [];
+      for (let k = 0; k < 60 * 14 && !GLASS.ready(); k++) { G.stepFrame(1/60); const st = B.cur ? B.cur.st : null; if (st && seen[seen.length - 1] !== st) seen.push(st); }
+      out.steps = seen.join('>'); out.served = GLASS.ready();
+      out.glassNear = GLASS.obj ? +Math.hypot(GLASS.obj.pos.x - PLAY.pos.x, GLASS.obj.pos.z - PLAY.pos.z).toFixed(2) : -1;
+      // a shot: he ducks, then comes back up
+      worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' }); let low = 0;
+      for (let k = 0; k < 60 * 7; k++) { G.stepFrame(1/60); low = Math.max(low, B.npc.crouch); } out.duck = +low.toFixed(2); out.after = B.st;
+      // aimed at: hands up
+      GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true); let up = 0;
+      for (let k = 0; k < 90; k++) { const h = B.npc.pos; const yaw = Math.atan2(h.x - PLAY.pos.x, h.z - PLAY.pos.z); PLAY.camYaw = yaw + Math.PI; PLAY.aimPitch = 0.05; G.stepFrame(1/60); up = Math.max(up, B.aimedT); }
+      GUN.setAim(false); out.handsUp = +up.toFixed(2);
+      return out; }''')
+    ok = (bool(r['hello']) and r['attending'] and r['near'] < 0.6 and r['steps'] == 'toBack>grab>toPour>glass>pour>stow>push' and r['served']
+          and r['glassNear'] < 1.2 and r['duck'] > 0.8 and r['after'] == 'idle' and r['handsUp'] > 0.5)
+    return ok, json.dumps(r)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

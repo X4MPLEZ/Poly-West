@@ -137,6 +137,7 @@ const DRUNK = {
     DRINK.cancel(); SHOP.open && SHOP.close();
     if (SIT.state === 'sit') SIT.stand(); else if (SIT.busy()) SIT.cancel();
     TOAST.show('Genug für heute. Er will nur noch raus …', 'long');
+    worldEvent('leave', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   autoDir() {
     const Lv = this.leave; if (!Lv || Lv.i >= Lv.way.length) return null;

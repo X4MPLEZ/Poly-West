@@ -72,6 +72,7 @@
     if (G.camHook) G.camHook();
     updateWorld(dt, G.time);
     updateCharacterVisual();
+    NPCS.update(dt);
     DRINK.late();
     GUN.late(dt);
     AMB.update(dt);
@@ -109,6 +110,7 @@
     HUD.init(toggleHud);
     initGunPad(onAction);
     INTERACT.init();
+    NPCS.init(G.scene);
     SAVE.init();
     MENU.init();
     SHOP.init();

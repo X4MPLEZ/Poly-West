@@ -42,13 +42,14 @@ const GLASS = {
     this.bottle = mk(VESSEL.geo.bottletrue);   // a bottle from the bag, only while drinking from it
   },
   // a fresh drink slides along the counter from its far end to `to`
-  serve(id, counter, to) {
+  // from: where it starts (the barkeeper's hand); default the far end of the counter
+  serve(id, counter, to, from0) {
     const it = ITEMS[id], ax = counter.ax, az = counter.az, bx = counter.bx, bz = counter.bz;
     const da = Math.hypot(to.x - ax, to.z - az), db = Math.hypot(to.x - bx, to.z - bz);
     const [sx, sz] = da > db ? [ax, az] : [bx, bz], L = Math.max(da, db) || 1;
     const fx = Math.sin(counter.yaw), fz = Math.cos(counter.yaw);
-    const from = new THREE.Vector3(sx + ((to.x - sx) / L) * 0.3 + fx * 0.1, to.y, sz + ((to.z - sz) / L) * 0.3 + fz * 0.1);
-    this.obj = { id, it, left: it.sips, from, pos: from.clone(), to: to.clone(), slideT: 0, slideDur: 0.4 + from.distanceTo(to) / 3.2, held: false, tilt: 0, yaw: counter.yaw + Math.PI, room: counter.room };
+    const from = from0 ? new THREE.Vector3(from0.x, to.y, from0.z) : new THREE.Vector3(sx + ((to.x - sx) / L) * 0.3 + fx * 0.1, to.y, sz + ((to.z - sz) / L) * 0.3 + fz * 0.1);
+    this.obj = { id, it, left: it.sips, from, pos: from.clone(), to: to.clone(), slideT: 0, slideDur: 0.25 + from.distanceTo(to) / 3.2, held: false, tilt: 0, yaw: counter.yaw + Math.PI, room: counter.room };
     this.mesh.geometry = VESSEL.geo[it.vessel + 'true'];
     this.mesh.visible = true; this.farT = 0;
     this.slideSound(this.obj.slideDur);
@@ -299,8 +300,10 @@ const SHOP = {
     if (!INV.pay(it.price)) { TOAST.show('Nicht genug Geld.'); return; }
     this.close();
     worldEvent('buy', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: id, price: it.price });
-    if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
     const C = this.counter, to = this.seat ? this.seatSpot(this.seat) : C.spot(PLAY.pos);
+    // the barkeeper serves it by hand; without him it comes sliding the old way
+    if (typeof BARKEEP !== 'undefined' && BARKEEP.C === C && BARKEEP.order(id, to, this.seat)) return;
+    if (it.kind === 'carry') { INV.add(id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long'); return; }
     GLASS.serve(id, C, to);
   },
   // the glass for someone on a bar stool: a hand's width right of the middle, on the counter

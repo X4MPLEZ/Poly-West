@@ -39,6 +39,11 @@ function collide(px, pz, py) {
       px = c.cx + lx * ca + lz * sa; pz = c.cz - lx * sa + lz * ca;
     }
   }
+  // people
+  for (const b of NPCS.bodies) {
+    const dx = px - b.cx, dz = pz - b.cz, rr = b.r + r, d2 = dx * dx + dz * dz;
+    if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2); px = b.cx + (dx / d) * rr; pz = b.cz + (dz / d) * rr; }
+  }
   const d = Math.hypot(px - TOWN.cx, pz - TOWN.cz);
   if (d > 150) { px = TOWN.cx + ((px - TOWN.cx) * 150) / d; pz = TOWN.cz + ((pz - TOWN.cz) * 150) / d; }
   return [px, pz];

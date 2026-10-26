@@ -6,7 +6,9 @@ const RIG = {
   waistY: 0.14, neckY: 0.47, shoulderX: 0.305, shoulderY: 0.41, upper: 0.29, headTop: 0.31
 };
 
-function buildCharacter(over) {
+/* over: colours. opt (for NPCs): hat 'cowboy' | 'none' (then hair), gun (default true), apron, bowtie, garter colours */
+function buildCharacter(over, opt) {
+  const O = Object.assign({ hat: 'cowboy', gun: true }, opt || {});
   const C = Object.assign({
     hat: rgb(0x5b3b26), band: rgb(0x2a1d15), skin: rgb(0xd99f78), skinD: rgb(0xc4876a), shirt: rgb(0xe3d3b3), vest: rgb(0x4a352a),
     jeans: rgb(0x3f5878), jeansD: rgb(0x34496a), belt: rgb(0x2a1d15), buckle: rgb(0xd9b04c), boot: rgb(0x6a4029), sole: rgb(0x2e1f17),
@@ -24,7 +26,8 @@ function buildCharacter(over) {
   mb.box(0, -0.1, 0, 0.44, 0.27, 0.26, C.jeans, 9, { bottom: true });
   mb.box(0, 0.1, 0, 0.47, 0.09, 0.28, C.belt, 0);
   mb.box(0, 0.11, 0.142, 0.1, 0.07, 0.02, C.buckle, 0);
-  mb.box(-0.265, -0.22, 0.02, 0.08, 0.3, 0.15, C.belt, 0, { bottom: true });
+  if (O.gun) mb.box(-0.265, -0.22, 0.02, 0.08, 0.3, 0.15, C.belt, 0, { bottom: true });
+  if (O.apron) { mb.box(0, -0.46, 0.142, 0.42, 0.6, 0.02, O.apron, 9); mb.box(0, 0.1, 0.152, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
   add('pelvis', mb);
   // torso: origin at the waist
   mb = new MB();
@@ -43,18 +46,29 @@ function buildCharacter(over) {
   mb.box(0, 0.11, 0.13, 0.05, 0.06, 0.05, C.skinD, 0);
   mb.box(0, 0.085, 0.132, 0.15, 0.035, 0.016, C.stache, 0);
   for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, C.skinD, 0);
+  if (O.hat === 'none') {
+    // hair, parted in the middle and slicked down
+    const hc = O.hair || rgb(0x2e2018);
+    for (const s of [-1, 1]) mb.box(s * 0.07, 0.3, -0.005, 0.135, 0.04, 0.275, hc, 0);
+    mb.box(0, 0.12, -0.138, 0.275, 0.2, 0.02, hc, 0);
+    for (const s of [-1, 1]) mb.box(s * 0.138, 0.2, -0.04, 0.02, 0.11, 0.18, hc, 0);
+  }
+  if (O.bowtie) { mb.box(0, -0.115, 0.152, 0.13, 0.05, 0.025, O.bowtie, 0); mb.box(0, -0.115, 0.16, 0.035, 0.035, 0.02, mulc(O.bowtie, 0.7), 0); }
   add('head', mb);
   // hat: origin on top of the head
-  mb = new MB();
-  mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, C.hat, 0, { bottom: true });
-  mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, C.band, 0, { noTop: true });
-  mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, C.hat, 0);
-  mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(C.hat, 0.8), 0);
-  add('hat', mb);
+  if (O.hat !== 'none') {
+    mb = new MB();
+    mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, C.hat, 0, { bottom: true });
+    mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, C.band, 0, { noTop: true });
+    mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, C.hat, 0);
+    mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(C.hat, 0.8), 0);
+    add('hat', mb);
+  }
   // arms: upper arm from the shoulder, forearm + hand from the elbow, both hang along -y
   for (const side of ['L', 'R']) {
     mb = new MB();
     mb.box(0, -RIG.upper - 0.02, 0, 0.13, RIG.upper + 0.06, 0.14, C.shirt, 9, { bottom: true });
+    if (O.garter) mb.box(0, -0.13, 0, 0.14, 0.035, 0.15, O.garter, 0);
     add('uArm' + side, mb);
     mb = new MB();
     mb.box(0, -0.2, 0, 0.12, 0.22, 0.13, C.shirt, 9, { bottom: true });
@@ -77,7 +91,7 @@ function buildCharacter(over) {
     mb.box(0, -RIG.ankleH, -RIG.heelB + 0.025, 0.18, 0.045, 0.06, C.sole, 0, { bottom: true });
     add('foot' + side, mb);
   }
-  add('gun', buildGunGeo());
+  if (O.gun) add('gun', buildGunGeo());
   const ch = { root, p, parts: Object.values(p), pose: makePose() };
   applyPose(ch);
   return ch;
@@ -120,7 +134,7 @@ function applyPose(ch) {
   p.torso.matrix.copy(RM.tor);
   RM.head.multiplyMatrices(RM.tor, rotTo(RM.tmp, 0, RIG.neckY, 0, P.hdPitch, P.hdYaw, P.hdRoll || 0));
   p.head.matrix.copy(RM.head);
-  p.hat.matrix.multiplyMatrices(RM.head, rotTo(RM.tmp, 0, RIG.headTop + P.hatDy, 0, P.hatTilt, 0, 0));
+  if (p.hat) p.hat.matrix.multiplyMatrices(RM.head, rotTo(RM.tmp, 0, RIG.headTop + P.hatDy, 0, P.hatTilt, 0, 0));
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1, a = P.arm[i], side = i === 0 ? 'L' : 'R';
     const ua = p['uArm' + side], fa = p['fArm' + side];
