@@ -1,17 +1,18 @@
 /* ---------- drunk vision ----------
    Only while drunk the scene is drawn into a texture and then onto the screen through this shader:
    - the edges blur first; the clear middle shrinks the more you drink, until the whole picture is soft
-   - a second, drifting copy of the picture (double vision), a slow wave, warm rich colour, darker edges
-   - close to passing out the eyelids droop and blink shut, and finally close (lid = 1)
+   - a second, drifting copy of the picture (double vision), a slow wave, warm rich colour
+   - on the last stretch (DRUNK.edge) it swims even more and slowly goes dark, then black (uDark)
+   - waking up: slow, heavy blinks, the eyelids open a little, fall shut, open more (uLid)
    Sober, the scene goes straight to the screen and this costs nothing. */
 const POST = {
-  rt: null, scene: null, cam: null, mat: null, size: new THREE.Vector2(), amt: 0, lid: 0,
+  rt: null, scene: null, cam: null, mat: null, size: new THREE.Vector2(), amt: 0, lid: 0, dark: 0, FADE: 3.2, WAKE: 8,
   init() {
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { tScene: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 }, uLid: { value: 0 }, uAspect: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) } },
+      uniforms: { tScene: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 }, uLid: { value: 0 }, uDark: { value: 0 }, uAspect: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       fragmentShader: `
-        uniform sampler2D tScene; uniform float uAmt; uniform float uTime; uniform float uLid; uniform float uAspect; uniform vec2 uPx; varying vec2 vUv;
+        uniform sampler2D tScene; uniform float uAmt; uniform float uTime; uniform float uLid; uniform float uDark; uniform float uAspect; uniform vec2 uPx; varying vec2 vUv;
         vec3 soft(vec2 uv, float r) {
           // a small disc of taps: radius r in screen height units
           vec3 c = texture2D(tScene, uv).rgb * 0.2;
@@ -39,9 +40,11 @@ const POST = {
           float l = dot(c, vec3(0.3, 0.59, 0.11));
           c = mix(vec3(l), c, 1.0 + 0.35 * uAmt) * vec3(1.0 + 0.08 * uAmt, 1.0, 1.0 - 0.1 * uAmt);
           // eyelids: an opening that narrows from above and below, curved
-          float open = 0.5 * (1.0 - uLid) * sqrt(max(0.0, 1.0 - (uv.x - 0.5) * (uv.x - 0.5) * 1.6));
+          // (wide open = no edge at all: the curve only comes in while the lids move)
+          float curve = sqrt(max(0.0, 1.0 - (vUv.x - 0.5) * (vUv.x - 0.5) * 1.6));
+          float open = mix(0.6, 0.5 * curve, smoothstep(0.0, 0.2, uLid)) * (1.0 - uLid) - 0.07 * uLid;
           float lid = smoothstep(open, open + 0.06, abs(vUv.y - 0.5 + 0.03 * uLid));
-          c *= 1.0 - lid;
+          c *= (1.0 - lid) * (1.0 - uDark);
           gl_FragColor = vec4(c, 1.0);
         }`,
       depthTest: false, depthWrite: false
@@ -51,28 +54,30 @@ const POST = {
     this.scene = new THREE.Scene(); this.scene.add(quad);
     this.cam = new THREE.Camera();
   },
-  // how drunk the picture looks, and how far the eyes are shut
+  // how drunk the picture looks, how dark it is, and how far the eyes are shut
+  WAKE_KEYS: [[0, 1], [1.4, 0.74], [2.1, 0.72], [2.7, 1], [3.4, 1], [4.7, 0.42], [5.3, 0.46], [5.8, 0.8], [6.2, 0.8], [8, 0]],
   update(dt) {
-    const L = Math.min(DRUNK.level, 1.05);
-    // the picture follows the level slowly, it creeps in
-    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 0.6));
-    // close to the end: now and then a slow, heavy blink (shut, hold, open again), wide open in between
-    this.blinkT = (this.blinkT ?? 3) - dt;
-    if (L > 0.8 && this.blinkT <= 0 && !this.blink) { this.blink = 0.001; this.blinkT = 2.5 + Math.random() * 3.5 * (1.1 - L); }
-    let lid = 0;
-    if (this.blink) {
-      this.blink += dt;
-      const b = this.blink, close = 0.45, hold = 0.25 + L * 0.2, open = 0.7;
-      lid = b < close ? smoothstep(0, close, b) : b < close + hold ? 1 : 1 - smoothstep(close + hold, close + hold + open, b);
-      lid *= 0.75 + 0.25 * smoothstep(0.85, 1, L);
-      if (b > close + hold + open) this.blink = 0;
-    }
+    const L = Math.min(DRUNK.level, 1.05), E = DRUNK.edgeK();
+    // the picture follows the level slowly, it creeps in; on the last stretch it keeps swimming further
+    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) + E * 0.45 - this.amt) * (1 - Math.exp(-dt * 0.6));
+    let dark = E * E * 0.55, lid = 0;
     const O = DRUNK.out;
-    if (O) lid = O.phase === 'fade' ? Math.max(lid, clamp(O.t / 2.0, 0, 1)) : O.phase === 'dark' ? 1 : clamp(1 - O.t / 2.2, 0, 1) * (0.8 + 0.2 * Math.sin(O.t * 9));
-    this.lid = lid;
+    if (O) {
+      if (O.phase === 'fade') dark = Math.max(dark, smoothstep(0, this.FADE, O.t));
+      else if (O.phase === 'dark') dark = 1;
+      else {
+        // waking: slow heavy blinks
+        const K = this.WAKE_KEYS; let i = 0;
+        while (i < K.length - 2 && O.t > K[i + 1][0]) i++;
+        const a = K[i], b = K[i + 1];
+        lid = a[1] + (b[1] - a[1]) * smoothstep(a[0], b[0], O.t);
+        dark = 0;
+      }
+    }
+    this.dark = dark; this.lid = lid;
   },
   render(r, scene, cam) {
-    if ((this.amt < 0.01 && this.lid < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
+    if ((this.amt < 0.01 && this.lid < 0.01 && this.dark < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
     r.getDrawingBufferSize(this.size);
     if (!this.rt || this.rt.width !== this.size.x || this.rt.height !== this.size.y) {
       if (this.rt) this.rt.dispose();
@@ -80,7 +85,7 @@ const POST = {
     }
     r.setRenderTarget(this.rt); r.render(scene, cam);
     const u = this.mat.uniforms;
-    u.tScene.value = this.rt.texture; u.uAmt.value = this.amt; u.uTime.value = G.time; u.uLid.value = this.lid; u.uAspect.value = this.size.x / this.size.y;
+    u.tScene.value = this.rt.texture; u.uAmt.value = this.amt; u.uTime.value = G.time; u.uLid.value = this.lid; u.uDark.value = this.dark; u.uAspect.value = this.size.x / this.size.y;
     r.setRenderTarget(null); r.render(this.scene, this.cam);
   }
 };

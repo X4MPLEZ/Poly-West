@@ -265,9 +265,15 @@ async def check_drink(g):
     r2 = await g.js('''() => { DRUNK.level = 0.75; DRUNK.stomach = 0; PLAY.pos.set(-8, 0, 2); PLAY.yaw = 0; PLAY.camYaw = Math.PI; GAIT.init = false;
       let maxSep = 0, x0 = PLAY.pos.x; INPUT.keys.add('w'); for (let k = 0; k < 300; k++) { PLAY.camYaw = Math.PI; G.stepFrame(1/60); const L = W.ch.pose.ank[0], R = W.ch.pose.ank[1]; maxSep = Math.max(maxSep, Math.hypot(L.x - R.x, L.z - R.z)); }
       INPUT.keys.clear(); const drift = +Math.abs(PLAY.pos.x - x0).toFixed(2);
-      const m0 = INV.money, p0 = PLAY.pos.clone(); DRUNK.level = 1.05; for (let k = 0; k < 60 * 8; k++) G.stepFrame(1/60);
-      return { maxSep: +maxSep.toFixed(2), drift, out: !!DRUNK.out, level: +DRUNK.level.toFixed(2), moved: +p0.distanceTo(PLAY.pos).toFixed(1), poorer: INV.money < m0 || m0 === 0, black: document.getElementById('blackout').hidden }; }''')
-    ok = ok and r2['maxSep'] < 1.4 and r2['drift'] > 0.05 and not r2['out'] and r2['level'] < 0.35 and r2['moved'] > 3 and r2['black']
+      // the last stretch: held just under the top for a while, then down, black, and awake somewhere else with slow blinks
+      const m0 = INV.money, p0 = PLAY.pos.clone(); DRUNK.level = 1.05; for (let k = 0; k < 60 * 2; k++) G.stepFrame(1/60);
+      const edge = !!DRUNK.edge && !DRUNK.out, held = +DRUNK.level.toFixed(2);
+      DRUNK.edge.t = DRUNK.edge.dur; let dark = 0, lids = 0, lastLid = 0, wakeT = 0;
+      for (let k = 0; k < 60 * 18 && (DRUNK.out || k < 5); k++) { G.stepFrame(1/60); dark = Math.max(dark, POST.dark);
+        if (DRUNK.out && DRUNK.out.phase === 'wake') { wakeT += 1/60; if (POST.lid > lastLid) lids++; } lastLid = POST.lid; }
+      return { maxSep: +maxSep.toFixed(2), drift, edge, held, dark: +dark.toFixed(2), wakeT: +wakeT.toFixed(1), out: !!DRUNK.out, level: +DRUNK.level.toFixed(2), moved: +p0.distanceTo(PLAY.pos).toFixed(1), poorer: INV.money < m0 || m0 === 0, black: document.getElementById('blackout').hidden }; }''')
+    ok = (ok and r2['maxSep'] < 1.4 and r2['drift'] > 0.05 and r2['edge'] and r2['held'] < 0.99 and r2['dark'] > 0.99 and r2['wakeT'] > 6
+          and not r2['out'] and r2['level'] < 0.35 and r2['moved'] > 3 and r2['black'])
     await g.js('() => { DRUNK.level = 0; DRUNK.stomach = 0; if (SIT.busy()) SIT.cancel(); GLASS.clear(); }')
     return ok, json.dumps(r) + ' ' + json.dumps(r2)
 
@@ -286,9 +292,10 @@ async def check_drunk(g):
       const punchT = (L) => { DRUNK.level = L; FIST.stamina = 1; FIST.st = 'idle'; FIST.clip = null; FIST.down(false); G.stepFrame(1/60); FIST.up(); let t = 0; while (FIST.st !== 'idle' && t < 3) { DRUNK.level = L; if (FALL.busy()) FALL.cancel(); G.stepFrame(1/60); t += 1/60; } return +t.toFixed(2); };
       out.punchSober = punchT(0); out.punchDrunk = punchT(0.8);
       // a fall: down and back up, the gait takes over again
-      DRUNK.level = 0.5; FALL.cancel(); FALL.start(); let t = 0, low = 9;
-      while (FALL.busy() && t < 9) { G.stepFrame(1/60); t += 1/60; low = Math.min(low, W.ch.pose.pel.y); }
-      out.fallT = +t.toFixed(1); out.fallLow = +low.toFixed(2);
+      out.falls = ['back', 'fwd', 'side'].map((kind) => { DRUNK.level = 0.5; FALL.cancel(); FALL.start(false, kind, -1); let t = 0, low = 9;
+        while (FALL.busy() && t < 9) { G.stepFrame(1/60); t += 1/60; low = Math.min(low, W.ch.pose.pel.y); }
+        return [+t.toFixed(1), +low.toFixed(2)]; });
+      out.fallT = Math.max(...out.falls.map(f => f[0])); out.fallLow = out.falls[0][1];
       for (let k = 0; k < 60; k++) G.stepFrame(1/60);
       out.afterPel = +W.ch.pose.pel.y.toFixed(2);
       // the wheel: Tab, point at the bottle, let go
@@ -297,7 +304,7 @@ async def check_drunk(g):
       t = 0; while (DRINK.busy() && t < 5) { G.stepFrame(1/60); t += 1/60; } out.sipsLeft = INV.sips.bottle; out.wheelClosed = !WHEEL.open;
       DRUNK.level = 0; DRUNK.stomach = 0; return out; }''')
     ok = (abs(r['headRoll'][0]) < 0.7 and r['headRoll'][1] < 0.7 and r['headYaw'] < 0.9 and r['swayMoved'] > 0.2 and r['stepFrames'] > 20
-          and r['punchDrunk'] > r['punchSober'] * 1.4 and r['fallT'] < 8 and r['fallLow'] < 0.25 and r['afterPel'] > 0.85
+          and r['punchDrunk'] > r['punchSober'] * 1.4 and r['fallT'] < 8 and r['fallLow'] < 0.25 and r['falls'][1][1] < 0.6 and r['falls'][2][1] < 0.3 and r['afterPel'] > 0.85
           and 'Flasche Whiskey' in r['slots'] and r['sipsLeft'] == 5 and r['wheelClosed'])
     return ok, json.dumps(r)
 

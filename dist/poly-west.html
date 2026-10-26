@@ -3590,17 +3590,18 @@ function updateShadow(L) {
 /* ---------- drunk vision ----------
    Only while drunk the scene is drawn into a texture and then onto the screen through this shader:
    - the edges blur first; the clear middle shrinks the more you drink, until the whole picture is soft
-   - a second, drifting copy of the picture (double vision), a slow wave, warm rich colour, darker edges
-   - close to passing out the eyelids droop and blink shut, and finally close (lid = 1)
+   - a second, drifting copy of the picture (double vision), a slow wave, warm rich colour
+   - on the last stretch (DRUNK.edge) it swims even more and slowly goes dark, then black (uDark)
+   - waking up: slow, heavy blinks, the eyelids open a little, fall shut, open more (uLid)
    Sober, the scene goes straight to the screen and this costs nothing. */
 const POST = {
-  rt: null, scene: null, cam: null, mat: null, size: new THREE.Vector2(), amt: 0, lid: 0,
+  rt: null, scene: null, cam: null, mat: null, size: new THREE.Vector2(), amt: 0, lid: 0, dark: 0, FADE: 3.2, WAKE: 8,
   init() {
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { tScene: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 }, uLid: { value: 0 }, uAspect: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) } },
+      uniforms: { tScene: { value: null }, uAmt: { value: 0 }, uTime: { value: 0 }, uLid: { value: 0 }, uDark: { value: 0 }, uAspect: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
       fragmentShader: `
-        uniform sampler2D tScene; uniform float uAmt; uniform float uTime; uniform float uLid; uniform float uAspect; uniform vec2 uPx; varying vec2 vUv;
+        uniform sampler2D tScene; uniform float uAmt; uniform float uTime; uniform float uLid; uniform float uDark; uniform float uAspect; uniform vec2 uPx; varying vec2 vUv;
         vec3 soft(vec2 uv, float r) {
           // a small disc of taps: radius r in screen height units
           vec3 c = texture2D(tScene, uv).rgb * 0.2;
@@ -3628,9 +3629,11 @@ const POST = {
           float l = dot(c, vec3(0.3, 0.59, 0.11));
           c = mix(vec3(l), c, 1.0 + 0.35 * uAmt) * vec3(1.0 + 0.08 * uAmt, 1.0, 1.0 - 0.1 * uAmt);
           // eyelids: an opening that narrows from above and below, curved
-          float open = 0.5 * (1.0 - uLid) * sqrt(max(0.0, 1.0 - (uv.x - 0.5) * (uv.x - 0.5) * 1.6));
+          // (wide open = no edge at all: the curve only comes in while the lids move)
+          float curve = sqrt(max(0.0, 1.0 - (vUv.x - 0.5) * (vUv.x - 0.5) * 1.6));
+          float open = mix(0.6, 0.5 * curve, smoothstep(0.0, 0.2, uLid)) * (1.0 - uLid) - 0.07 * uLid;
           float lid = smoothstep(open, open + 0.06, abs(vUv.y - 0.5 + 0.03 * uLid));
-          c *= 1.0 - lid;
+          c *= (1.0 - lid) * (1.0 - uDark);
           gl_FragColor = vec4(c, 1.0);
         }`,
       depthTest: false, depthWrite: false
@@ -3640,28 +3643,30 @@ const POST = {
     this.scene = new THREE.Scene(); this.scene.add(quad);
     this.cam = new THREE.Camera();
   },
-  // how drunk the picture looks, and how far the eyes are shut
+  // how drunk the picture looks, how dark it is, and how far the eyes are shut
+  WAKE_KEYS: [[0, 1], [1.4, 0.74], [2.1, 0.72], [2.7, 1], [3.4, 1], [4.7, 0.42], [5.3, 0.46], [5.8, 0.8], [6.2, 0.8], [8, 0]],
   update(dt) {
-    const L = Math.min(DRUNK.level, 1.05);
-    // the picture follows the level slowly, it creeps in
-    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) - this.amt) * (1 - Math.exp(-dt * 0.6));
-    // close to the end: now and then a slow, heavy blink (shut, hold, open again), wide open in between
-    this.blinkT = (this.blinkT ?? 3) - dt;
-    if (L > 0.8 && this.blinkT <= 0 && !this.blink) { this.blink = 0.001; this.blinkT = 2.5 + Math.random() * 3.5 * (1.1 - L); }
-    let lid = 0;
-    if (this.blink) {
-      this.blink += dt;
-      const b = this.blink, close = 0.45, hold = 0.25 + L * 0.2, open = 0.7;
-      lid = b < close ? smoothstep(0, close, b) : b < close + hold ? 1 : 1 - smoothstep(close + hold, close + hold + open, b);
-      lid *= 0.75 + 0.25 * smoothstep(0.85, 1, L);
-      if (b > close + hold + open) this.blink = 0;
-    }
+    const L = Math.min(DRUNK.level, 1.05), E = DRUNK.edgeK();
+    // the picture follows the level slowly, it creeps in; on the last stretch it keeps swimming further
+    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) + E * 0.45 - this.amt) * (1 - Math.exp(-dt * 0.6));
+    let dark = E * E * 0.55, lid = 0;
     const O = DRUNK.out;
-    if (O) lid = O.phase === 'fade' ? Math.max(lid, clamp(O.t / 2.0, 0, 1)) : O.phase === 'dark' ? 1 : clamp(1 - O.t / 2.2, 0, 1) * (0.8 + 0.2 * Math.sin(O.t * 9));
-    this.lid = lid;
+    if (O) {
+      if (O.phase === 'fade') dark = Math.max(dark, smoothstep(0, this.FADE, O.t));
+      else if (O.phase === 'dark') dark = 1;
+      else {
+        // waking: slow heavy blinks
+        const K = this.WAKE_KEYS; let i = 0;
+        while (i < K.length - 2 && O.t > K[i + 1][0]) i++;
+        const a = K[i], b = K[i + 1];
+        lid = a[1] + (b[1] - a[1]) * smoothstep(a[0], b[0], O.t);
+        dark = 0;
+      }
+    }
+    this.dark = dark; this.lid = lid;
   },
   render(r, scene, cam) {
-    if ((this.amt < 0.01 && this.lid < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
+    if ((this.amt < 0.01 && this.lid < 0.01 && this.dark < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
     r.getDrawingBufferSize(this.size);
     if (!this.rt || this.rt.width !== this.size.x || this.rt.height !== this.size.y) {
       if (this.rt) this.rt.dispose();
@@ -3669,7 +3674,7 @@ const POST = {
     }
     r.setRenderTarget(this.rt); r.render(scene, cam);
     const u = this.mat.uniforms;
-    u.tScene.value = this.rt.texture; u.uAmt.value = this.amt; u.uTime.value = G.time; u.uLid.value = this.lid; u.uAspect.value = this.size.x / this.size.y;
+    u.tScene.value = this.rt.texture; u.uAmt.value = this.amt; u.uTime.value = G.time; u.uLid.value = this.lid; u.uDark.value = this.dark; u.uAspect.value = this.size.x / this.size.y;
     r.setRenderTarget(null); r.render(this.scene, this.cam);
   }
 };
@@ -4094,9 +4099,10 @@ function aimCamera(R) {
    - walking: the course wanders, the pace surges and drags, the arms go out for balance; now and then a stumble,
      and when very drunk a stumble can end on the ground (FALL)
    - the view (camera sway and roll, double vision in POST), the aim, the fists, the hiccups
-   At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
+   Close to the top (0.95) the last stretch begins (edge): for half a minute he is as drunk as it gets, the picture
+   swims more and more and darkens, then the lights go out: you wake up somewhere else in town, a little poorer. */
 const DRUNK = {
-  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, bumpT: 0,
+  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, edge: null, bumpT: 0,
   lurch: new THREE.Vector2(),
   // the balance chain, angles in radians: x = to the side (+ = his right), y = forwards
   head: new THREE.Vector2(), headV: new THREE.Vector2(), body: new THREE.Vector2(), bodyV: new THREE.Vector2(),
@@ -4108,9 +4114,9 @@ const DRUNK = {
   blocked() { return !!this.out || FALL.busy() || !!this.leave; },
   update(dt) {
     this.t += dt;
-    // stomach -> gut -> blood: nothing for a few seconds, then it creeps up for half a minute;
+    // stomach -> gut -> blood: a few seconds before you feel it, then it rises over about ten seconds;
     // blood -> gone (slowly, faster when it is a lot)
-    const s2g = this.stomach * (1 - Math.exp(-dt / 9)), g2b = this.gut * (1 - Math.exp(-dt / 14));
+    const s2g = this.stomach * (1 - Math.exp(-dt / 3.5)), g2b = this.gut * (1 - Math.exp(-dt / 5));
     this.stomach -= s2g; this.gut += s2g - g2b; this.level += g2b;
     this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
     const L = Math.min(this.level, 1), t = this.t;
@@ -4121,8 +4127,8 @@ const DRUNK = {
       this.hicT -= dt;
       if (this.hicT <= 0) { this.hicT = 4 + Math.random() * 10 / L; this.hiccup(); }
       // without a reason, only when really drunk; edges and steps trip you much earlier (see ground())
-      if (PLAY.speed > 0.6 && L > 0.45 && PLAY.inYaw !== null) {
-        this.stumbleT -= dt * (L - 0.4) * (PLAY.speed > 3 ? 1.6 : 0.8);
+      if (PLAY.speed > 0.6 && L > 0.4 && PLAY.inYaw !== null) {
+        this.stumbleT -= dt * (L - 0.35) * (PLAY.speed > 3 ? 1.6 : 0.8);
         if (this.stumbleT <= 0) { this.stumbleT = 2 + Math.random() * 3; this.stumble(); }
       }
     }
@@ -4135,7 +4141,8 @@ const DRUNK = {
     // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
     if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
     if (this.leave) this.updateLeave(dt);
-    if (this.level >= 1 && !this.out && !this.leave) this.blackout();
+    if (!this.out && !this.leave && !this.edge && this.level >= 0.95) this.startEdge();
+    if (this.edge) this.updateEdge(dt);
     if (this.out) this.updateBlackout(dt);
   },
   /* the head chases a wandering goal, the body chases the head (later, heavier), the hips chase the body */
@@ -4174,7 +4181,7 @@ const DRUNK = {
   maxSpeed() { const L = Math.min(this.level, 1); return (1 - clamp(L - 0.25, 0, 0.6) * 0.5) * (1 + Math.sin(this.t * 1.9) * 0.22 * L); },
   /* a stumble is a lurch, not a stop: the body pitches the way you were going, the feet hurry after it, the arms
      fly up, and you keep walking. dir: which way it throws you (default: ahead, a little off to one side) */
-  stumble(dir, big, fallChance) {
+  stumble(dir, big, fallChance, kind) {
     if (FALL.busy() || SIT.busy()) return;
     const L = Math.min(this.level, 1), moveDir = PLAY.speed > 0.3 ? Math.atan2(PLAY.vx, PLAY.vz) : PLAY.yaw;
     const a = dir !== undefined ? dir : moveDir + (Math.random() - 0.5) * 0.9;
@@ -4184,9 +4191,13 @@ const DRUNK = {
     this.push(-Math.sin(rel) * 0.22 * f, Math.cos(rel) * 0.3 * f);
     this.flail = 0.6;
     FSFX.cloth(); this.scuff();
-    // very drunk: sometimes it ends on the floor
-    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
-    if (Math.random() < p) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 220);
+    // very drunk: sometimes it ends on the floor, forwards or over to the side the body leans to
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.55) * 0.6 : 0);
+    if (Math.random() < p) this.fallLater(kind || (Math.random() < 0.55 ? 'side' : 'fwd'), 220);
+  },
+  fallLater(kind, ms) {
+    const sd = this.body.x + this.lurch.x * 0.5 >= 0 ? 1 : -1;
+    setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, sd); }, ms);
   },
   // push the balance: lean that way for a moment (x: to his right, y: forwards), smoothly through the springs
   push(x, y) { this.lurch.x = clamp(this.lurch.x + x, -0.5, 0.5); this.lurch.y = clamp(this.lurch.y + y, -0.5, 0.5); },
@@ -4205,7 +4216,7 @@ const DRUNK = {
     PLAY.camShake = Math.max(PLAY.camShake, 0.06);
     GSFX.run(() => { const { g, t } = GSFX.out(0.5, PLAY.pos); SFX.thump(t, g, 120, 60, 0.5, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.25, attack: 0.002, decay: 0.08 }); });
     FSFX.cloth();
-    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 300);
+    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) this.fallLater('back', 300);
   },
   /* had enough indoors: stand up, stagger out of the door, go down in the street */
   startLeave() {
@@ -4228,7 +4239,20 @@ const DRUNK = {
       const w = Lv.way[Lv.i];
       if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
     } else Lv.done += dt;
-    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 1); this.stomach += 0.05; this.blackout(); }
+    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 0.95); if (!this.edge) this.startEdge(); }
+  },
+  /* the last stretch: as drunk as it gets for a while (time to stagger about), the picture swims and darkens,
+     then he goes down. More drink makes it shorter, water can pull him back from it. */
+  startEdge() { this.edge = { t: 0, dur: 26 + Math.random() * 10 }; },
+  edgeK() { return this.edge ? clamp(this.edge.t / this.edge.dur, 0, 1) : 0; },
+  updateEdge(dt) {
+    const E = this.edge;
+    if (this.level < 0.85) { this.edge = null; return; }
+    E.t += dt;
+    const lv = 0.94 + 0.05 * this.edgeK();
+    if (this.level > lv + 0.01) E.dur = Math.max(E.t + 3, E.dur - (this.level - lv) * 60);   // more drink: sooner
+    this.level = lv;
+    if (E.t >= E.dur && !this.leave && !FALL.busy()) { this.edge = null; this.level = 1; this.blackout(); }
   },
   // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
   ground(g, dt) {
@@ -4237,7 +4261,10 @@ const DRUNK = {
     if (L < 0.12 || Math.abs(dg) < 0.06 || PLAY.speed < 0.8 || this.tripCool > 0 || FALL.busy() || SIT.busy()) return;
     if (Math.random() < Math.min(0.95, L * 1.8)) {
       this.tripCool = 1.2;
-      this.stumble(undefined, dg > 0, L > 0.55 ? (L - 0.5) * 0.8 : 0);   // stepping up catches the toes harder
+      // the toes catch: he pitches forward (harder stepping up) and may land on his hands
+      const moveDir = Math.atan2(PLAY.vx, PLAY.vz);
+      this.stumble(moveDir + (Math.random() - 0.5) * 0.3, true, L > 0.35 ? (L - 0.3) * (dg > 0 ? 0.9 : 0.6) : 0, 'fwd');
+      this.push(0, 0.25 * L);
     }
   },
   scuff() { GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.8, gain: 0.25, attack: 0.01, decay: 0.12 }); SFX.noiseHit(t + 0.13, g, { type: 'bandpass', freq: 700, q: 0.8, gain: 0.18, attack: 0.01, decay: 0.08 }); }); },
@@ -4295,20 +4322,21 @@ const DRUNK = {
     this.out = { t: 0, phase: 'fade', where: null };
     GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
     DRINK.cancel();
-    if (!FALL.busy() && !SIT.busy()) FALL.start(true);
+    if (!FALL.busy() && !SIT.busy()) { const r = Math.random(); FALL.start(true, r < 0.4 ? 'fwd' : r < 0.8 ? 'side' : 'back', this.body.x >= 0 ? 1 : -1); }
     worldEvent('passout', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   updateBlackout(dt) {
     const O = this.out, el = document.getElementById('blackout');
     O.t += dt;
+    el.hidden = true;   // POST does the darkness and the eyelids
     if (O.phase === 'fade') {
-      el.hidden = true;   // the eyelids in POST do the closing
       PLAY.vx *= Math.exp(-dt * 3); PLAY.vz *= Math.exp(-dt * 3);
-      if (O.t >= 2.6) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
+      if (O.t >= POST.FADE + 0.4) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
     } else if (O.phase === 'dark') {
-      if (O.t >= 1.4) { O.phase = 'wake'; O.t = 0; }
+      // black for a good while; the place you wake up in is already there behind the eyelids
+      if (O.t >= 3.2) { O.phase = 'wake'; O.t = 0; TOAST.show(O.text, 'long'); if (O.lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(O.lost) + ').', 'long'), 2600); }
     } else {
-      if (O.t >= 2.5) { el.hidden = true; this.out = null; }
+      if (O.t >= POST.WAKE) { this.out = null; FALL.keep = false; }   // eyes open: now he gets up
     }
   },
   wakeSomewhere() {
@@ -4323,69 +4351,109 @@ const DRUNK = {
     ];
     const w = spots[Math.floor(Math.random() * spots.length)];
     if (w.seat && w.seat()) SIT.warp(w.seat());
-    else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; }
+    else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; FALL.startLying(); }
     this.level = 0.3; this.stomach = 0; this.gut = 0;
     const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
     INV.money -= lost;
-    TOAST.show(w.text, 'long');
-    if (lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(lost) + ').', 'long'), 1800);
+    this.out.text = w.text; this.out.lost = lost;
   }
 };
 SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3), gut: +DRUNK.gut.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.85); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); DRUNK.gut = clamp(+d.gut || 0, 0, 1); });
 
 // ==== play/fall.js ====
 /* ---------- falling over (drunk) and getting back up ----------
-   A short piece of keyframed animation that owns the pose while it runs, like sitting does:
-   stagger backwards with the arms going round, drop onto the backside, fall back flat, lie there a moment,
-   sit up, get the feet under you, stand. Keys are poses in character space; the feet start where the gait left
-   them and are handed back to the gait at the end. */
+   Short pieces of keyframed animation that own the pose while they run, like sitting does. Three ways down:
+   - back: stagger backwards with the arms going round, drop onto the backside, fall back flat
+   - fwd:  the toes catch (a step, an edge), he pitches forward and lands on hands and knees, kneels, gets a foot
+           under him and pushes up
+   - side: the legs cross, he tips over sideways onto the hip, props himself on one arm, sits up
+   Keys are poses in character space (+x = his left); side keys are written for a fall to his right and mirrored.
+   The feet start where the gait left them and are handed back to the gait at the end. stay = do not get up. */
 const FALL_KEYS = {
-  //        pelvis [x,y,z]      pelvis pitch, spine pitch, head pitch, ankles (L, R)                         arms: [sw, out, el] L, R
-  stand:  { pel: [0, 0.925, 0],    pp: 0,     sp: 0.02,  hd: 0,     ank: [[0.12, 0.085, 0], [-0.12, 0.085, 0]],      arm: [[0, 0.1, 0.15], [0, 0.1, 0.15]] },
-  reel:   { pel: [0, 0.88, -0.12], pp: -0.18, sp: -0.25, hd: 0.25,  ank: [[0.14, 0.085, 0.12], [-0.12, 0.085, -0.05]], arm: [[0.9, 0.9, 0.5], [-0.3, 1.1, 0.7]] },
-  seat:   { pel: [0, 0.17, -0.25], pp: -0.35, sp: 0.1,   hd: 0.15,  ank: [[0.17, 0.085, 0.45], [-0.15, 0.085, 0.5]],  arm: [[-0.7, 0.35, 0.15], [-0.6, 0.4, 0.2]] },
-  flat:   { pel: [0, 0.14, -0.3],  pp: -1.42, sp: 0.06,  hd: 0.1,   ank: [[0.22, 0.085, 0.55], [-0.2, 0.085, 0.62]],  arm: [[0.1, 1.25, 0.35], [-0.1, 1.15, 0.5]] },
-  sitUp:  { pel: [0, 0.17, -0.22], pp: -0.25, sp: 0.45,  hd: -0.2,  ank: [[0.17, 0.085, 0.35], [-0.15, 0.085, 0.32]], arm: [[0.4, 0.2, 0.5], [0.5, 0.25, 0.6]] },
-  squat:  { pel: [0, 0.52, -0.05], pp: 0.55,  sp: 0.35,  hd: -0.55, ank: [[0.17, 0.085, 0.12], [-0.15, 0.085, 0.1]],  arm: [[0.55, 0.15, 0.7], [0.6, 0.15, 0.7]] }
+  //        pelvis [x,y,z]      pelvis pitch/roll, spine pitch/roll, head pitch/roll, ankles (L, R), foot pitch      arms: [sw, out, el] L, R
+  stand:    { pel: [0, 0.925, 0],      pp: 0,     sp: 0.02,  hd: 0,     ank: [[0.12, 0.085, 0], [-0.12, 0.085, 0]],      arm: [[0, 0.1, 0.15], [0, 0.1, 0.15]] },
+  // backwards
+  reel:     { pel: [0, 0.88, -0.12],   pp: -0.18, sp: -0.25, hd: 0.25,  ank: [[0.14, 0.085, 0.12], [-0.12, 0.085, -0.05]], arm: [[0.9, 0.9, 0.5], [-0.3, 1.1, 0.7]] },
+  seat:     { pel: [0, 0.17, -0.25],   pp: -0.35, sp: 0.1,   hd: 0.15,  ank: [[0.17, 0.085, 0.45], [-0.15, 0.085, 0.5]],  arm: [[-0.7, 0.35, 0.15], [-0.6, 0.4, 0.2]] },
+  flat:     { pel: [0, 0.14, -0.3],    pp: -1.42, sp: 0.06,  hd: 0.1,   ank: [[0.22, 0.085, 0.55], [-0.2, 0.085, 0.62]],  arm: [[0.1, 1.25, 0.35], [-0.1, 1.15, 0.5]] },
+  sitUp:    { pel: [0, 0.17, -0.22],   pp: -0.25, sp: 0.45,  hd: -0.2,  ank: [[0.17, 0.085, 0.35], [-0.15, 0.085, 0.32]], arm: [[0.4, 0.2, 0.5], [0.5, 0.25, 0.6]] },
+  squat:    { pel: [0, 0.52, -0.05],   pp: 0.55,  sp: 0.35,  hd: -0.55, ank: [[0.17, 0.085, 0.12], [-0.15, 0.085, 0.1]],  arm: [[0.55, 0.15, 0.7], [0.6, 0.15, 0.7]] },
+  // forwards
+  trip:     { pel: [0, 0.83, 0.2],     pp: 0.5,   sp: 0.3,   hd: -0.35, ank: [[0.12, 0.16, -0.32], [-0.13, 0.085, 0.45]], fp: [0.7, 0],     arm: [[1.4, 0.35, 0.3], [1.25, 0.4, 0.45]] },
+  hands:    { pel: [0, 0.5, -0.02],    pp: 1.25,  sp: 0.12,  hd: -0.9,  ank: [[0.13, 0.13, -0.52], [-0.13, 0.13, -0.5]],  fp: [1.45, 1.45], arm: [[1.3, 0.18, 0.12], [1.3, 0.18, 0.12]] },
+  kneel:    { pel: [0, 0.6, -0.06],    pp: 0.12,  sp: 0.08,  hd: 0.25,  ank: [[0.13, 0.13, -0.5], [-0.13, 0.13, -0.48]],  fp: [1.45, 1.45], arm: [[0.55, 0.15, 0.8], [0.5, 0.18, 0.75]] },
+  lunge:    { pel: [0, 0.6, -0.04],    pp: 0.5,   sp: 0.25,  hd: -0.35, ank: [[0.14, 0.085, 0.36], [-0.13, 0.13, -0.47]], fp: [0, 1.45],    arm: [[0.75, 0.12, 0.95], [0.55, 0.2, 0.6]] },
+  prone:    { pel: [0, 0.14, -0.2],    pp: 1.5,   sp: 0.04,  hd: 0.05, hr: 0.5, ank: [[0.16, 0.1, -0.98], [-0.2, 0.1, -0.95]], fp: [1.5, 1.5], arm: [[2.5, 0.45, 0.6], [0.25, 0.35, 0.25]] },
+  // sideways (written for a fall to his right, -x)
+  lean:     { pel: [-0.14, 0.86, 0.02], pp: 0.05, pr: 0.32, sp: 0.05, sr: 0.2,  hd: 0.1,  hr: -0.3,  ank: [[0.04, 0.085, 0.1], [-0.34, 0.085, -0.02]], arm: [[0.4, 1.25, 0.5], [0.25, 0.75, 0.3]] },
+  hip:      { pel: [-0.3, 0.2, -0.05], pp: -0.1, pr: 0.9,  sp: 0.12, sr: -0.4, hd: 0.1,  hr: -0.25, ank: [[0.12, 0.085, 0.4], [-0.16, 0.085, 0.3]],  arm: [[0.75, 0.25, 0.95], [-0.1, 0.45, 0.1]] },
+  sideFlat: { pel: [-0.3, 0.16, -0.05], pp: -0.05, pr: 1.38, sp: 0.06, sr: 0.08, hd: 0.05, hr: -0.45, ank: [[-0.05, 0.2, 0.32], [-0.26, 0.085, 0.36]], arm: [[0.8, 0.2, 0.7], [1.3, 0.25, 1.2]] }
 };
-const FALL_STEPS = [
-  // key to blend towards, seconds, easing ('in' = accelerating like falling)
-  ['reel', 0.4, 'out'], ['seat', 0.26, 'in'], ['flat', 0.34, 'in'], ['lie', 1.2, 'out'], ['sitUp', 0.5, 'inout'], ['squat', 0.5, 'inout'], ['stand', 0.45, 'inout']
-];
+const FALL_SEQ = {
+  // [key, seconds, easing ('in' = accelerating like falling), thud strength]; 'lie' holds the previous key a while
+  back:     [['reel', 0.4, 'out'], ['seat', 0.26, 'in', 0.7], ['flat', 0.34, 'in', 1], ['lie'], ['sitUp', 0.5, 'inout'], ['squat', 0.5, 'inout'], ['stand', 0.45, 'inout']],
+  backStay: [['reel', 0.4, 'out'], ['seat', 0.26, 'in', 0.7], ['flat', 0.34, 'in', 1], ['lie']],
+  fwd:      [['trip', 0.26, 'out'], ['hands', 0.28, 'in', 0.9], ['lie'], ['kneel', 0.55, 'inout'], ['lunge', 0.5, 'inout'], ['stand', 0.55, 'inout']],
+  fwdStay:  [['trip', 0.26, 'out'], ['hands', 0.28, 'in', 0.9], ['prone', 0.7, 'in', 0.5], ['lie']],
+  side:     [['lean', 0.38, 'out'], ['hip', 0.3, 'in', 0.9], ['lie'], ['sitUp', 0.55, 'inout'], ['squat', 0.5, 'inout'], ['stand', 0.45, 'inout']],
+  sideStay: [['lean', 0.38, 'out'], ['hip', 0.3, 'in', 0.9], ['sideFlat', 0.7, 'inout', 0.35], ['lie']],
+  // waking up after a blackout: already lying there, then slowly up
+  wake:     [['flat', 0.05, 'out'], ['lie'], ['sitUp', 0.8, 'inout'], ['squat', 0.65, 'inout'], ['stand', 0.55, 'inout']]
+};
 const FALL = {
-  st: null, i: 0, t: 0, from: null, cur: null, down: 0, keep: false, feet: [new THREE.Vector3(), new THREE.Vector3()], _v: new THREE.Vector3(),
+  st: null, i: 0, t: 0, from: null, down: 0, keep: false, kind: 'back', sd: 1, seq: null, lieKey: null, mir: {},
+  feet: [new THREE.Vector3(), new THREE.Vector3()], _v: new THREE.Vector3(),
   busy() { return this.st !== null; },
   owns() { return this.st !== null; },
-  // stay: do not get up (passing out)
-  start(stay) {
+  // kind: 'back' | 'fwd' | 'side'; sd: for 'side', 1 = to his right, -1 = to his left
+  start(stay, kind, sd) {
     if (this.st || SIT.busy()) return;
     DRINK.cancel(); FIST.st = 'idle'; FIST.clip = null; FIST.fight = 0; FIST.holding = false; FIST.queued = false;
     if (GUN.state !== 'holster') { GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
-    this.keep = !!stay;
+    this.keep = !!stay; this.kind = FALL_SEQ[kind] ? kind : 'back'; this.sd = sd < 0 ? -1 : 1;
+    this.seq = FALL_SEQ[this.kind + (this.keep ? 'Stay' : '')];
     // the start pose: the standing pose with the feet where they are now
     const k0 = JSON.parse(JSON.stringify(FALL_KEYS.stand));
     for (let i = 0; i < 2; i++) { SIT.toChar(GAIT.feet[i].cur, this._v); k0.ank[i] = [this._v.x, this._v.y, this._v.z]; }
-    this.cur = k0; this.from = k0; this.st = 'run'; this.i = 0; this.t = 0;
-    this.lieT = 0.8 + Math.random() * 0.8;
-    worldEvent('fall', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
+    this.from = k0; this.st = 'run'; this.i = 0; this.t = 0; this.lieKey = null;
+    this.lieT = this.kind === 'fwd' ? 0.5 + Math.random() * 0.6 : 0.8 + Math.random() * 0.8;
+    worldEvent('fall', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', kind: this.kind });
   },
   cancel() { this.st = null; this.down = 0; },
+  // lying on the back where you woke up; gets up once keep is cleared
+  startLying() {
+    this.kind = 'back'; this.sd = 1; this.keep = true; this.seq = FALL_SEQ.wake;
+    this.from = FALL_KEYS.flat; this.st = 'run'; this.i = 1; this.t = 0; this.lieT = 0.6;
+  },
+  step(i) { return this.seq[Math.min(i, this.seq.length - 1)]; },
+  dur(s) { return s[0] === 'lie' ? this.lieT : s[1]; },
+  // a key by name; side falls to his left are the mirror image
+  key(name) {
+    const k = FALL_KEYS[name];
+    if (this.kind !== 'side' || this.sd > 0) return k;
+    const m = this.mir[name];
+    if (m) return m;
+    const sw = (a) => [a[1], a[0]], nx = (v) => [-v[0], v[1], v[2]];
+    return (this.mir[name] = {
+      pel: nx(k.pel), pp: k.pp, pr: -(k.pr || 0), sp: k.sp, sr: -(k.sr || 0), hd: k.hd, hr: -(k.hr || 0),
+      ank: sw(k.ank).map(nx), fp: k.fp ? sw(k.fp) : undefined, arm: sw(k.arm)
+    });
+  },
+  target(s) { return s[0] === 'lie' ? this.from : this.key(s[0]); },
   update(dt) {
     if (!this.st) return;
     PLAY.vx *= Math.exp(-dt * 6); PLAY.vz *= Math.exp(-dt * 6);
-    const [name, dur0] = FALL_STEPS[this.i], dur = name === 'lie' ? this.lieT : dur0;
+    const s = this.step(this.i), dur = this.dur(s);
     this.t += dt;
     if (this.t >= dur) {
-      if (name === 'lie' && this.keep) { this.t = dur; return; }
+      if (s[0] === 'lie' && this.keep) { this.t = dur; return; }
       this.t -= dur;
-      if (name !== 'lie') this.from = this.target(name);
-      if (name === 'seat') this.thud(0.7);
-      if (name === 'flat') { this.thud(1); PLAY.camShake = Math.max(PLAY.camShake, 0.12); }
+      if (s[0] !== 'lie') this.from = this.key(s[0]);
+      if (s[3]) { this.thud(s[3]); if (s[3] >= 0.9) PLAY.camShake = Math.max(PLAY.camShake, 0.1 * s[3]); }
       this.i++;
-      if (this.i >= FALL_STEPS.length) this.finish();
+      if (this.i >= this.seq.length) this.finish();
     }
   },
-  target(name) { return name === 'lie' ? FALL_KEYS.flat : FALL_KEYS[name]; },
   finish() {
     // the feet go back to the gait, planted where the last key put them
     const c = Math.cos(PLAY.yaw), s = Math.sin(PLAY.yaw);
@@ -4396,7 +4464,7 @@ const FALL = {
       F.yaw = F.curYaw = F.toYaw = PLAY.yaw; F.swing = false; F.idle = false; F.t = 0; F.pitch = 0;
     }
     GAIT.s = 0; GAIT.moving = false; GAIT.idleT = 0; GAIT.yawPrev = PLAY.yaw; GAIT.pelYPrev = null;
-    DRUNK.body.set(0, 0); DRUNK.head.set(0, 0); DRUNK.bodyV.set(0, 0); DRUNK.headV.set(0, 0);
+    DRUNK.body.set(0, 0); DRUNK.head.set(0, 0); DRUNK.bodyV.set(0, 0); DRUNK.headV.set(0, 0); DRUNK.lurch.set(0, 0);
     this.st = null; this.down = 0;
   },
   thud(k) {
@@ -4404,21 +4472,25 @@ const FALL = {
     FSFX.cloth();
   },
   pose(P, dt) {
-    const [name, dur0, ease] = FALL_STEPS[Math.min(this.i, FALL_STEPS.length - 1)], dur = name === 'lie' ? this.lieT : dur0;
+    const s = this.step(this.i), name = s[0], dur = this.dur(s), ease = s[2] || 'out';
     const u = clamp(this.t / dur, 0, 1), e = ease === 'in' ? u * u : ease === 'out' ? 1 - (1 - u) * (1 - u) : u * u * (3 - 2 * u);
-    const A = this.from, B = this.target(name), L = (a, b) => a + (b - a) * e;
-    const wob = name === 'reel' ? Math.sin(this.t * 22) : 0;   // the arms going round
+    const A = this.from, B = this.target(s), L = (a, b) => a + (b - a) * e, n = (v) => v || 0;
+    // the arms going round: windmilling while going down backwards or sideways
+    const wob = name === 'reel' || name === 'lean' ? Math.sin(this.t * 22) : 0;
     P.pel.set(L(A.pel[0], B.pel[0]), L(A.pel[1], B.pel[1]), L(A.pel[2], B.pel[2]));
-    P.pelYaw = 0; P.pelRoll = 0; P.pelPitch = L(A.pp, B.pp);
-    P.spYaw = 0; P.spRoll = 0; P.spPitch = L(A.sp, B.sp);
-    // lying: breathing, and the head turns as if the world spins
-    const lying = name === 'lie' || (name === 'sitUp' && u < 0.2);
-    P.hdPitch = L(A.hd, B.hd); P.hdYaw = lying ? Math.sin(G.time * 0.8) * 0.4 : 0; P.hdRoll = 0;
-    if (lying) P.spPitch += Math.sin(G.time * 1.8) * 0.02;
+    P.pelYaw = 0; P.pelRoll = L(n(A.pr), n(B.pr)); P.pelPitch = L(A.pp, B.pp);
+    P.spYaw = 0; P.spRoll = L(n(A.sr), n(B.sr)); P.spPitch = L(A.sp, B.sp);
+    // lying there: breathing, and the head rolls as if the world spins
+    const lying = name === 'lie' || (this.i > 0 && this.step(this.i - 1)[0] === 'lie' && u < 0.2);
+    P.hdPitch = L(A.hd, B.hd); P.hdRoll = L(n(A.hr), n(B.hr)); P.hdYaw = lying ? Math.sin(G.time * 0.8) * (this.kind === 'fwd' ? 0.3 : 0.4) : 0;
+    if (lying) { P.spPitch += Math.sin(G.time * 1.8) * 0.02; if (this.kind === 'fwd' && !this.keep) P.hdPitch += Math.sin(G.time * 1.1) * 0.12; }
     P.hatDy = 0; P.hatTilt = 0;
     for (let i = 0; i < 2; i++) {
       P.ank[i].set(L(A.ank[i][0], B.ank[i][0]), L(A.ank[i][1], B.ank[i][1]), L(A.ank[i][2], B.ank[i][2]));
-      P.ftYaw[i] = (i === 0 ? 1 : -1) * 0.25 * (P.pel.y < 0.6 ? 1 : 0); P.ftPitch[i] = P.pel.y < 0.4 ? -0.6 : 0;   // heels on the ground, toes up
+      // feet: given per key (toes down when kneeling), otherwise heels on the ground and toes up when sitting low
+      const fa = A.fp ? A.fp[i] : (A.pel[1] < 0.4 ? -0.6 : 0), fb = B.fp ? B.fp[i] : (B.pel[1] < 0.4 ? -0.6 : 0);
+      P.ftPitch[i] = L(fa, fb);
+      P.ftYaw[i] = (i === 0 ? 1 : -1) * 0.25 * (P.pel.y < 0.6 && !B.fp ? 1 : 0);
       const a0 = A.arm[i], b0 = B.arm[i];
       P.armOv[i] = { w: 1, sw: L(a0[0], b0[0]) + wob * 0.5 * (i ? -1 : 1), yw: 0, out: L(a0[1], b0[1]) + Math.abs(wob) * 0.2, el: L(a0[2], b0[2]) };
     }
@@ -7175,7 +7247,7 @@ const DEV = {
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
     $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
     $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
-    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; });
+    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; DRUNK.edge = null; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');

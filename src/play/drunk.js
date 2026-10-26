@@ -6,9 +6,10 @@
    - walking: the course wanders, the pace surges and drags, the arms go out for balance; now and then a stumble,
      and when very drunk a stumble can end on the ground (FALL)
    - the view (camera sway and roll, double vision in POST), the aim, the fists, the hiccups
-   At 1 the lights go out: you wake up somewhere else in town, a little poorer. */
+   Close to the top (0.95) the last stretch begins (edge): for half a minute he is as drunk as it gets, the picture
+   swims more and more and darkens, then the lights go out: you wake up somewhere else in town, a little poorer. */
 const DRUNK = {
-  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, bumpT: 0,
+  level: 0, stomach: 0, gut: 0, t: 0, hicT: 12, stumbleT: 4, out: null, leave: null, edge: null, bumpT: 0,
   lurch: new THREE.Vector2(),
   // the balance chain, angles in radians: x = to the side (+ = his right), y = forwards
   head: new THREE.Vector2(), headV: new THREE.Vector2(), body: new THREE.Vector2(), bodyV: new THREE.Vector2(),
@@ -20,9 +21,9 @@ const DRUNK = {
   blocked() { return !!this.out || FALL.busy() || !!this.leave; },
   update(dt) {
     this.t += dt;
-    // stomach -> gut -> blood: nothing for a few seconds, then it creeps up for half a minute;
+    // stomach -> gut -> blood: a few seconds before you feel it, then it rises over about ten seconds;
     // blood -> gone (slowly, faster when it is a lot)
-    const s2g = this.stomach * (1 - Math.exp(-dt / 9)), g2b = this.gut * (1 - Math.exp(-dt / 14));
+    const s2g = this.stomach * (1 - Math.exp(-dt / 3.5)), g2b = this.gut * (1 - Math.exp(-dt / 5));
     this.stomach -= s2g; this.gut += s2g - g2b; this.level += g2b;
     this.level = Math.max(0, this.level - dt * (0.0012 + this.level * 0.001));
     const L = Math.min(this.level, 1), t = this.t;
@@ -33,8 +34,8 @@ const DRUNK = {
       this.hicT -= dt;
       if (this.hicT <= 0) { this.hicT = 4 + Math.random() * 10 / L; this.hiccup(); }
       // without a reason, only when really drunk; edges and steps trip you much earlier (see ground())
-      if (PLAY.speed > 0.6 && L > 0.45 && PLAY.inYaw !== null) {
-        this.stumbleT -= dt * (L - 0.4) * (PLAY.speed > 3 ? 1.6 : 0.8);
+      if (PLAY.speed > 0.6 && L > 0.4 && PLAY.inYaw !== null) {
+        this.stumbleT -= dt * (L - 0.35) * (PLAY.speed > 3 ? 1.6 : 0.8);
         if (this.stumbleT <= 0) { this.stumbleT = 2 + Math.random() * 3; this.stumble(); }
       }
     }
@@ -47,7 +48,8 @@ const DRUNK = {
     // indoors and close to the end: he gets up and staggers out by himself, and goes down outside
     if (!this.out && !this.leave && this.level >= 0.9 && ROOMSTATE.cur && !ROOMSTATE.cur.parent && !FALL.busy()) this.startLeave();
     if (this.leave) this.updateLeave(dt);
-    if (this.level >= 1 && !this.out && !this.leave) this.blackout();
+    if (!this.out && !this.leave && !this.edge && this.level >= 0.95) this.startEdge();
+    if (this.edge) this.updateEdge(dt);
     if (this.out) this.updateBlackout(dt);
   },
   /* the head chases a wandering goal, the body chases the head (later, heavier), the hips chase the body */
@@ -86,7 +88,7 @@ const DRUNK = {
   maxSpeed() { const L = Math.min(this.level, 1); return (1 - clamp(L - 0.25, 0, 0.6) * 0.5) * (1 + Math.sin(this.t * 1.9) * 0.22 * L); },
   /* a stumble is a lurch, not a stop: the body pitches the way you were going, the feet hurry after it, the arms
      fly up, and you keep walking. dir: which way it throws you (default: ahead, a little off to one side) */
-  stumble(dir, big, fallChance) {
+  stumble(dir, big, fallChance, kind) {
     if (FALL.busy() || SIT.busy()) return;
     const L = Math.min(this.level, 1), moveDir = PLAY.speed > 0.3 ? Math.atan2(PLAY.vx, PLAY.vz) : PLAY.yaw;
     const a = dir !== undefined ? dir : moveDir + (Math.random() - 0.5) * 0.9;
@@ -96,9 +98,13 @@ const DRUNK = {
     this.push(-Math.sin(rel) * 0.22 * f, Math.cos(rel) * 0.3 * f);
     this.flail = 0.6;
     FSFX.cloth(); this.scuff();
-    // very drunk: sometimes it ends on the floor
-    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.6) * 0.9 : 0);
-    if (Math.random() < p) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 220);
+    // very drunk: sometimes it ends on the floor, forwards or over to the side the body leans to
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.55) * 0.6 : 0);
+    if (Math.random() < p) this.fallLater(kind || (Math.random() < 0.55 ? 'side' : 'fwd'), 220);
+  },
+  fallLater(kind, ms) {
+    const sd = this.body.x + this.lurch.x * 0.5 >= 0 ? 1 : -1;
+    setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, sd); }, ms);
   },
   // push the balance: lean that way for a moment (x: to his right, y: forwards), smoothly through the springs
   push(x, y) { this.lurch.x = clamp(this.lurch.x + x, -0.5, 0.5); this.lurch.y = clamp(this.lurch.y + y, -0.5, 0.5); },
@@ -117,7 +123,7 @@ const DRUNK = {
     PLAY.camShake = Math.max(PLAY.camShake, 0.06);
     GSFX.run(() => { const { g, t } = GSFX.out(0.5, PLAY.pos); SFX.thump(t, g, 120, 60, 0.5, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.25, attack: 0.002, decay: 0.08 }); });
     FSFX.cloth();
-    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(); }, 300);
+    if (L > 0.7 && Math.random() < (L - 0.65) * 0.8 && !this.leave) this.fallLater('back', 300);
   },
   /* had enough indoors: stand up, stagger out of the door, go down in the street */
   startLeave() {
@@ -140,7 +146,20 @@ const DRUNK = {
       const w = Lv.way[Lv.i];
       if (Math.hypot(w.x - PLAY.pos.x, w.z - PLAY.pos.z) < 0.7) Lv.i++;
     } else Lv.done += dt;
-    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 1); this.stomach += 0.05; this.blackout(); }
+    if (Lv.done > 0.6 || Lv.t > 22) { this.leave = null; this.level = Math.max(this.level, 0.95); if (!this.edge) this.startEdge(); }
+  },
+  /* the last stretch: as drunk as it gets for a while (time to stagger about), the picture swims and darkens,
+     then he goes down. More drink makes it shorter, water can pull him back from it. */
+  startEdge() { this.edge = { t: 0, dur: 26 + Math.random() * 10 }; },
+  edgeK() { return this.edge ? clamp(this.edge.t / this.edge.dur, 0, 1) : 0; },
+  updateEdge(dt) {
+    const E = this.edge;
+    if (this.level < 0.85) { this.edge = null; return; }
+    E.t += dt;
+    const lv = 0.94 + 0.05 * this.edgeK();
+    if (this.level > lv + 0.01) E.dur = Math.max(E.t + 3, E.dur - (this.level - lv) * 60);   // more drink: sooner
+    this.level = lv;
+    if (E.t >= E.dur && !this.leave && !FALL.busy()) { this.edge = null; this.level = 1; this.blackout(); }
   },
   // the ground under the feet changed height (a porch edge, a step): drunk feet catch on it
   ground(g, dt) {
@@ -149,7 +168,10 @@ const DRUNK = {
     if (L < 0.12 || Math.abs(dg) < 0.06 || PLAY.speed < 0.8 || this.tripCool > 0 || FALL.busy() || SIT.busy()) return;
     if (Math.random() < Math.min(0.95, L * 1.8)) {
       this.tripCool = 1.2;
-      this.stumble(undefined, dg > 0, L > 0.55 ? (L - 0.5) * 0.8 : 0);   // stepping up catches the toes harder
+      // the toes catch: he pitches forward (harder stepping up) and may land on his hands
+      const moveDir = Math.atan2(PLAY.vx, PLAY.vz);
+      this.stumble(moveDir + (Math.random() - 0.5) * 0.3, true, L > 0.35 ? (L - 0.3) * (dg > 0 ? 0.9 : 0.6) : 0, 'fwd');
+      this.push(0, 0.25 * L);
     }
   },
   scuff() { GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 900, q: 0.8, gain: 0.25, attack: 0.01, decay: 0.12 }); SFX.noiseHit(t + 0.13, g, { type: 'bandpass', freq: 700, q: 0.8, gain: 0.18, attack: 0.01, decay: 0.08 }); }); },
@@ -207,20 +229,21 @@ const DRUNK = {
     this.out = { t: 0, phase: 'fade', where: null };
     GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
     DRINK.cancel();
-    if (!FALL.busy() && !SIT.busy()) FALL.start(true);
+    if (!FALL.busy() && !SIT.busy()) { const r = Math.random(); FALL.start(true, r < 0.4 ? 'fwd' : r < 0.8 ? 'side' : 'back', this.body.x >= 0 ? 1 : -1); }
     worldEvent('passout', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player' });
   },
   updateBlackout(dt) {
     const O = this.out, el = document.getElementById('blackout');
     O.t += dt;
+    el.hidden = true;   // POST does the darkness and the eyelids
     if (O.phase === 'fade') {
-      el.hidden = true;   // the eyelids in POST do the closing
       PLAY.vx *= Math.exp(-dt * 3); PLAY.vz *= Math.exp(-dt * 3);
-      if (O.t >= 2.6) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
+      if (O.t >= POST.FADE + 0.4) { O.phase = 'dark'; O.t = 0; this.wakeSomewhere(); }
     } else if (O.phase === 'dark') {
-      if (O.t >= 1.4) { O.phase = 'wake'; O.t = 0; }
+      // black for a good while; the place you wake up in is already there behind the eyelids
+      if (O.t >= 3.2) { O.phase = 'wake'; O.t = 0; TOAST.show(O.text, 'long'); if (O.lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(O.lost) + ').', 'long'), 2600); }
     } else {
-      if (O.t >= 2.5) { el.hidden = true; this.out = null; }
+      if (O.t >= POST.WAKE) { this.out = null; FALL.keep = false; }   // eyes open: now he gets up
     }
   },
   wakeSomewhere() {
@@ -235,12 +258,11 @@ const DRUNK = {
     ];
     const w = spots[Math.floor(Math.random() * spots.length)];
     if (w.seat && w.seat()) SIT.warp(w.seat());
-    else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; }
+    else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; FALL.startLying(); }
     this.level = 0.3; this.stomach = 0; this.gut = 0;
     const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
     INV.money -= lost;
-    TOAST.show(w.text, 'long');
-    if (lost > 0) setTimeout(() => TOAST.show('Deine Taschen fühlen sich leichter an (−' + price(lost) + ').', 'long'), 1800);
+    this.out.text = w.text; this.out.lost = lost;
   }
 };
 SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3), gut: +DRUNK.gut.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.85); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); DRUNK.gut = clamp(+d.gut || 0, 0, 1); });

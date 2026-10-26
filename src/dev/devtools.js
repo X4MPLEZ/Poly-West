@@ -14,7 +14,7 @@ const DEV = {
     $('devAmmo').addEventListener('click', () => { GUN.ammo = 6; GUN.reserve = GUN.MAX; });
     $('devMoney').addEventListener('click', () => { INV.money += 1000; TOAST.show('+$10.00', 'money'); });
     $('devDrunk').addEventListener('click', () => { DRUNK.level = Math.min(1.2, DRUNK.level + 0.2); });
-    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; });
+    $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; DRUNK.edge = null; });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');
