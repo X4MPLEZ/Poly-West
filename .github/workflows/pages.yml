@@ -42,7 +42,7 @@ jobs:
       - run: python3 build.py
       - run: |
           mkdir -p _site/voice
-          cp dist/poly-west.html _site/index.html
+          cp dist/index.html _site/index.html
           if [ -d vendor/voice ]; then cp -L vendor/voice/* _site/voice/ || true; fi
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3

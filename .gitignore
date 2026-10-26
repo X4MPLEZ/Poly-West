@@ -5,3 +5,4 @@ __pycache__/
 node_modules/
 vendor/voice/
 dist/voice
+dist/index.html

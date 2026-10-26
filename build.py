@@ -20,8 +20,18 @@ fallback = '' if local else f'<script>if (!window.THREE) document.write(\'<scrip
 html = f'{head}\n<script src="{three}"></script>\n{fallback}<script>\n{js}\n</script>\n'
 out = root / 'dist' / ('test.html' if local else 'poly-west.html')
 out.parent.mkdir(exist_ok=True)
+# a page of its own (tests, GitHub Pages) needs the document frame that claude.ai puts around an artifact by itself:
+# without the viewport line a phone lays the page out 980 px wide and shrinks everything, without the doctype the
+# browser falls back to quirks mode
+def framed(body):
+    return ('<!doctype html><html lang="de"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+            '<meta name="theme-color" content="#110b07"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">'
+            '</head><body>' + body + '</body></html>')
 if local:
-    html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + html + '</body></html>'
+    html = framed(html)
+else:
+    (root / 'dist' / 'index.html').write_text(framed(html))   # GitHub Pages
 out.write_text(html)
 # the real voices (tools/voices.py): next to the page, as artifact files
 voice_src, voice_dst = root / 'vendor' / 'voice', root / 'dist' / 'voice'
