@@ -11,6 +11,7 @@ const NPCS = {
     BARKEEP.update(dt);
     TALK.update(dt);
     for (const n of this.list) n.update(dt);
+    HARM.update(dt);
     SAY.update(dt);
   },
   // the player's position seen from a room: is he in it?
@@ -33,6 +34,8 @@ class NPC {
     this.lean = 0; this.leanT = 0; this.crouch = 0; this.crouchT = 0; this.talkT = 0; this.nod = 0;
     this.body = { cx: this.pos.x, cz: this.pos.z, r: 0.32, npc: this };
     NPCS.bodies.push(this.body);
+    // the state of the body: wounds, falls, death (npc/harm.js)
+    this.hp = new Vitals(this);
     const self = this;
     ACTORS.add({ id: this.id, kind: 'npc', pos: this.pos, get yaw() { return self.yaw; }, get room() { return self.room; } });
     NPCS.list.push(this);
@@ -49,7 +52,7 @@ class NPC {
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
-  canBeHeard() { return this.room ? G.room === this.room : Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
@@ -72,20 +75,39 @@ class NPC {
     return out.set(dx * c - dz * s, v.y - this.pos.y, dx * s + dz * c);
   }
   update(dt) {
-    // walking: towards the goal, slowing down on arrival
+    const H = this.hp;
+    H.update(dt);
+    const can = H.canWalk();
+    // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
-    if (this.goal) {
+    if (this.goal && can) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < 0.04) this.goal = null;
-      else { const v = Math.min(this.walkSpeed, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
+      else { const v = Math.min(this.walkSpeed * (this.hurry || 1) * H.speedK(), d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
-    const a = 1 - Math.exp(-dt * 7);
+    const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
-    this.pos.x += this.vx * dt; this.pos.z += this.vz * dt;
-    this.speed = Math.hypot(this.vx, this.vz);
+    let nx = this.pos.x + this.vx * dt, nz = this.pos.z + this.vz * dt;
+    // walls, furniture and the player stop him like they stop the player
+    if (this.solid !== false) {
+      [nx, nz] = collide(nx, nz, this.pos.y + 0.1, this.body, 0.28);
+      const px = nx - PLAY.pos.x, pz = nz - PLAY.pos.z, pd = Math.hypot(px, pz);
+      if (pd < 0.6 && pd > 1e-4 && !H.down() && Math.abs(PLAY.pos.y - this.pos.y) < 1) { nx = PLAY.pos.x + (px / pd) * 0.6; nz = PLAY.pos.z + (pz / pd) * 0.6; }
+    }
+    if (dt > 0) { this.vx = (nx - this.pos.x) / dt * 0.5 + this.vx * 0.5; this.vz = (nz - this.pos.z) / dt * 0.5 + this.vz * 0.5; }
+    this.pos.x = nx; this.pos.z = nz;
+    // on the ground: the street, the porch, a floor (people who stay in their room keep its floor)
+    const gy = groundAt(nx, nz, this.pos.y + 0.5);
+    this.pos.y += (gy - this.pos.y) * (1 - Math.exp(-dt * 14));
+    // which room he is in (he may walk out into the street and back)
+    this.roomT = (this.roomT || 0) - dt;
+    if (this.roomT <= 0) { this.roomT = 0.2; this.room = roomAt(this.pos.x, this.pos.z, 0.05, this.pos.y + 0.1); }
+    this.speed = can ? Math.hypot(this.vx, this.vz) : 0;
     // facing: where it was told to face, else where it walks
-    const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
-    this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
+    if (can) {
+      const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
+      this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
+    }
     this.ph += (this.speed * dt * TAU) / 1.15;
     const n = Math.floor(this.ph / Math.PI);
     if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
@@ -153,6 +175,8 @@ class NPC {
       const r = armIK(i, h.p, h.pole), o = h.ov;
       o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
+    // wounds, falls and death have the last word over the body
+    this.hp.pose(P, dt);
     applyPose(this.ch);
     const root = this.ch.root;
     root.position.copy(this.pos); root.rotation.y = this.yaw;

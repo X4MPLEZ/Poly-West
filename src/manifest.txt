@@ -29,6 +29,7 @@ play/camera.js
 play/drunk.js
 play/fall.js
 play/rest.js
+play/health.js
 audio/sfx.js
 audio/samples.js
 audio/voice.js
@@ -42,6 +43,7 @@ interact/interact.js
 interact/sit.js
 interact/drink.js
 npc/npc.js
+npc/harm.js
 npc/barkeep.js
 npc/direct.js
 npc/hear.js

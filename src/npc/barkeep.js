@@ -44,6 +44,14 @@ const BARKEEP = {
     pay: ['Macht {p}.', '{p}, Freund.', 'Erst {p}, dann gibt’s was.', '{p}. Leg’s auf die Theke.', 'Das kostet {p}.', '{p}, bitte.'],
     paid: ['Danke.', 'Stimmt so.', 'Gut.', 'Passt.'],
     nopay: ['Dann eben nicht.', 'Überleg’s dir.', 'Auch gut.'],
+    // being hurt
+    hurt: [['Aaah! Verdammt!', 'angry'], ['Du hast auf mich geschossen!', 'angry'], ['Bist du wahnsinnig?!', 'angry'], ['Verflucht, das blutet!', 'angry'], ['Hilfe! Holt den Doc!', 'surprised']],
+    hurtArm: [['Mein Arm! Verdammt!', 'angry'], ['Meine Schulter… du Hund!', 'angry'], ['Ich kann den Arm nicht mehr heben!', 'angry']],
+    hurtLeg: [['Mein Bein! Aaah!', 'angry'], ['Verdammt, mein Bein!', 'angry'], ['Ich kann kaum stehen!', 'angry']],
+    itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
+    groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
+    mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    noserve: [['Für dich? Gar nichts mehr.', 'disgusted'], ['Nach dem, was du getan hast? Vergiss es.', 'angry'], ['Ich schenk dir nichts aus. Geh.', 'disgusted']],
     price: ['Whiskey fünfundzwanzig Cent, Bier zehn, Wasser fünf. Die Flasche einen Dollar fünfzig.', 'Bier zehn Cent, Whiskey fünfundzwanzig, Wasser fünf. Für die Flasche einsfünfzig.']
   },
   bags: {}, lastLine: {},
@@ -59,7 +67,7 @@ const BARKEEP = {
   // how he stands to you (-1 hostile … 1 friendly): what you did moves it, time lets it settle back slowly; kept
   att: 0, recent: [],
   feel(d, why) { this.att = clamp(this.att + d, -1, 1); if (why) this.note(why); },
-  note(text) { this.recent.push({ t: G.time, text }); if (this.recent.length > 6) this.recent.shift(); },
+  note(text) { this.recent.push({ t: TIME.min, text }); if (this.recent.length > 6) this.recent.shift(); },
   attWord() { const a = this.att; return a < -0.6 ? 'feindselig, du traust ihm alles zu' : a < -0.25 ? 'misstrauisch und gereizt' : a < 0.15 ? 'neutral, abwartend' : a < 0.5 ? 'freundlich' : 'herzlich, er ist ein guter Gast'; },
   // a price in words, the way he says it (10 -> "zehn Cent", 150 -> "einen Dollar fünfzig")
   priceWords(c) {
@@ -76,6 +84,7 @@ const BARKEEP = {
   askPay(id, said) {
     const it = ITEMS[id]; if (!it) return null;
     const speak = (kind) => { const l = this.pick(kind); if (!said) this.npc.speak(l.text, undefined, l.mood, true); return l; };
+    if (this.grudge >= 0.5 || this.st === 'hurt') { this.pending = null; return speak('noserve'); }
     if (id !== 'water' && DRUNK.level > 0.85) { this.pending = null; return speak('refuse'); }
     if (INV.money < it.price) { this.pending = null; return speak('broke'); }
     this.pending = { id, t: G.time };
@@ -93,6 +102,107 @@ const BARKEEP = {
     return true;
   },
   payLabel() { const P = this.pending, it = P && ITEMS[P.id]; return it ? it.name + ' bezahlen (' + (it.price < 100 ? it.price + ' ¢' : money(it.price)) + ')' : ''; },
+  /* ---- his body: what he does about wounds and falls (npc/harm.js does the body itself) ---- */
+  grudge: 0,
+  // can he serve? alive, on his feet, behind his bar, not in a state
+  available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'duck') && this.grudge < 0.5; },
+  // what he holds in his hands (for bullets: a glass or bottle can be shot out of his hand)
+  held() {
+    const P = this.props, out = this._held || (this._held = []); out.length = 0;
+    const mk = (kind, hand, r, dy) => ({ mesh: P[kind], kind, hand, r, dy, lose: (drop) => this.lose(kind, drop) });
+    if (P.glass.visible && !(this.cur && this.cur.glassOut)) out.push(this._hg || (this._hg = mk('glass', 0, 0.065, 0.05)));
+    if (P.bottle.visible) out.push(this._hb || (this._hb = mk('bottle', 1, 0.075, 0.12)));
+    if (P.rag.visible) out.push(this._hr || (this._hr = mk('rag', 1, 0.07, 0)));
+    return out;
+  },
+  lose(kind) {
+    this.props[kind].visible = false; this.lostT = G.time;
+    if (kind === 'bottle' || (kind === 'glass' && this.cur)) this.abortServe();
+    if (this.act === 'polish' || this.act === 'wipe') { this.act = 'stand'; this.actT = 6; }
+  },
+  // the body tells him what happened to it
+  onHarm(info) {
+    const N = this.npc;
+    this.pending = null; this.attending = false; this.standoff = null;
+    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; return; }
+    if (info.type === 'up') { if (Math.random() < 0.6) this.shout('groan'); return; }
+    if (info.type === 'item') {
+      this.feel(-0.3, 'Er hat dir ' + (info.item === 'bottle' ? 'die Flasche' : info.item === 'glass' ? 'das Glas' : 'den Lappen') + ' aus der Hand geschossen.');
+      this.remember('Er hat dir ' + (info.item === 'bottle' ? 'eine Flasche' : info.item === 'glass' ? 'ein Glas' : 'den Lappen') + ' aus der Hand geschossen (' + TIME.stamp() + ').');
+      this.grudge = Math.min(1, this.grudge + 0.15);
+      this.shout('itemShot');
+      setTimeout(() => TALK.remark(N, 'Der Fremde hat dir gerade ' + (info.item === 'bottle' ? 'eine Flasche' : 'ein Glas') + ' aus der Hand geschossen. Die Kugel ging knapp an deinen Fingern vorbei.', null, 'angry', 0.9), 1600);
+      return;
+    }
+    if (info.type === 'shot') {
+      if (info.zone === 'hat') return;
+      const where = zoneInto(info.zone, info.side), Z = ZONES[info.zone];
+      this.abortServe(); this.orders.length = 0;
+      this.feel(-1, 'Er hat dir ' + where + ' geschossen.');
+      this.remember('Er hat dir ' + where + ' geschossen (' + TIME.stamp() + ').');
+      this.grudge = Math.min(1, this.grudge + 0.35 + (Z.sev || 0.5) * 0.5);
+      this.st = 'hurt'; this.hurtT = 0;
+      this.shout(Z.arm !== undefined ? 'hurtArm' : Z.leg !== undefined ? 'hurtLeg' : 'hurt');
+      const sit = 'Der Fremde hat dir gerade ' + where + ' geschossen. Es blutet und tut höllisch weh' + (N.hp.down() ? ', du liegst am Boden' : '') + '. ' + (this.grudge > 0.8 ? 'Das vergisst du ihm nie.' : 'Du bist außer dir vor Wut und Angst.');
+      setTimeout(() => { if (!N.hp.dead) TALK.remark(N, sit, null, 'angry', 1); }, 1800);
+    }
+  },
+  // a cry: right now, over anything else he was saying
+  shout(kind) { const l = this.pick(kind); if (!l || !this.npc.canBeHeard()) return; SAY.hide(this.npc); this.npc.speak(l.text, undefined, l.mood, true); },
+  // lying on the ground or hurt on his feet: no work, a hand on the wound, an eye on the gun
+  updHurt(dt, inside) {
+    const N = this.npc, H = N.hp;
+    this.props.rag.visible = false; this.props.glass.visible = false; this.props.bottle.visible = false;
+    if (H.busy()) {
+      N.lookTW = 0;
+      this.groanT = (this.groanT || 4) - dt;
+      if (this.groanT <= 0 && H.anim && H.anim.holding()) { this.groanT = 5 + Math.random() * 6; if (inside && Math.random() < 0.5) this.shout(this.aimedT > 0.2 ? 'mercy' : 'groan'); }
+      if (this.aimedT > 0.2 && !this.saidMercy && H.anim && H.anim.holding()) { this.saidMercy = true; this.shout('mercy'); }
+      if (this.aimedT <= 0) this.saidMercy = false;
+      // a pool forms under a bleeding man
+      this.poolT = (this.poolT || 0) - dt;
+      if (H.bleed > 0.0015 && this.poolT <= 0 && H.anim && H.anim.holding()) { this.poolT = 6; HARM.pool(N); }
+      return;
+    }
+    // on his feet again, hurt: he backs off behind his bar and keeps away from you
+    this.hurtT += dt;
+    N.crouchT = this.aimedT > 0.2 ? 0 : 0.15;
+    if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
+    N.free(0); N.free(1);
+    const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    if (inside && dP < 9) N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
+    // once the bleeding is seen to (bandaged) or healing, back to work
+    if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = 'idle'; this.pickIdle(); }
+  },
+  // developer tools: out into the middle of the street (to fight in the open) / everything healed, alive again
+  toStreet() {
+    const N = this.npc; if (!N) return;
+    if (N.hp.dead) this.revive();
+    this.abortServe(); this.orders.length = 0; this.pending = null; this.attending = false;
+    const yaw = PLAY.yaw, x = clamp(PLAY.pos.x + Math.sin(yaw) * 3, -40, 40), z = G.room ? 2 : clamp(PLAY.pos.z + Math.cos(yaw) * 3, -2, 6);
+    N.pos.set(G.room ? -8 : x, 0, z); N.room = null; N.goal = null; N.vx = N.vz = 0;
+    N.yaw = Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z); N.faceYaw = null;
+    this.st = 'street'; this.streetT = 0;
+  },
+  // out on the street: he stands there and keeps an eye on you
+  updStreet(dt) {
+    const N = this.npc;
+    this.streetT += dt;
+    for (const k in this.props) this.props[k].visible = false;
+    if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
+    N.free(0); N.free(1);
+    const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    if (dP < 14) { N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1); if (dP < 6) N.faceYaw = Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z); }
+    else N.lookTW = 0;
+  },
+  revive() {
+    const N = this.npc; if (!N) return;
+    const H = N.hp;
+    for (const m of H.bandages) if (m.parent) m.parent.remove(m);
+    for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
+    N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
+    if (this.st === 'dead' || this.st === 'hurt') { const p = this.roomPt(this.X.stand, -6.4, this._v); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle(); }
+  },
   helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
@@ -115,6 +225,8 @@ const BARKEEP = {
     this.pickIdle();
     onWorldEvent((e) => this.event(e));
     this.npc.persona = this.persona();
+    this.npc.held = () => this.held();
+    this.npc.onHarm = (info) => this.onHarm(info);
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
     this.npc.voiceProfile = { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
   },
@@ -157,7 +269,7 @@ const BARKEEP = {
     this.remember('Er hat ' + (sc.outside >= sc.shots ? 'vor deinem Saloon' : 'in deinem Saloon') + ' herumgeschossen (' + bits.join(', ') + ').');
   },
   // the settings button: he has never seen you before
-  forget() { this.pending = null; this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
+  forget() { this.grudge = 0; this.pending = null; this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
   persona() {
     const B = this;
     return {
@@ -184,9 +296,12 @@ const BARKEEP = {
         if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
         if (B.aimedT > 0.2 && B.standoff) lines.push('Seit ' + Math.round(G.time - B.standoff.t0) + ' Sekunden hältst du die Hände oben.');
         lines.push('Deine Haltung zu ihm: ' + B.attWord() + '.');
-        const rec = B.recent.filter((r) => G.time - r.t < 600).map((r) => 'vor ' + Math.max(1, Math.round((G.time - r.t) / 60)) + ' Min.: ' + r.text);
+        const rec = B.recent.filter((r) => TIME.min - r.t < 360).map((r) => TIME.ago(r.t) + ': ' + r.text);
         if (rec.length) lines.push('Was eben passiert ist: ' + rec.join(' '));
         if (B.damage.holes || B.damage.glass) lines.push('Bisher hat er dir insgesamt ' + B.damage.holes + ' Einschusslöcher in den Saloon gemacht und ' + B.damage.glass + ' Flaschen/Gläser zerschossen.');
+        const body = B.npc.hp.describe();
+        if (body) lines.push('Dein Körper: ' + body + '.');
+        if (B.grudge > 0.15) lines.push('Groll gegen ihn: ' + (B.grudge > 0.8 ? 'du hasst ihn und willst Rache' : B.grudge > 0.5 ? 'groß, du schenkst ihm nichts mehr aus' : 'du bist nachtragend') + '.');
         if (B.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + B.mem.slice(-6).join(' '));
         return lines.join('\n');
       },
@@ -271,7 +386,7 @@ const BARKEEP = {
   /* ---- orders: from SHOP ---- */
   // returns false when he cannot serve (then the drink comes the old way)
   order(id, to, seat, quiet) {
-    if (!this.npc || this.st === 'gone') return false;
+    if (!this.npc || this.st === 'gone' || this.st === 'dead') return false;
     this.orders.push({ id, to: to.clone(), seat });
     this.served++; this.feel(0.04);
     const L = DRUNK.level, it = ITEMS[id];
@@ -321,6 +436,8 @@ const BARKEEP = {
     this.t += dt;
     const inside = G.room === this.R;
     this.att *= 1 - dt * 0.002;
+    // dead: nothing more (the body lies where it fell); hurt or down: his own state
+    if (N.hp.dead || this.st === 'dead') { this.st = 'dead'; this.pending = null; for (const k in this.props) this.props[k].visible = false; const pb0 = this.payEl; if (pb0 && !pb0.hidden) { pb0.hidden = true; pb0.dataset.l = ''; } return; }
     // the button for the money (E on the keyboard), while he waits for it
     const pb = this.payEl || (this.payEl = document.getElementById('bPay'));
     if (pb && !pb.wired) { pb.wired = true; pb.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.pay(); }); }
@@ -360,6 +477,8 @@ const BARKEEP = {
     }
     const handsUp = this.aimedT > 0.2;
     N.leanT = 0; N.crouchT = 0;
+    if (N.hp.busy() || this.st === 'hurt') { if (this.st !== 'hurt') { this.st = 'hurt'; this.hurtT = 0; } this.updHurt(dt, inside); this.placeProps(); return; }
+    if (this.st === 'street') { this.updStreet(dt); this.placeProps(); return; }
     if (this.st === 'duck') this.updDuck(dt);
     else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }
     else if (this.cur || this.orders.length) this.updServe(dt);
@@ -435,8 +554,9 @@ const BARKEEP = {
       N.free(1); N.reach(0, 0.3, 1.15, 0.45, 0.7); N.leanT = 0.2;
       if (!inside) N.lookAt(N.toWorld(Math.sin(t * 0.4) * 3, 1.5, 4, this._v), 0.7);
     } else { N.free(0); N.free(1); this.pickIdle(); }
-    this.props.rag.visible = this.act === 'polish' || this.act === 'wipe';
-    this.props.glass.visible = this.act === 'polish';
+    const lostLately = G.time - (this.lostT || -99) < 25;
+    this.props.rag.visible = (this.act === 'polish' || this.act === 'wipe') && !lostLately;
+    this.props.glass.visible = this.act === 'polish' && !lostLately;
     this.props.glass.geometry = VESSEL.geo.glassfalse;
   },
   /* ---- serving: back bar, bottle, glass on the counter, pour, push it over ---- */
@@ -576,8 +696,10 @@ const BARKEEP = {
   }
 };
 // what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
-SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3) }), (d) => {
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3), grudge: +BARKEEP.grudge.toFixed(3), body: BARKEEP.npc ? BARKEEP.npc.hp.save() : null }), (d) => {
   if (!d) return;
+  BARKEEP.grudge = clamp(+d.grudge || 0, 0, 1);
+  if (d.body && BARKEEP.npc) { BARKEEP.npc.hp.load(d.body); if (BARKEEP.npc.hp.dead) BARKEEP.st = 'dead'; else if (BARKEEP.npc.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { BARKEEP.st = 'hurt'; BARKEEP.hurtT = 0; } }
   BARKEEP.att = clamp(+d.att || 0, -1, 1);
   BARKEEP.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
   BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];

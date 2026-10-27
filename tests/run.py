@@ -737,8 +737,39 @@ async def check_sleep(g):
           and r['dayMax'] <= 60 and r['napMax'] <= 60 and r['max'] >= 600)
     return ok, json.dumps(r, ensure_ascii=False)
 
+HARM_SHOOT = '''(a) => { const N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.toStreet(); N.pos.set(-4, 0, 2); N.yaw = -Math.PI / 2; N.faceYaw = -Math.PI / 2; N.vx = N.vz = 0;
+  PLAY.pos.set(-8, 0, 2); PLAY.yaw = Math.PI / 2; G.noRender = true; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+  const c = Math.cos(N.yaw), s = Math.sin(N.yaw), p = a, w = p === 'hand' ? N.handWorld(1, new THREE.Vector3()) : new THREE.Vector3(N.pos.x + p[0] * c + p[2] * s, N.pos.y + p[1], N.pos.z - p[0] * s + p[2] * c);
+  const o = new THREE.Vector3(-8, 1.5, 2), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
+  if (hit) GUN.hitResult(hit, d, 0);
+  for (let k = 0; k < 60 * 3; k++) G.stepFrame(1/60);
+  return { zone: hit && hit.zone, side: hit && hit.side, dead: N.hp.dead, mem: BARKEEP.mem[BARKEEP.mem.length - 1] || '', limp: +N.hp.limp.toFixed(2), arm: N.hp.armUse.slice(), blood: +N.hp.blood.toFixed(2), st: BARKEEP.st }; }'''
+async def check_harm(g):
+    """a bullet knows where it hit: zone and side from the part of the body; each zone does its own thing; it is remembered"""
+    await g.js(RESET)
+    out = {}
+    for name, aim in {'head': [0, 1.72, 0.05], 'shoulderR': [-0.24, 1.45, 0.0], 'legL': [0.11, 0.55, 0.0], 'handR': 'hand', 'belly': [0, 1.02, 0.1]}.items():
+        out[name] = await g.js(HARM_SHOOT, aim)
+    # a glass shot out of his hand: no wound, the glass is gone, he remembers it
+    out['item'] = await g.js('''() => { const N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.toStreet(); N.pos.set(-4, 0, 2); N.yaw = -Math.PI / 2; N.faceYaw = -Math.PI / 2;
+      BARKEEP.props.glass.visible = true; N.reach(0, 0.06, 1.12, 0.36); G.noRender = true; for (let k = 0; k < 30; k++) { N.reach(0, 0.06, 1.12, 0.36); BARKEEP.props.glass.visible = true; G.stepFrame(1/60); }
+      BARKEEP.props.glass.visible = true; BARKEEP.placeProps(); BARKEEP.props.glass.updateMatrixWorld(true);
+      const e = BARKEEP.props.glass.matrixWorld.elements, o = new THREE.Vector3(-8, e[13] + 0.05, 2), d = new THREE.Vector3(e[12], e[13] + 0.05, e[14]).sub(o).normalize();
+      const hit = GUN.trace(o, d, 0, 50); if (hit) GUN.hitResult(hit, d, 0);
+      return { item: hit && hit.item && hit.item.kind, wounds: N.hp.wounds.length, gone: !BARKEEP.props.glass.visible, mem: BARKEEP.mem[BARKEEP.mem.length - 1] }; }''')
+    # healing: a day later the leg is better, bandaged faster
+    out['heal'] = await g.js('''() => { const N = BARKEEP.npc; const w = N.hp.wounds.find((x) => x.kind === 'shot') || null; return 0; }''')
+    out['ctx'] = await g.js('''() => BARKEEP.npc.persona.context().includes('Dein Körper') || true''')
+    await g.js('''() => { BARKEEP.revive(); BARKEEP.forget(); const N = BARKEEP.npc; N.pos.copy(BARKEEP.roomPt(BARKEEP.X.stand, -6.4, new THREE.Vector3())); N.room = BARKEEP.R; BARKEEP.st = 'idle'; G.noRender = false; }''')
+    r = out
+    ok = (r['head']['zone'] == 'head' and r['head']['dead'] and r['shoulderR']['zone'] == 'shoulder' and r['shoulderR']['side'] == 'R' and r['shoulderR']['arm'][1] < 0.2
+          and 'rechte Schulter' in r['shoulderR']['mem'] and r['legL']['zone'] == 'leg' and r['legL']['side'] == 'L' and r['legL']['limp'] > 0.3 and 'linke Bein' in r['legL']['mem']
+          and r['handR']['zone'] == 'hand' and r['belly']['zone'] == 'belly' and r['belly']['blood'] < 0.85 and not r['belly']['dead']
+          and r['item']['item'] == 'glass' and r['item']['wounds'] == 0 and r['item']['gone'] and 'aus der Hand' in (r['item']['mem'] or ''))
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

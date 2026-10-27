@@ -304,6 +304,8 @@ const GUN = {
       shatterBottle(hit.bottle, dir);
     } else if (hit.dummy) {
       DUMMY.shot(hit.point, dir);
+    } else if (hit.npc) {
+      HARM.shot(hit, dir);
     } else {
       const S = FX.impact(hit.hit, dir);
       GSFX.impact(hit.point, S.kind || (S.splinter ? 'wood' : 'dirt'));
@@ -328,6 +330,9 @@ const GUN = {
       const d2 = cx * cx + cy * cy + cz * cz - t * t;
       if (d2 < r * r) { const tt = t - Math.sqrt(r * r - d2); if (!best || tt < best.t) best = { t: tt, dummy: true, point: new THREE.Vector3().copy(o).addScaledVector(d, tt) }; }
     }
+    // people: the exact part and zone (npc/harm.js)
+    const ph = HARM.trace(o, d, near, best ? best.t : far);
+    if (ph && (!best || ph.t < best.t)) best = ph;
     const objs = W.worldMeshes.slice();
     for (const R of ROOMS) if (R.mesh && R.mesh.visible) objs.push(R.mesh);
     for (const D of DOORS) for (const m of D.meshes) objs.push(m);

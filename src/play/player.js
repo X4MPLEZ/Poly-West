@@ -8,8 +8,9 @@ const WALK = 1.7, RUN = 5.4;
 SETTINGS.on('camDist', (v) => { PLAY.camDist = v; });
 ACTORS.add({ id: 'player', kind: 'player', pos: PLAY.pos, get yaw() { return PLAY.yaw; }, get room() { return G.room || null; }, get seat() { return SIT.seat; } });
 
-function collide(px, pz, py) {
-  const r = 0.36;
+// skip: a body that does not count (a person moving itself), rad: its radius (the player is 0.36)
+function collide(px, pz, py, skip, rad) {
+  const r = rad || 0.36;
   for (let it = 0; it < 2; it++) {
     for (const c of COLL) {
       if (c.y0 !== undefined && py < c.y0) continue;
@@ -41,6 +42,7 @@ function collide(px, pz, py) {
   }
   // people
   for (const b of NPCS.bodies) {
+    if (b === skip || b.r <= 0) continue;
     const dx = px - b.cx, dz = pz - b.cz, rr = b.r + r, d2 = dx * dx + dz * dz;
     if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2); px = b.cx + (dx / d) * rr; pz = b.cz + (dz / d) * rr; }
   }

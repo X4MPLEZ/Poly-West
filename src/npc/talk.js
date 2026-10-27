@@ -63,7 +63,7 @@ const TALK = {
     // seated you can call him from further away (across the room)
     let best = null, bd = SIT.state === 'sit' ? 12 : 5;
     for (const n of NPCS.list) {
-      if (!n.persona || !n.ch.root.visible || (n.room && n.room !== G.room)) continue;
+      if (!n.persona || !n.ch.root.visible || (n.room && n.room !== G.room) || (!n.room && G.room) || n.hp.dead || n.hp.down()) continue;
       const d = Math.hypot(n.pos.x - PLAY.pos.x, n.pos.z - PLAY.pos.z);
       if (d < bd) { bd = d; best = n; }
     }
@@ -352,7 +352,7 @@ const TALK = {
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
     const ctl = new AbortController();
     let failed = false;
-    const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown()) fallback(); };
+    const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown() && fallback) fallback(); };
     const timer = setTimeout(() => { if (!F.shown()) { ctl.abort(); fail(); } }, 7000);
     this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
       const raw = r && r.text;

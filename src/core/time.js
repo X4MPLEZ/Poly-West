@@ -16,6 +16,13 @@ const TIME = {
     const h = this.hour();
     return h < 4.5 ? 'tiefe Nacht' : h < 6 ? 'früher Morgen, es dämmert' : h < 9 ? 'Morgen' : h < 11.5 ? 'Vormittag' : h < 13.5 ? 'Mittag' : h < 17 ? 'Nachmittag' : h < 19 ? 'früher Abend' : h < 21 ? 'Abend, die Sonne geht unter' : h < 23.5 ? 'später Abend, es ist dunkel' : 'Mitternacht';
   },
+  // when something happened, for memories: "Tag 3, abends"
+  stamp(m) {
+    const t = m === undefined ? this.min : m, h = (t / 60) % 24, d = Math.floor(t / 1440) + 1;
+    return 'Tag ' + d + ', ' + (h < 5 ? 'nachts' : h < 11 ? 'morgens' : h < 14 ? 'mittags' : h < 18 ? 'nachmittags' : h < 22 ? 'abends' : 'nachts');
+  },
+  // how long ago, in words: "vor 5 Min.", "vor 3 Std.", "vor 2 Tagen"
+  ago(m) { const d = Math.max(0, this.min - m); return d < 60 ? 'vor ' + Math.max(1, Math.round(d)) + ' Min.' : d < 1440 * 1.5 ? 'vor ' + Math.round(d / 60) + ' Std.' : 'vor ' + Math.round(d / 1440) + ' Tagen'; },
   onSkip(fn) { this.skipFns.push(fn); },
   onTick(fn) { this.tickFns.push(fn); },
   skip(minutes) {

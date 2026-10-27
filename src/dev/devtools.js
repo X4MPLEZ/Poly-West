@@ -28,6 +28,8 @@ const DEV = {
     $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; DRUNK.edge = null; });
     // the clock: jump to a time of day (forward, as if the hours had passed), or let it run fast
     for (const b of this.el.querySelectorAll('[data-clock]')) b.addEventListener('click', () => { const v = b.dataset.clock; TIME.skip(v === '+1' ? 60 : TIME.until(+v)); });
+    $('devHankStreet').addEventListener('click', () => BARKEEP.toStreet());
+    $('devHankHeal').addEventListener('click', () => BARKEEP.revive());
     $('devFast').addEventListener('click', () => { TIME.speed = TIME.speed > 1 ? 1 : 60; $('devFast').setAttribute('aria-pressed', TIME.speed > 1 ? 'true' : 'false'); });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
@@ -151,7 +153,8 @@ const DEV = {
       `${R ? 'Raum: ' + R.type : 'draußen'}  ·  ${SIT.busy() ? 'sitzt (' + SIT.state + ')' : PLAY.moving ? 'läuft ' + PLAY.speed.toFixed(1) + ' m/s' : 'steht'}`,
       `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
       `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,
-      `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}`,
+      `Rausch ${DRUNK.level.toFixed(2)} (Magen ${DRUNK.stomach.toFixed(2)})${DRINK.busy() ? '  ·  trinkt: ' + DRINK.st : ''}  ·  Müdigkeit ${REST.need.toFixed(1)} Std.`,
+      ...NPCS.list.map((n) => `${n.name}: ${n.hp.dead ? 'tot (' + n.hp.cause + ')' : 'Blut ' + Math.round(n.hp.blood * 100) + '% · Benommen ' + n.hp.daze.toFixed(2) + (n.hp.wounds.length ? ' · ' + n.hp.describe() : '')} · ${BARKEEP.npc === n ? BARKEEP.st + (BARKEEP.grudge ? ' · Groll ' + BARKEEP.grudge.toFixed(2) : '') : ''}`),
       `${d.calls} Aufrufe · ${(d.tris / 1000).toFixed(0)}k Dreiecke · ${HUD.fpsEl.textContent} FPS`,
       `Stimme: ${VOICE.label()}${VOICE.browserErr ? ' · Browser-Fehler ' + VOICE.browserErr : ''} · KI: ${TALK.ai ? (TALK.aiOff ? 'gesperrt' : 'ja' + (TALK.via ? ' über ' + (TALK.via === 'key' ? 'eigenen Schlüssel' : TALK.via) : '') + (TALK.model ? ' (' + TALK.model + ')' : '')) : 'nein'} · Mikro-Fenster: ${MICWIN.connected() ? 'verbunden' : 'nein'}`
     ];

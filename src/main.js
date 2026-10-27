@@ -65,6 +65,7 @@
     DEV.update(dt);
     DRUNK.update(dt);
     FALL.update(dt);
+    PHP.update(dt);
     POST.update(dt);
     DRINK.update(dt);
     updatePlayer(dt);
@@ -118,7 +119,9 @@
     INTERACT.init();
     SLEEP.init();
     REST.init();
+    PHP.init();
     NPCS.init(G.scene);
+    HARM.init();
     SAVE.init();
     DAYNIGHT.init();
     MENU.init();

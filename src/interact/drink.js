@@ -260,6 +260,8 @@ function makeCounter(C) {
 function barActions(counter, seat) {
   const out = [];
   if (GLASS.ready() && Math.hypot(GLASS.obj.pos.x - PLAY.pos.x, GLASS.obj.pos.z - PLAY.pos.z) < 1.1) out.push({ label: 'Trinken (' + GLASS.obj.it.name + ')', run: () => DRINK.start('glass') });
+  // a bar with a barkeeper only serves while he is there and able to
+  if (typeof BARKEEP !== 'undefined' && BARKEEP.C === counter && !BARKEEP.available()) return out;
   out.push({ label: 'Bestellen', run: () => SHOP.show(counter, seat) });
   return out;
 }
