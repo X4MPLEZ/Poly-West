@@ -92,7 +92,7 @@ const DOC = {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
       this.remember('Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
-      this.say('fooled'); N.gesture('fist_shake'); home(); return;
+      this.react('fooled', 'Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen, du bist hingerannt, aber da ist niemand. Er hat dich zum Narren gehalten.'); N.gesture('fist_shake'); home(); return;
     }
     if (J.phase === 'to') {
       const P = J.P;
@@ -124,7 +124,7 @@ const DOC = {
       const l = N.toLocal(nk, this._w); N.reach(1, l.x, l.y, Math.max(0.25, l.z)); N.handShape[1] = { point: 0.6, open: 0.3 };
       if (J.t > 3.2) {
         P.docChecked = true; N.handShape[1] = null; N.free(1); N.crouchT = 0;
-        const said = this.say('dead');
+        const said = this.react('dead', P.name + ' liegt tot vor dir. Du hast an seinem Hals nach dem Puls gefühlt: nichts mehr. Du kannst nichts mehr für ihn tun.');
         if (!said && G.room === (N.room || null)) TOAST.show('Doc: „Der ist tot. Da kann ich nichts mehr tun.“');
         this.remember(P.name + ' war tot, als du kamst. Du konntest nichts mehr tun (' + TIME.stamp() + ').');
         worldEvent('docChecked', P.pos.x, P.pos.y, P.pos.z, { by: 'doctor', npc: P.id });
@@ -135,7 +135,7 @@ const DOC = {
     if (J.phase === 'work') {
       const P = J.P, lying = P.hp.busy();
       P.waitFor = { by: N, t: G.time + 1.5 };
-      if (P.hp.dead) { this.say('late'); P.waitFor = null; home(); return; }
+      if (P.hp.dead) { this.react('late', P.name + ' ist dir unter den Händen gestorben, bevor du ihn verbinden konntest.'); P.waitFor = null; home(); return; }
       N.crouchT = lying ? 1 : 0;
       const w = P.hp.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.part && x.lp) || P.hp.wounds[0];
       const part = w && w.part ? P.ch.p[w.part] : P.ch.p.torso;
@@ -147,7 +147,7 @@ const DOC = {
       if (J.t > 6) {
         const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
-        this.learn(P, 0); this.snip(); this.say('done');
+        this.learn(P, 0); this.snip(); this.react('done', 'Du hast ' + P.name + ' gerade an Ort und Stelle verbunden (' + H.describe() + ').');
         if (J.by) this.remember(J.by + ' hat dich zu ' + P.name + ' geholt, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); else { this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); }
         P.waitFor = null;
         if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
@@ -221,6 +221,8 @@ const DOC = {
   },
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
   feel(d) { this.att = clamp(this.att + d, -1, 1); },
+  // his own words about it (the AI, when it has answered here before and he has some left: TALK.remark), else his line
+  react(kind, situation) { if (!TALK.remark(this.npc, situation, () => this.say(kind), this.MOOD[kind] || 'neutral', 1)) return this.say(kind); return true; },
   say(kind, cool) {
     if (cool && (this.cool[kind] || -99) > G.time - cool) return false;
     if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'shot' || kind === 'hurt')) return false;
@@ -256,7 +258,7 @@ const DOC = {
     }
     if (info.type === 'blow') {
       this.feel(-0.1);
-      if (!N.fight.on && !N.hp.dead) { this.remember('Er hat dich geschlagen (' + TIME.stamp() + ').'); this.st = 'fight'; N.fight.start(); }
+      if (!N.fight.on && !N.hp.dead) { this.remember('Er hat dich mit der Faust geschlagen (' + TIME.stamp() + ').'); this.st = 'fight'; N.crouchT = 0; N.free(0); N.free(1); N.fight.start(); }
     }
   },
   event(e) {
@@ -278,7 +280,16 @@ const DOC = {
     const inside = G.room === this.R;
     if (N.hp.busy()) return;
     if (this.st === 'call') { this.updCall(dt); return; }
-    if (this.st === 'fight') { const r = N.fight.update(dt); if (r) { this.st = 'idle'; N.walkTo(this.spot('desk').x, this.spot('desk').z, this.spot('desk').yaw); } return; }
+    if (this.st === 'fight') {
+      const r = N.fight.update(dt);
+      if (r) {
+        // the fight over, back to what he was doing: someone still needs him (the call), or home to his desk
+        const J = this.callJob;
+        if (J && J.phase !== 'home' && J.phase !== 'after' && (!J.P || !J.P.hp.dead || J.phase === 'to' || J.phase === 'check')) { this.st = 'call'; N.hurry = J.urgent ? 2.1 : 1.3; if (J.phase === 'work') J.phase = 'to'; if (J.dest) N.walkTo(J.dest.x, J.dest.z); }
+        else { this.st = 'idle'; this.callJob = null; N.walkTo(this.spot('desk').x, this.spot('desk').z, this.spot('desk').yaw); }
+      }
+      return;
+    }
     // greet who comes in
     if (inside && !this.wasInside) setTimeout(() => this.say('hello', 90), 900);
     this.wasInside = inside;
@@ -362,7 +373,7 @@ const DOC = {
       if (this.tt > 5.5) {
         if (P) { const n = P.hp.bandageAll(); this.learn(P, n); if (C.done) C.done(P); }
         else { PHP.hp = 1; PHP.daze = 0; PHP.poison = 0; PHP.sick = 0; worldEvent('treated', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'doctor' }); this.remember('Du hast ihn behandelt (' + TIME.stamp() + ').'); this.feel(0.05); }
-        this.snip(); this.say('done');
+        this.snip(); this.react('done', P ? 'Du hast ' + P.name + ' gerade in deiner Praxis verbunden (' + P.hp.describe() + ').' : 'Du hast den Fremden gerade behandelt.');
         this.cur = null; this.st = 'idle'; N.free(0); N.free(1); this.actT = 3; this.act = 'stand';
       }
     }

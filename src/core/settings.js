@@ -11,6 +11,7 @@ const SETTINGS = {
     { key: 'sensMouse', label: 'Maus-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
     { key: 'sensTouch', label: 'Touch-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
     { key: 'invertY', label: 'Y-Achse umkehren', type: 'toggle', def: false },
+    { key: 'aimAssist', label: 'Zielhilfe (Touch)', type: 'choice', def: 'soft', options: [['off', 'Aus'], ['soft', 'Sanft']] },
     { group: 'Grafik' },
     { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
     { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },

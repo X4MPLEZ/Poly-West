@@ -284,7 +284,7 @@ const TALK = {
     else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
     this.lastErr = '';
     const act = String(out.action || 'none');
-    n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
+    n.persona.act((n.persona.actions || this.ACTIONS).includes(act) ? act : 'none');
     if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
   },
   // ways a spontaneous remark can go (one is picked at random each time)
@@ -337,6 +337,10 @@ const TALK = {
     const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
     const H = n.hp, bw = H && H.wounds.filter((w) => w.b && !w.bandaged).sort((a, b) => b.b - a.b)[0];
     const bleed = bw && H.bleed > 0.0006 ? ' Du verblutest gerade: aus der Wunde ' + zoneIn(bw.zone, bw.side) + (bw.art && !bw.field ? ' pumpt das Blut stoßweise heraus und hört nicht auf' : ' läuft das Blut und hört nicht auf') + '. Das spürst du, das sagst du auch: dass du verblutest, dass jemand draufdrücken oder den Doc holen muss.' : '';
+    /* shot or beaten: the AI has to know which (a man knocked down with fists is not "shot", and the other way round) */
+    const shot = H && H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5), beaten = H && !shot && (H.daze > 0.3 || H.ko > 0 || H.wounds.some((w) => w.kind === 'blow' && TIME.min - w.at < 60));
+    if (beaten && lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Der Fremde hat dich mit den Fäusten zusammengeschlagen (nicht geschossen). Du liegst am Boden, dir dröhnt der Schädel, alles dreht sich, du schmeckst Blut im Mund.' + gun + ' Du hast Angst, dass er weiterprügelt. Kurz, benommen, in ganzen Sätzen.\n';
+    if (beaten && lv >= 1) return 'DEIN ZUSTAND: Der Fremde hat dich mit den Fäusten verprügelt (nicht geschossen): ' + H.describe() + '.' + gun + ' Dir tut alles weh.\n';
     if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt und schwindlig.' + bleed + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch. Ein kurzer, ganzer Satz, leise und mit letzter Kraft, aber verständlich.\n';
     if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + bleed + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz und unter Schmerzen, aber in ganzen Sätzen.\n';
     if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + bleed + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
@@ -360,11 +364,16 @@ const TALK = {
     if (!n.canBeHeard()) return true;   // nobody there to hear it: say nothing at all
     if (VOICE.speaking(n) || G.time - (n.aiAt || -99) < 3) return false;
     if (G.time - (this.remarkT || -99) < 6) return false;
+    /* each person has a small allowance of own words (two, one more every 45 s): what happens often then gets his
+       ready-made line, whose sound is kept, instead of another paid answer */
+    const tok = Math.min(2, (n.aiTok === undefined ? 2 : n.aiTok) + (G.time - (n.aiTokT === undefined ? G.time : n.aiTokT)) / 45); n.aiTokT = G.time; n.aiTok = tok;
+    if (tok < 1) return false;
+    n.aiTok = tok - 1;
     this.remarking = true; this.remarkT = G.time;
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
-    const acts = ['none'].concat(GESTURE.AI);
+    const acts = P.actions ? P.actions.filter((a) => a === 'none' || GESTURE.AI.includes(a) || a === 'go_up') : ['none'].concat(GESTURE.AI);
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const dire = n.plight && n.plight() >= 2;
@@ -408,7 +417,7 @@ const TALK = {
     const P = n.persona, hist = (n.talkLog || []).slice(-9, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
-      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
+      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + (P.actions || this.ACTIONS).join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
       'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';
     const once = async () => {
       const ctl = this.ctl = new AbortController(); this.userAbort = false;

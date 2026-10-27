@@ -222,8 +222,12 @@ class NPC {
     H.update(dt);
     const can = H.canWalk();
     // waiting for someone who comes to him (the doctor): standing, facing him, the way kept for later
-    const hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
+    let hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
     if (hold) { const B = this.waitFor.by; this.faceHold = Math.atan2(B.pos.x - this.pos.x, B.pos.z - this.pos.z); }
+    /* hit while on his way (a blow, a bullet): he does not walk on as if nothing happened. For the moment of the
+       hit (Vitals.stunT) he stops, turns to where it came from and takes it; his way is kept, so afterwards he goes
+       on, unless his behaviour (onHarm) has decided on something else: fight back, run, go to the doctor */
+    if (this.hitFrom && G.time < this.hitFrom.until && !H.busy() && !(this.fight && this.fight.on)) { hold = true; this.faceHold = Math.atan2(this.hitFrom.x - this.pos.x, this.hitFrom.z - this.pos.z); }
     // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
     if (!this.goal && can && !hold && ((this.path && this.path.length) || this.dest)) this.nextLeg();

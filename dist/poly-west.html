@@ -793,6 +793,7 @@ const SETTINGS = {
     { key: 'sensMouse', label: 'Maus-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
     { key: 'sensTouch', label: 'Touch-Empfindlichkeit', type: 'range', min: 25, max: 250, step: 5, def: 100, unit: '%' },
     { key: 'invertY', label: 'Y-Achse umkehren', type: 'toggle', def: false },
+    { key: 'aimAssist', label: 'Zielhilfe (Touch)', type: 'choice', def: 'soft', options: [['off', 'Aus'], ['soft', 'Sanft']] },
     { group: 'Grafik' },
     { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
     { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },
@@ -5013,6 +5014,7 @@ function lookBy(dx, dy, touch) {
   const sens = (touch ? SETTINGS.v.sensTouch : SETTINGS.v.sensMouse) / 100;
   dx *= sens; dy *= sens * (SETTINGS.v.invertY ? -1 : 1);
   if (DEV.fly) { DEV.look(dx, dy, touch); return; }
+  if (Math.abs(dx) + Math.abs(dy) > 0.5) PLAY.userLookT = G.time;
   if (!touch) FIST.look(dx, dy);
   if (GUN.camW > 0.3) {
     const k = touch ? 0.0042 : 0.0026;
@@ -5056,6 +5058,7 @@ function pollGamepad(onAction) {
   if (b(2) && !prev[2]) GUN.pressReload();
   if (b(4) && !prev[4]) GUN.toggleHolster();
   INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b);
+  if (INPUT.padLookX || INPUT.padLookY) PLAY.userLookT = G.time;
   if (GUN.camW > 0.3) { PLAY.camYaw -= INPUT.padLookX * 0.05; PLAY.aimPitch = clamp(PLAY.aimPitch + INPUT.padLookY * 0.03, -0.75, 0.9); INPUT.padLookX = INPUT.padLookY = 0; }
   if (INPUT.padX || INPUT.padY) onAction('move');
 }
@@ -5087,7 +5090,8 @@ function updateCamera(dt) {
       return want;
     };
     // a wall right behind you: swing the camera round to where the room is, unless you are steering it yourself
-    if (!INPUT.look && reach(pitch) < 2.4) {
+    // (never while you aim, or while you are turning the view yourself: it would pull the crosshair off the target)
+    if (!INPUT.look && GUN.camW < 0.02 && !GUN.wantAim && G.time - (PLAY.userLookT || -99) > 2.5 && reach(pitch) < 2.4) {
       // prefer views that look into the room: camera on the far side from the room centre
       const r0 = R.rects[0], [px, pz] = rLocal(R, PLAY.pos.x, PLAY.pos.z);
       const cxl = (r0[0] + r0[1]) / 2 - px, czl = (r0[2] + r0[3]) / 2 - pz, cl = Math.hypot(cxl, czl) || 1;
@@ -5125,7 +5129,7 @@ function updateCamera(dt) {
   let lookT = G.lookAt;
   const aw = GUN.camW;
   if (aw > 0.001) {
-    const A = aimCamera(R);
+    const A = aimCamera(R, dt);
     cam.position.lerp(A.pos, aw);
     lookT = (PLAY._lt || (PLAY._lt = new THREE.Vector3())).copy(G.lookAt).lerp(A.look, aw);
   }
@@ -5151,7 +5155,7 @@ function updateCamera(dt) {
 }
 
 /* over the right shoulder, looking along camYaw / aimPitch; pulled in if a wall is in the way */
-function aimCamera(R) {
+function aimCamera(R, dt) {
   const c = PLAY.camYaw, p = PLAY.aimPitch + GUN.kickP;
   const v = new THREE.Vector3(-Math.sin(c) * Math.cos(p), -Math.sin(p), -Math.cos(c) * Math.cos(p));
   const right = new THREE.Vector3(Math.cos(c), 0, -Math.sin(c));
@@ -5165,10 +5169,16 @@ function aimCamera(R) {
   };
   const piv = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.58, PLAY.pos.z);
   let off = 0.78;
-  while (off > 0.1 && blocked(piv.x + right.x * off, piv.y, piv.z + right.z * off)) off -= 0.15;
-  piv.addScaledVector(right, off);
+  while (off > 0.1 && blocked(piv.x + right.x * off, piv.y, piv.z + right.z * off)) off -= 0.05;
+  /* in a corner the room for the camera changes with every turn of the view: it moves in at once (never into the
+     wall) but out again only slowly, so the view glides instead of jumping (the direction of the aim stays the same) */
+  const k = 1 - Math.exp(-(dt || 0.016) * 3);
+  PLAY.aimOff = PLAY.aimOff === undefined || off < PLAY.aimOff ? off : PLAY.aimOff + (off - PLAY.aimOff) * k;
+  piv.addScaledVector(right, PLAY.aimOff);
   let dist = 2.7;
-  for (let s = 0.3; s <= 2.7; s += 0.1) { if (blocked(piv.x - v.x * s, piv.y - v.y * s, piv.z - v.z * s)) { dist = Math.max(0.3, s - 0.15); break; } }
+  for (let s = 0.3; s <= 2.7; s += 0.05) { if (blocked(piv.x - v.x * s, piv.y - v.y * s, piv.z - v.z * s)) { dist = Math.max(0.3, s - 0.15); break; } }
+  PLAY.aimDistS = PLAY.aimDistS === undefined || dist < PLAY.aimDistS ? dist : PLAY.aimDistS + (dist - PLAY.aimDistS) * k;
+  dist = PLAY.aimDistS;
   const pos = piv.clone().addScaledVector(v, -dist);
   const gy = R ? R.floorY + 0.4 : surfaceHeight(pos.x, pos.z) + 0.35;
   if (pos.y < gy) pos.y = gy;
@@ -7270,8 +7280,8 @@ const GUN = {
     this.fovPunch = Math.max(0, this.fovPunch - dt * 7);
     // touch: aim assist pulls the crosshair gently onto what is right next to it (a person first, then glass);
     // only what can be seen from here, and only when it is already almost on it
-    if (this.touch && this.camW > 0.6) {
-      const b = this.assist(0.055, 35);
+    if (this.touch && this.camW > 0.6 && SETTINGS.v.aimAssist !== 'off') {
+      const b = this.assist(0.055, 35, true);
       if (b) {
         const u = b.dir;
         const ty = Math.atan2(-u.x, -u.z), tp = -Math.asin(clamp(u.y, -1, 1));
@@ -7283,7 +7293,8 @@ const GUN = {
     const moveS = Math.hypot(PLAY.vx, PLAY.vz);
     if (this.camW > 0.8 && moveS < 0.3 && this.wantAim) this.steady = Math.min(1, this.steady + dt * 1.1);
     else this.steady = Math.max(0, this.steady - dt * 3);
-    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
+    // (aimed and standing still the bullet goes where the crosshair is: a hair's breadth, a little more at once after a shot)
+    const base = lerp(0.035, lerp(0.0022, 0.0004, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
     this.spread += (base - this.spread) * (1 - Math.exp(-dt * 7));
     const b = this.bestBottle(0.03, 60); this.aimDist = b ? b.dist : 25;
     let mz = null;
@@ -7302,20 +7313,26 @@ const GUN = {
   /* what the aim assist may take: a person (the chest or the head, whichever is nearer the crosshair) before any
      glass, inside maxAng of where the camera looks, and only if nothing stands between (a wall, the bar, the
      corner you stand in) */
-  assist(maxAng, maxDist) {
+  assist(maxAng, maxDist, sticky) {
     const cam = G.cam, fwd = this._af || (this._af = new THREE.Vector3()), u = this._au || (this._au = new THREE.Vector3()), p = this._ap || (this._ap = new THREE.Vector3());
     cam.getWorldDirection(fwd);
     let best = null;
+    /* it keeps to the one it has (no hopping between head and chest, or between two people, which made the
+       crosshair jump), and lets go only when you have clearly moved off him */
+    const L = sticky && this.lock && G.time - this.lock.t < 0.5 ? this.lock : null;
     for (const N of NPCS.list) {
       if (N.hp.dead || !N.ch.root.visible) continue;
       for (const part of ['torso', 'head']) {
         N.ch.p[part].getWorldPosition(p); if (part === 'torso') p.y += 0.15;
         u.subVectors(p, cam.position); const d = u.length(); if (d > maxDist || d < 0.8) continue;
         u.multiplyScalar(1 / d);
-        const ang = Math.acos(clamp(u.dot(fwd), -1, 1));
-        if (ang < maxAng && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, ang, dist: d, dir: u.clone() };
+        let ang = Math.acos(clamp(u.dot(fwd), -1, 1));
+        const mine = L && L.npc === N && L.part === part;
+        if (L && !mine) continue;
+        if (ang < (mine ? maxAng * 1.6 : maxAng) && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, part, ang, dist: d, dir: u.clone() };
       }
     }
+    if (sticky) this.lock = best ? { npc: best.npc, part: best.part, t: G.time } : null;
     if (best) return best;
     const b = this.bestBottle(maxAng, maxDist);
     return b && this.seen(cam.position, b.dir, b.dist) ? b : null;
@@ -7347,7 +7364,7 @@ const GUN = {
     this.ammo--; this.cool = 0.42;
     const cam = G.cam, dir = new THREE.Vector3();
     cam.getWorldDirection(dir);
-    if (this.touch) { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35); if (b) dir.copy(b.dir); }
+    if (this.touch && SETTINGS.v.aimAssist !== 'off') { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35, true); if (b) dir.copy(b.dir); }
     const sp = this.spread * Math.sqrt(Math.random()), a = Math.random() * TAU;
     const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize(), up = new THREE.Vector3().crossVectors(side, dir);
     dir.addScaledVector(side, Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp).normalize();
@@ -7365,7 +7382,7 @@ const GUN = {
     PLAY.aimPitch = clamp(PLAY.aimPitch - 0.012, -0.75, 0.9);
     PLAY.camShake = 0.045;
     this.fovPunch = 1;
-    this.steady *= 0.35;
+    this.steady *= 0.6;
     if (this.touch && navigator.vibrate) { try { navigator.vibrate(22); } catch (e) { /* ignore */ } }
     GSFX.shot(!!G.room);
     setTimeout(() => GSFX.cock(), 260);
@@ -9504,8 +9521,12 @@ class NPC {
     H.update(dt);
     const can = H.canWalk();
     // waiting for someone who comes to him (the doctor): standing, facing him, the way kept for later
-    const hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
+    let hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
     if (hold) { const B = this.waitFor.by; this.faceHold = Math.atan2(B.pos.x - this.pos.x, B.pos.z - this.pos.z); }
+    /* hit while on his way (a blow, a bullet): he does not walk on as if nothing happened. For the moment of the
+       hit (Vitals.stunT) he stops, turns to where it came from and takes it; his way is kept, so afterwards he goes
+       on, unless his behaviour (onHarm) has decided on something else: fight back, run, go to the doctor */
+    if (this.hitFrom && G.time < this.hitFrom.until && !H.busy() && !(this.fight && this.fight.on)) { hold = true; this.faceHold = Math.atan2(this.hitFrom.x - this.pos.x, this.hitFrom.z - this.pos.z); }
     // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
     if (!this.goal && can && !hold && ((this.path && this.path.length) || this.dest)) this.nextLeg();
@@ -9949,8 +9970,9 @@ class Vitals {
   shot(info) {
     const N = this.npc, Z = ZONES[info.zone], dir = info.dir;
     if (this.dead) { this.blood = Math.max(0, this.blood - 0.05); HARM.bloodFx(info.point, dir, 0.6, N); return { zone: info.zone, onBody: true }; }
-    this.lastHit = G.time;
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + 1.1 };
     if (info.zone === 'hat') { this.hatOff = true; HARM.knockHat(N, dir); this.flinchBy(dir, 0.5, 'head'); this.pain += 0.1; return { zone: 'hat' }; }
+    if ((info.hatToo || info.zone === 'head') && !this.hatOff) { this.hatOff = true; HARM.knockHat(N, dir); }   // (a bullet in the head takes the hat with it)
     HARM.bloodFx(info.point, dir, info.zone === 'head' ? 1.6 : 1, N);
     const w = { zone: info.zone, side: info.side || '', kind: 'shot', sev: Z.sev || 1, at: Math.round(TIME.min), heal: 0, bandaged: false, part: info.part, lp: info.local ? [+info.local.x.toFixed(3), +info.local.y.toFixed(3), +info.local.z.toFixed(3)] : null };
     // how it bleeds: a vein (closes by itself in time) or the artery (does not); only the upper arm has the big one
@@ -9986,7 +10008,7 @@ class Vitals {
   blow(o) {
     if (this.dead) return null;
     const N = this.npc;
-    this.lastHit = G.time;
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + (o.heavy ? 0.9 : 0.55) };
     const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
     /* a beating knocks a man out long before it kills him: blows daze him, enough of them put him out cold (ko,
        lying there with his eyes shut); only a long, long beating of a man who is already out kills (trauma) */
@@ -10688,7 +10710,7 @@ const HARM = {
           const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
           this._inv.copy(part.matrixWorld).invert();
           const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
-          let t0 = near, t1 = best ? best.t : far, ok = true;
+          let t0 = near, t1 = best ? best.t + (pass === 0 ? 0.1 : 0) : far, ok = true;
           for (const ax of ['x', 'y', 'z']) {
             const inv = 1 / (ld[ax] || 1e-9), sl = ax === 'y' ? m * 0.5 : m;
             let ta = (B.min[ax] - sl - lo[ax]) * inv, tb = (B.max[ax] + sl - lo[ax]) * inv;
@@ -10697,15 +10719,45 @@ const HARM = {
             if (t0 > t1) { ok = false; break; }
           }
           if (!ok) continue;
+          // the exact pass: the bullet against the part's own triangles (the boxes overlap: the pelvis box takes in
+          // the tops of the thighs, the chest box the upper arms), so it hits what you see where you aimed
+          if (pass === 0) { const te = this.triHit(g, lo, ld, near, t1); if (te === null) continue; t0 = te; }
           const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
           // the point onto the part itself (for the zone, the wound and the stain)
           local.x = clamp(local.x, B.min.x, B.max.x); local.y = clamp(local.y, B.min.y, B.max.y); local.z = clamp(local.z, B.min.z, B.max.z);
-          best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
+          const h = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
+          /* what hangs over a limb (an apron or a coat over the thigh, a vest over the upper arm) does not stop the
+             bullet: a limb right behind such a layer (≤ 8 cm) is what it hits */
+          const cover = (x) => x.part === 'pelvis' || x.part === 'torso', limb = (x) => this.THIN.test(x.part) && x.part !== 'hat';
+          if (!best || (t0 < best.t && !(cover(h) && limb(best) && best.t - t0 < 0.08)) || (limb(h) && cover(best) && t0 - best.t < 0.08)) best = h;
         }
       }
     }
     if (bestItem && (!best || bestItem.t < best.t + 0.06)) return bestItem;
+    // through the hat into the head: the head counts (the hat goes as well)
+    if (best && best.part === 'hat') {
+      const N = best.npc, part = N.ch.p.head; this._inv.copy(part.matrixWorld).invert();
+      const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
+      const te = this.triHit(part.geometry, lo, ld, best.t, best.t + 0.4);
+      if (te !== null) best = { t: te, npc: N, part: 'head', local: new THREE.Vector3(lo.x + ld.x * te, lo.y + ld.y * te, lo.z + ld.z * te), point: new THREE.Vector3(o.x + d.x * te, o.y + d.y * te, o.z + d.z * te), hatToo: true };
+    }
     if (best && best.part) Object.assign(best, this.zoneOf(best.part, best.local));
+    return best;
+  },
+  // the nearest triangle of a geometry a ray (local frame) goes through between t0 and t1, or null
+  triHit(g, o, d, t0, t1) {
+    const P = g.attributes.position.array, I = g.index ? g.index.array : null, n = I ? I.length : P.length / 3;
+    const ray = this._ray || (this._ray = new THREE.Ray()), A = this._ta || (this._ta = new THREE.Vector3()), Bv = this._tb || (this._tb = new THREE.Vector3()), C = this._tc || (this._tc = new THREE.Vector3()), X = this._tx || (this._tx = new THREE.Vector3());
+    ray.origin.copy(o); ray.direction.copy(d).normalize();
+    const sc = d.length() || 1;   // (local and world lengths: the part frames are not scaled, but be safe)
+    let best = null;
+    for (let k = 0; k < n; k += 3) {
+      const a = I ? I[k] : k, b = I ? I[k + 1] : k + 1, c = I ? I[k + 2] : k + 2;
+      A.fromArray(P, a * 3); Bv.fromArray(P, b * 3); C.fromArray(P, c * 3);
+      if (!ray.intersectTriangle(A, Bv, C, false, X)) continue;
+      const t = X.distanceTo(ray.origin) / sc;
+      if (t >= t0 && t <= t1 && (best === null || t < best)) best = t;
+    }
     return best;
   },
   // the zone of a point on a part (part frame: +x his left, +y up, +z ahead)
@@ -10730,7 +10782,7 @@ const HARM = {
   shot(hit, dir) {
     const N = hit.npc;
     if (hit.item) { this.itemShot(N, hit.item, dir, hit.point); return; }
-    const w = N.hp.shot({ zone: hit.zone, side: hit.side, part: hit.part, local: hit.local, dir, point: hit.point });
+    const w = N.hp.shot({ zone: hit.zone, side: hit.side, part: hit.part, local: hit.local, dir, point: hit.point, hatToo: hit.hatToo });
     if (hit.zone !== 'hat') {
       this.fleshSound(hit.point, hit.zone === 'head');
       // the bullet comes out the other side and marks the wall behind (not every time)
@@ -11415,7 +11467,9 @@ const BARKEEP = {
       if (this.st !== 'brawl' && N.hp.blood > BLOOD_WEAK && !N.hp.dead && this.st !== 'dead') {
         if (F.punches === 1) this.note('Er hat dich geschlagen.');
         this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
-        setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy()) this.shout('brawl'); }, 350);
+        // (his own words once per fight, if the AI has answered here before: what happened is a punch, not a shot)
+        const sit = 'Der Fremde hat dir gerade mit der bloßen Faust ' + (info.head ? 'ins Gesicht' : 'in den Leib') + ' geschlagen, ohne Waffe. Du wehrst dich mit den Fäusten.';
+        setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy() && !TALK.remark(N, sit, () => this.shout('brawl'), 'angry', 1)) this.shout('brawl'); }, 350);
       } else if (info.ground && Math.random() < 0.35) this.shout('groan');
       return;
     }
@@ -11471,7 +11525,10 @@ const BARKEEP = {
         const kind = this.aimedT > 0.2 ? 'mercy' : bleeding && Math.random() < 0.7 ? 'bleed' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
         // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
         const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
-        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'bleed' ? 'Du liegst am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
+        const shot = H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5);
+        const sitDown = !shot ? 'Der Fremde hat dich mit den Fäusten zu Boden geschlagen (geschossen hat er nicht). Dir dröhnt der Schädel, du kommst kaum hoch.'
+          : kind === 'bleed' ? 'Du liegst angeschossen am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du bist angeschossen und spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst angeschossen hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst angeschossen am Boden, die Schusswunde brennt.';
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, sitDown, () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
@@ -12402,6 +12459,8 @@ SAVE.part('graves', () => GRAVES.list.slice(), (d) => { GRAVES.list = Array.isAr
    else knows someone is dead, not who did it (until gossip tells them). A death: the next one alive takes over once
    the body is taken away; when all three are dead the saloon is closed, and three days later a new owner from
    out of town (cautious, armed) opens it again. */
+// what one sees of a man at a glance (for what the one coming down says)
+function C2(N, name) { return N.hp.dead ? name + ' liegt tot am Boden.' : N.hp.busy() ? name + ' liegt am Boden' + (N.hp.wounds.some((w) => w.kind === 'shot' && !w.bandaged) ? ' und blutet.' : '.') : N.hp.needsDoc() ? name + ' ist angeschossen.' : name + ' steht hinter der Theke.'; }
 const CREW = {
   m: [], helpers: [], told: new Set(), closedAt: null, lastDead: null, hold: false, _v: new THREE.Vector3(), _w: new THREE.Vector3(),
   KEYS: ['mem', 'att', 'grudge', 'temper', 'served', 'damage', 'recent', 'poisonNext', 'cool', 'bags', 'lastLine', 'shotAt', 'metNew', 'seenAt'],
@@ -12429,6 +12488,38 @@ const CREW = {
     const L = this.LINES[kind], B = this.bags[kind] || (this.bags[kind] = []);
     if (!B.length) for (let i = 0; i < L.length; i++) B.splice(Math.floor(Math.random() * (B.length + 1)), 0, i);
     const x = L[B.pop()]; return { text: x[0].replace('{o}', o || ''), mood: x[1] };
+  },
+  // his own words about what he sees (the AI, if it has answered before and he has some left), else his line
+  react(h, kind, situation, o) { const N = h.npc; if (!TALK.remark(N, situation, () => this.say(N, kind, o), this.line(kind, o).mood, 1)) this.say(N, kind, o); },
+  /* the one who came down can be talked to: a short character (the system part, kept the same so it is cached),
+     what he is doing and what he knows as the context, a few gestures and "go back up" as actions */
+  persona(h) {
+    const C = this, W = this.W(h.i), m = this.m[h.i];
+    const DOING = { down: 'Du kommst gerade die Treppe herunter.', look: 'Du schaust nach, was im Saloon los ist.', fetch: 'Du rennst zum Doc, um ihn zu holen.', back: 'Du kommst vom Doc zurück.',
+      brawl: 'Du prügelst dich gerade mit dem Fremden.', hurt: 'Du bist verletzt und willst zum Doc.', up: 'Du gehst wieder hinauf in dein Zimmer.' };
+    return {
+      actions: ['none', 'nod', 'shake_head', 'point_door', 'point_you', 'fist_shake', 'calm_down', 'cross_arms', 'shrug', 'go_up'],
+      rules: ['Du bist ' + W.name + ' aus dem Saloon von Dust Creek (Arizona-Territorium, 1885): ' + W.age + '. ' + W.more + ' ' + (W.mind || '') + ' Du duzt jeden.',
+        C.context(h.i) + ' Du hast gerade keinen Dienst und bist von oben heruntergekommen.',
+        'Kerniges, einfaches Deutsch, höchstens zwei kurze Sätze unter 25 Wörtern, es wird laut vorgelesen. Kein Markdown, keine Sternchen. Von der modernen Welt weißt du nichts.',
+        'Aktion go_up, wenn du wieder hinaufgehst; sonst eine passende Geste oder none.'].join('\n'),
+      context() {
+        const B = BARKEEP, BN = B.npc, out = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.', DOING[h.ph] || ''];
+        if (BN) out.push(C.W(B.whoI).name + ' (hinter der Theke): ' + (BN.hp.dead ? 'liegt tot am Boden' : BN.hp.describe() || 'unverletzt') + '.');
+        else out.push('Hinter der Theke steht gerade niemand.');
+        if (h.knelt && BN && BN.hp.dead) out.push('Du hast neben ihm gekniet, er ist tot.');
+        if (GUN.state !== 'holster' && !GUN.reloadThenHolster) out.push(C.aimedAt(h.npc) ? 'Der Fremde zielt mit dem Revolver auf dich!' : 'Der Fremde hat den Revolver in der Hand.');
+        const a = m.d.att; out.push('Deine Haltung zum Fremden: ' + (a < -0.6 ? 'du hasst ihn' : a < -0.2 ? 'misstrauisch' : a < 0.2 ? 'neutral' : 'freundlich') + '.');
+        const body = h.npc.hp.describe(); if (body) out.push('Dein Körper: ' + body + '.');
+        if (m.d.mem.length) out.push('Was du weißt: ' + m.d.mem.slice(-5).join(' '));
+        return out.join('\n');
+      },
+      offline(text) { const t = text.toLowerCase(); return /doc|arzt|hilfe/.test(t) ? { say: 'Ich hol ihn ja schon.', action: 'nod' } : /raus|geh|verschwind/.test(t) ? { say: 'Ich geh, wann ich will.', action: 'cross_arms' } : { say: ['Hm.', 'Lass mich.', 'Nicht jetzt.'][Math.floor(Math.random() * 3)], action: 'none' }; },
+      act(action) { if (action === 'go_up') { h.ph = 'up'; C.toStairs(h); return; } if (GESTURE.AI.includes(action)) h.npc.gesture(action, action === 'point_door' ? BARKEEP.doorPoint() : null); },
+      forget() { m.d.mem = []; m.d.att = 0; },
+      memory() { return { events: m.d.mem.slice(), inPrompt: 5, facts: [['Haltung zu dir', (m.d.att || 0).toFixed(2)]] }; },
+      forgetEvent(i) { m.d.mem.splice(i, 1); }
+    };
   },
   say(N, kind, o) { if (!N || N.hp.dead || N.hp.out) return false; const l = this.line(kind, o); SAY.hide(N); return N.speak(l.text, undefined, l.mood, true); },
   blank() { return { mem: [], att: 0, grudge: 0, temper: null, served: 0, damage: { holes: 0, glass: 0 }, recent: [], poisonNext: false, cool: {}, bags: {}, lastLine: {}, shotAt: null, metNew: true, seenAt: null, talkLog: [], asked: [], body: null, bodyAt: null }; },
@@ -12572,7 +12663,9 @@ const CREW = {
     const W = this.W(i), m = this.m[i];
     if (!m.d) m.d = this.blank();
     const h = { i, npc: N, ph: 'down', t: 0, said: {}, saw: 0 };
-    N.id = 'crew_' + W.id; N.persona = null; N.held = () => [];
+    N.id = 'crew_' + W.id; N.held = () => [];
+    N.talkLog = m.d.talkLog || (m.d.talkLog = []); N.asked = new Set(m.d.asked || []);
+    N.persona = this.persona(h);
     N.gossip = { facts: () => m.d.mem.filter((x) => !/hat dir erzählt/.test(x) && /\bEr\b|Fremde/.test(x)), hear: (from, f) => this.note(i, GOSSIP.told(from, f)) };
     N.fight = new Brawler(N, W.fight); N.fight.on = false;
     N.onHarm = (info) => this.helperHarm(h, info); N.onBump = null;
@@ -12592,7 +12685,10 @@ const CREW = {
     if (info.type === 'shot') { if (info.zone === 'hat') return; this.note(h.i, 'Er hat dir ' + zoneInto(info.zone, info.side) + ' geschossen (' + TIME.stamp() + ').'); m.d.att = -1; m.d.grudge = Math.min(1, m.d.grudge + 0.6); m.d.shotAt = TIME.min; h.ph = 'hurt'; h.t = 0; if (N.fight.on) N.fight.stop(); return; }
     if (info.type === 'blow' && !N.fight.on && h.ph !== 'hurt' && !N.hp.busy()) {
       m.d.att = Math.max(-1, m.d.att - 0.1); m.d.grudge = Math.min(1, m.d.grudge + 0.05);
-      if (this.W(h.i).fight.courage >= 0.5) { h.ph = 'brawl'; N.fight.start(); } else { h.ph = 'up'; this.toStairs(h); }
+      h.resume = h.ph === 'brawl' ? h.resume : h.ph;   // what he was on (to take up again after the fight)
+      N.crouchT = 0; N.free(0); N.free(1);
+      if (this.W(h.i).fight.courage >= 0.5) { h.ph = 'brawl'; N.fight.start(); }
+      else { h.ph = 'up'; this.toStairs(h); N.hurry = 2.2; h.climb = false; if (!h.said.fled) { h.said.fled = 1; this.react(h, 'stop', 'Der Fremde hat dich mit der Faust geschlagen. Du bist alt und kein Schläger, du weichst zurück und flüchtest nach oben.'); } }
     }
   },
   // anyone (other than the dead one) who has it in view: in the same room, awake
@@ -12626,7 +12722,7 @@ const CREW = {
       if (h.ph === 'brawl') h.ph = 'look';
       return;
     }
-    if (h.ph === 'brawl') { const r = N.fight.update(dt); if (r) { h.ph = 'look'; h.t = 0; this.note(h.i, 'Du hast dich mit dem Fremden geprügelt' + (r === 'won' ? ' und ihn umgehauen' : '') + ' (' + TIME.stamp() + ').'); } return; }
+    if (h.ph === 'brawl') { const r = N.fight.update(dt); if (r) { h.ph = h.resume === 'up' ? 'up' : h.resume === 'fetch' ? 'fetch' : 'look'; h.resume = null; h.t = 0; if (h.ph === 'up') { h.climb = false; this.toStairs(h); } this.note(h.i, 'Du hast dich mit dem Fremden geprügelt' + (r === 'won' ? ' und ihn umgehauen' : '') + ' (' + TIME.stamp() + ').'); } return; }
     if (h.ph === 'hurt') {
       // hurt: to the doctor (if there is one), then back up
       if (!H.needsDoc() || !DOC.npc || DOC.npc.hp.dead) { h.ph = 'up'; this.toStairs(h); return; }
@@ -12649,7 +12745,7 @@ const CREW = {
       if (BN && BN.hp.dead && G.room === R && dP < 14) { h.caught = true; }
       // what the one at the bar can tell him (he is alive): who shot him
       if (BN && !BN.hp.dead) this.handTale({ i: B.whoI, d: null }, this.m[h.i].d, h.i);
-      if (G.room === R && !(BN && BN.hp.dead)) this.say(N, 'down');
+      if (G.room === R && !(BN && BN.hp.dead)) this.react(h, 'down', 'Du bist von oben heruntergekommen, weil du ' + (this.m[h.i].why === 'shots' ? 'Schüsse' : 'Lärm') + ' gehört hast. ' + (BN ? C2(BN, this.W(B.whoI).name) : 'Hinter der Theke ist keiner.'));
       return;
     }
     // running for the doctor: to him, a word, and back
@@ -12672,7 +12768,7 @@ const CREW = {
     // looking after things: who needs him most
     const lying = BN && (BN.hp.busy() || (BN.hp.needsDoc() && B.st === 'hurt'));
     if (BN && BN.hp.dead) return this.vigil(h, dt, BN, inside, dP);
-    if (BN && B.st === 'brawl' && N.fight && this.W(h.i).fight.courage >= 0.6 && !PHP.out) { h.ph = 'brawl'; N.fight.start(); this.say(N, 'join'); this.note(h.i, 'Der Fremde hat sich mit ' + this.W(B.whoI).name + ' geprügelt, du bist dazwischengegangen (' + TIME.stamp() + ').'); return; }
+    if (BN && B.st === 'brawl' && N.fight && this.W(h.i).fight.courage >= 0.6 && !PHP.out) { h.ph = 'brawl'; N.fight.start(); this.react(h, 'join', 'Der Fremde prügelt sich mit ' + this.W(B.whoI).name + ', du gehst mit den Fäusten dazwischen.'); this.note(h.i, 'Der Fremde hat sich mit ' + this.W(B.whoI).name + ' geprügelt, du bist dazwischengegangen (' + TIME.stamp() + ').'); return; }
     if (BN && B.st === 'brawl' && !h.said.stop) { h.said.stop = 1; this.say(N, 'stop'); }
     if (BN && lying && BN.room === N.room) return this.tend(h, dt, BN);
     if (h.t > 12 && !(BN && B.st === 'brawl')) { if (G.room === R && !h.said.quiet) { h.said.quiet = 1; this.say(N, 'quiet'); } h.ph = 'up'; this.toStairs(h); }
@@ -12720,8 +12816,8 @@ const CREW = {
         h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
         // you are still here, standing over him: he knows
         const seen = (h.caught || h.saw) && inside && dP < 14;
-        this.say(N, seen ? 'griefSeen' : 'grief');
-        if (seen) { this.learnKiller(h.i); setTimeout(() => this.say(N, 'caught'), 2600); h.angry = true; }
+        if (seen) { this.learnKiller(h.i); this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
+        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
       }
       return;
     }
@@ -12733,7 +12829,7 @@ const CREW = {
   },
   gone(h) {
     const i = this.helpers.indexOf(h); if (i >= 0) this.helpers.splice(i, 1);
-    const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; }
+    const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; m.d.talkLog = (h.npc.talkLog || []).slice(-12); m.d.asked = [...(h.npc.asked || [])]; }
     h.npc.dispose();
   },
   // he knows you did it: how he takes it (the tempers of npc/barkeep_fate.js), unless he already has
@@ -12944,7 +13040,7 @@ const DOC = {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
       this.remember('Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
-      this.say('fooled'); N.gesture('fist_shake'); home(); return;
+      this.react('fooled', 'Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen, du bist hingerannt, aber da ist niemand. Er hat dich zum Narren gehalten.'); N.gesture('fist_shake'); home(); return;
     }
     if (J.phase === 'to') {
       const P = J.P;
@@ -12976,7 +13072,7 @@ const DOC = {
       const l = N.toLocal(nk, this._w); N.reach(1, l.x, l.y, Math.max(0.25, l.z)); N.handShape[1] = { point: 0.6, open: 0.3 };
       if (J.t > 3.2) {
         P.docChecked = true; N.handShape[1] = null; N.free(1); N.crouchT = 0;
-        const said = this.say('dead');
+        const said = this.react('dead', P.name + ' liegt tot vor dir. Du hast an seinem Hals nach dem Puls gefühlt: nichts mehr. Du kannst nichts mehr für ihn tun.');
         if (!said && G.room === (N.room || null)) TOAST.show('Doc: „Der ist tot. Da kann ich nichts mehr tun.“');
         this.remember(P.name + ' war tot, als du kamst. Du konntest nichts mehr tun (' + TIME.stamp() + ').');
         worldEvent('docChecked', P.pos.x, P.pos.y, P.pos.z, { by: 'doctor', npc: P.id });
@@ -12987,7 +13083,7 @@ const DOC = {
     if (J.phase === 'work') {
       const P = J.P, lying = P.hp.busy();
       P.waitFor = { by: N, t: G.time + 1.5 };
-      if (P.hp.dead) { this.say('late'); P.waitFor = null; home(); return; }
+      if (P.hp.dead) { this.react('late', P.name + ' ist dir unter den Händen gestorben, bevor du ihn verbinden konntest.'); P.waitFor = null; home(); return; }
       N.crouchT = lying ? 1 : 0;
       const w = P.hp.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.part && x.lp) || P.hp.wounds[0];
       const part = w && w.part ? P.ch.p[w.part] : P.ch.p.torso;
@@ -12999,7 +13095,7 @@ const DOC = {
       if (J.t > 6) {
         const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
-        this.learn(P, 0); this.snip(); this.say('done');
+        this.learn(P, 0); this.snip(); this.react('done', 'Du hast ' + P.name + ' gerade an Ort und Stelle verbunden (' + H.describe() + ').');
         if (J.by) this.remember(J.by + ' hat dich zu ' + P.name + ' geholt, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); else { this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); }
         P.waitFor = null;
         if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
@@ -13073,6 +13169,8 @@ const DOC = {
   },
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
   feel(d) { this.att = clamp(this.att + d, -1, 1); },
+  // his own words about it (the AI, when it has answered here before and he has some left: TALK.remark), else his line
+  react(kind, situation) { if (!TALK.remark(this.npc, situation, () => this.say(kind), this.MOOD[kind] || 'neutral', 1)) return this.say(kind); return true; },
   say(kind, cool) {
     if (cool && (this.cool[kind] || -99) > G.time - cool) return false;
     if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'shot' || kind === 'hurt')) return false;
@@ -13108,7 +13206,7 @@ const DOC = {
     }
     if (info.type === 'blow') {
       this.feel(-0.1);
-      if (!N.fight.on && !N.hp.dead) { this.remember('Er hat dich geschlagen (' + TIME.stamp() + ').'); this.st = 'fight'; N.fight.start(); }
+      if (!N.fight.on && !N.hp.dead) { this.remember('Er hat dich mit der Faust geschlagen (' + TIME.stamp() + ').'); this.st = 'fight'; N.crouchT = 0; N.free(0); N.free(1); N.fight.start(); }
     }
   },
   event(e) {
@@ -13130,7 +13228,16 @@ const DOC = {
     const inside = G.room === this.R;
     if (N.hp.busy()) return;
     if (this.st === 'call') { this.updCall(dt); return; }
-    if (this.st === 'fight') { const r = N.fight.update(dt); if (r) { this.st = 'idle'; N.walkTo(this.spot('desk').x, this.spot('desk').z, this.spot('desk').yaw); } return; }
+    if (this.st === 'fight') {
+      const r = N.fight.update(dt);
+      if (r) {
+        // the fight over, back to what he was doing: someone still needs him (the call), or home to his desk
+        const J = this.callJob;
+        if (J && J.phase !== 'home' && J.phase !== 'after' && (!J.P || !J.P.hp.dead || J.phase === 'to' || J.phase === 'check')) { this.st = 'call'; N.hurry = J.urgent ? 2.1 : 1.3; if (J.phase === 'work') J.phase = 'to'; if (J.dest) N.walkTo(J.dest.x, J.dest.z); }
+        else { this.st = 'idle'; this.callJob = null; N.walkTo(this.spot('desk').x, this.spot('desk').z, this.spot('desk').yaw); }
+      }
+      return;
+    }
     // greet who comes in
     if (inside && !this.wasInside) setTimeout(() => this.say('hello', 90), 900);
     this.wasInside = inside;
@@ -13214,7 +13321,7 @@ const DOC = {
       if (this.tt > 5.5) {
         if (P) { const n = P.hp.bandageAll(); this.learn(P, n); if (C.done) C.done(P); }
         else { PHP.hp = 1; PHP.daze = 0; PHP.poison = 0; PHP.sick = 0; worldEvent('treated', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'doctor' }); this.remember('Du hast ihn behandelt (' + TIME.stamp() + ').'); this.feel(0.05); }
-        this.snip(); this.say('done');
+        this.snip(); this.react('done', P ? 'Du hast ' + P.name + ' gerade in deiner Praxis verbunden (' + P.hp.describe() + ').' : 'Du hast den Fremden gerade behandelt.');
         this.cur = null; this.st = 'idle'; N.free(0); N.free(1); this.actT = 3; this.act = 'stand';
       }
     }
@@ -14075,7 +14182,7 @@ const TALK = {
     else this.setState((this.micOff ? '' : 'V: weiterreden \u00b7 ') + VOICE.label(), 'idle');
     this.lastErr = '';
     const act = String(out.action || 'none');
-    n.persona.act(this.ACTIONS.includes(act) ? act : 'none');
+    n.persona.act((n.persona.actions || this.ACTIONS).includes(act) ? act : 'none');
     if (this.micOff && this.open && !MICWIN.connected()) this.typeMode();
   },
   // ways a spontaneous remark can go (one is picked at random each time)
@@ -14128,6 +14235,10 @@ const TALK = {
     const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
     const H = n.hp, bw = H && H.wounds.filter((w) => w.b && !w.bandaged).sort((a, b) => b.b - a.b)[0];
     const bleed = bw && H.bleed > 0.0006 ? ' Du verblutest gerade: aus der Wunde ' + zoneIn(bw.zone, bw.side) + (bw.art && !bw.field ? ' pumpt das Blut stoßweise heraus und hört nicht auf' : ' läuft das Blut und hört nicht auf') + '. Das spürst du, das sagst du auch: dass du verblutest, dass jemand draufdrücken oder den Doc holen muss.' : '';
+    /* shot or beaten: the AI has to know which (a man knocked down with fists is not "shot", and the other way round) */
+    const shot = H && H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5), beaten = H && !shot && (H.daze > 0.3 || H.ko > 0 || H.wounds.some((w) => w.kind === 'blow' && TIME.min - w.at < 60));
+    if (beaten && lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Der Fremde hat dich mit den Fäusten zusammengeschlagen (nicht geschossen). Du liegst am Boden, dir dröhnt der Schädel, alles dreht sich, du schmeckst Blut im Mund.' + gun + ' Du hast Angst, dass er weiterprügelt. Kurz, benommen, in ganzen Sätzen.\n';
+    if (beaten && lv >= 1) return 'DEIN ZUSTAND: Der Fremde hat dich mit den Fäusten verprügelt (nicht geschossen): ' + H.describe() + '.' + gun + ' Dir tut alles weh.\n';
     if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt und schwindlig.' + bleed + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch. Ein kurzer, ganzer Satz, leise und mit letzter Kraft, aber verständlich.\n';
     if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + bleed + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz und unter Schmerzen, aber in ganzen Sätzen.\n';
     if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + bleed + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
@@ -14151,11 +14262,16 @@ const TALK = {
     if (!n.canBeHeard()) return true;   // nobody there to hear it: say nothing at all
     if (VOICE.speaking(n) || G.time - (n.aiAt || -99) < 3) return false;
     if (G.time - (this.remarkT || -99) < 6) return false;
+    /* each person has a small allowance of own words (two, one more every 45 s): what happens often then gets his
+       ready-made line, whose sound is kept, instead of another paid answer */
+    const tok = Math.min(2, (n.aiTok === undefined ? 2 : n.aiTok) + (G.time - (n.aiTokT === undefined ? G.time : n.aiTokT)) / 45); n.aiTokT = G.time; n.aiTok = tok;
+    if (tok < 1) return false;
+    n.aiTok = tok - 1;
     this.remarking = true; this.remarkT = G.time;
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
-    const acts = ['none'].concat(GESTURE.AI);
+    const acts = P.actions ? P.actions.filter((a) => a === 'none' || GESTURE.AI.includes(a) || a === 'go_up') : ['none'].concat(GESTURE.AI);
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const dire = n.plight && n.plight() >= 2;
@@ -14199,7 +14315,7 @@ const TALK = {
     const P = n.persona, hist = (n.talkLog || []).slice(-9, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
-      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
+      'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + (P.actions || this.ACTIONS).join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
       'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';
     const once = async () => {
       const ctl = this.ctl = new AbortController(); this.userAbort = false;

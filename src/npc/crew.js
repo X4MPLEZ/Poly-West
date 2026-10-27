@@ -12,6 +12,8 @@
    else knows someone is dead, not who did it (until gossip tells them). A death: the next one alive takes over once
    the body is taken away; when all three are dead the saloon is closed, and three days later a new owner from
    out of town (cautious, armed) opens it again. */
+// what one sees of a man at a glance (for what the one coming down says)
+function C2(N, name) { return N.hp.dead ? name + ' liegt tot am Boden.' : N.hp.busy() ? name + ' liegt am Boden' + (N.hp.wounds.some((w) => w.kind === 'shot' && !w.bandaged) ? ' und blutet.' : '.') : N.hp.needsDoc() ? name + ' ist angeschossen.' : name + ' steht hinter der Theke.'; }
 const CREW = {
   m: [], helpers: [], told: new Set(), closedAt: null, lastDead: null, hold: false, _v: new THREE.Vector3(), _w: new THREE.Vector3(),
   KEYS: ['mem', 'att', 'grudge', 'temper', 'served', 'damage', 'recent', 'poisonNext', 'cool', 'bags', 'lastLine', 'shotAt', 'metNew', 'seenAt'],
@@ -39,6 +41,38 @@ const CREW = {
     const L = this.LINES[kind], B = this.bags[kind] || (this.bags[kind] = []);
     if (!B.length) for (let i = 0; i < L.length; i++) B.splice(Math.floor(Math.random() * (B.length + 1)), 0, i);
     const x = L[B.pop()]; return { text: x[0].replace('{o}', o || ''), mood: x[1] };
+  },
+  // his own words about what he sees (the AI, if it has answered before and he has some left), else his line
+  react(h, kind, situation, o) { const N = h.npc; if (!TALK.remark(N, situation, () => this.say(N, kind, o), this.line(kind, o).mood, 1)) this.say(N, kind, o); },
+  /* the one who came down can be talked to: a short character (the system part, kept the same so it is cached),
+     what he is doing and what he knows as the context, a few gestures and "go back up" as actions */
+  persona(h) {
+    const C = this, W = this.W(h.i), m = this.m[h.i];
+    const DOING = { down: 'Du kommst gerade die Treppe herunter.', look: 'Du schaust nach, was im Saloon los ist.', fetch: 'Du rennst zum Doc, um ihn zu holen.', back: 'Du kommst vom Doc zurück.',
+      brawl: 'Du prügelst dich gerade mit dem Fremden.', hurt: 'Du bist verletzt und willst zum Doc.', up: 'Du gehst wieder hinauf in dein Zimmer.' };
+    return {
+      actions: ['none', 'nod', 'shake_head', 'point_door', 'point_you', 'fist_shake', 'calm_down', 'cross_arms', 'shrug', 'go_up'],
+      rules: ['Du bist ' + W.name + ' aus dem Saloon von Dust Creek (Arizona-Territorium, 1885): ' + W.age + '. ' + W.more + ' ' + (W.mind || '') + ' Du duzt jeden.',
+        C.context(h.i) + ' Du hast gerade keinen Dienst und bist von oben heruntergekommen.',
+        'Kerniges, einfaches Deutsch, höchstens zwei kurze Sätze unter 25 Wörtern, es wird laut vorgelesen. Kein Markdown, keine Sternchen. Von der modernen Welt weißt du nichts.',
+        'Aktion go_up, wenn du wieder hinaufgehst; sonst eine passende Geste oder none.'].join('\n'),
+      context() {
+        const B = BARKEEP, BN = B.npc, out = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.', DOING[h.ph] || ''];
+        if (BN) out.push(C.W(B.whoI).name + ' (hinter der Theke): ' + (BN.hp.dead ? 'liegt tot am Boden' : BN.hp.describe() || 'unverletzt') + '.');
+        else out.push('Hinter der Theke steht gerade niemand.');
+        if (h.knelt && BN && BN.hp.dead) out.push('Du hast neben ihm gekniet, er ist tot.');
+        if (GUN.state !== 'holster' && !GUN.reloadThenHolster) out.push(C.aimedAt(h.npc) ? 'Der Fremde zielt mit dem Revolver auf dich!' : 'Der Fremde hat den Revolver in der Hand.');
+        const a = m.d.att; out.push('Deine Haltung zum Fremden: ' + (a < -0.6 ? 'du hasst ihn' : a < -0.2 ? 'misstrauisch' : a < 0.2 ? 'neutral' : 'freundlich') + '.');
+        const body = h.npc.hp.describe(); if (body) out.push('Dein Körper: ' + body + '.');
+        if (m.d.mem.length) out.push('Was du weißt: ' + m.d.mem.slice(-5).join(' '));
+        return out.join('\n');
+      },
+      offline(text) { const t = text.toLowerCase(); return /doc|arzt|hilfe/.test(t) ? { say: 'Ich hol ihn ja schon.', action: 'nod' } : /raus|geh|verschwind/.test(t) ? { say: 'Ich geh, wann ich will.', action: 'cross_arms' } : { say: ['Hm.', 'Lass mich.', 'Nicht jetzt.'][Math.floor(Math.random() * 3)], action: 'none' }; },
+      act(action) { if (action === 'go_up') { h.ph = 'up'; C.toStairs(h); return; } if (GESTURE.AI.includes(action)) h.npc.gesture(action, action === 'point_door' ? BARKEEP.doorPoint() : null); },
+      forget() { m.d.mem = []; m.d.att = 0; },
+      memory() { return { events: m.d.mem.slice(), inPrompt: 5, facts: [['Haltung zu dir', (m.d.att || 0).toFixed(2)]] }; },
+      forgetEvent(i) { m.d.mem.splice(i, 1); }
+    };
   },
   say(N, kind, o) { if (!N || N.hp.dead || N.hp.out) return false; const l = this.line(kind, o); SAY.hide(N); return N.speak(l.text, undefined, l.mood, true); },
   blank() { return { mem: [], att: 0, grudge: 0, temper: null, served: 0, damage: { holes: 0, glass: 0 }, recent: [], poisonNext: false, cool: {}, bags: {}, lastLine: {}, shotAt: null, metNew: true, seenAt: null, talkLog: [], asked: [], body: null, bodyAt: null }; },
@@ -182,7 +216,9 @@ const CREW = {
     const W = this.W(i), m = this.m[i];
     if (!m.d) m.d = this.blank();
     const h = { i, npc: N, ph: 'down', t: 0, said: {}, saw: 0 };
-    N.id = 'crew_' + W.id; N.persona = null; N.held = () => [];
+    N.id = 'crew_' + W.id; N.held = () => [];
+    N.talkLog = m.d.talkLog || (m.d.talkLog = []); N.asked = new Set(m.d.asked || []);
+    N.persona = this.persona(h);
     N.gossip = { facts: () => m.d.mem.filter((x) => !/hat dir erzählt/.test(x) && /\bEr\b|Fremde/.test(x)), hear: (from, f) => this.note(i, GOSSIP.told(from, f)) };
     N.fight = new Brawler(N, W.fight); N.fight.on = false;
     N.onHarm = (info) => this.helperHarm(h, info); N.onBump = null;
@@ -202,7 +238,10 @@ const CREW = {
     if (info.type === 'shot') { if (info.zone === 'hat') return; this.note(h.i, 'Er hat dir ' + zoneInto(info.zone, info.side) + ' geschossen (' + TIME.stamp() + ').'); m.d.att = -1; m.d.grudge = Math.min(1, m.d.grudge + 0.6); m.d.shotAt = TIME.min; h.ph = 'hurt'; h.t = 0; if (N.fight.on) N.fight.stop(); return; }
     if (info.type === 'blow' && !N.fight.on && h.ph !== 'hurt' && !N.hp.busy()) {
       m.d.att = Math.max(-1, m.d.att - 0.1); m.d.grudge = Math.min(1, m.d.grudge + 0.05);
-      if (this.W(h.i).fight.courage >= 0.5) { h.ph = 'brawl'; N.fight.start(); } else { h.ph = 'up'; this.toStairs(h); }
+      h.resume = h.ph === 'brawl' ? h.resume : h.ph;   // what he was on (to take up again after the fight)
+      N.crouchT = 0; N.free(0); N.free(1);
+      if (this.W(h.i).fight.courage >= 0.5) { h.ph = 'brawl'; N.fight.start(); }
+      else { h.ph = 'up'; this.toStairs(h); N.hurry = 2.2; h.climb = false; if (!h.said.fled) { h.said.fled = 1; this.react(h, 'stop', 'Der Fremde hat dich mit der Faust geschlagen. Du bist alt und kein Schläger, du weichst zurück und flüchtest nach oben.'); } }
     }
   },
   // anyone (other than the dead one) who has it in view: in the same room, awake
@@ -236,7 +275,7 @@ const CREW = {
       if (h.ph === 'brawl') h.ph = 'look';
       return;
     }
-    if (h.ph === 'brawl') { const r = N.fight.update(dt); if (r) { h.ph = 'look'; h.t = 0; this.note(h.i, 'Du hast dich mit dem Fremden geprügelt' + (r === 'won' ? ' und ihn umgehauen' : '') + ' (' + TIME.stamp() + ').'); } return; }
+    if (h.ph === 'brawl') { const r = N.fight.update(dt); if (r) { h.ph = h.resume === 'up' ? 'up' : h.resume === 'fetch' ? 'fetch' : 'look'; h.resume = null; h.t = 0; if (h.ph === 'up') { h.climb = false; this.toStairs(h); } this.note(h.i, 'Du hast dich mit dem Fremden geprügelt' + (r === 'won' ? ' und ihn umgehauen' : '') + ' (' + TIME.stamp() + ').'); } return; }
     if (h.ph === 'hurt') {
       // hurt: to the doctor (if there is one), then back up
       if (!H.needsDoc() || !DOC.npc || DOC.npc.hp.dead) { h.ph = 'up'; this.toStairs(h); return; }
@@ -259,7 +298,7 @@ const CREW = {
       if (BN && BN.hp.dead && G.room === R && dP < 14) { h.caught = true; }
       // what the one at the bar can tell him (he is alive): who shot him
       if (BN && !BN.hp.dead) this.handTale({ i: B.whoI, d: null }, this.m[h.i].d, h.i);
-      if (G.room === R && !(BN && BN.hp.dead)) this.say(N, 'down');
+      if (G.room === R && !(BN && BN.hp.dead)) this.react(h, 'down', 'Du bist von oben heruntergekommen, weil du ' + (this.m[h.i].why === 'shots' ? 'Schüsse' : 'Lärm') + ' gehört hast. ' + (BN ? C2(BN, this.W(B.whoI).name) : 'Hinter der Theke ist keiner.'));
       return;
     }
     // running for the doctor: to him, a word, and back
@@ -282,7 +321,7 @@ const CREW = {
     // looking after things: who needs him most
     const lying = BN && (BN.hp.busy() || (BN.hp.needsDoc() && B.st === 'hurt'));
     if (BN && BN.hp.dead) return this.vigil(h, dt, BN, inside, dP);
-    if (BN && B.st === 'brawl' && N.fight && this.W(h.i).fight.courage >= 0.6 && !PHP.out) { h.ph = 'brawl'; N.fight.start(); this.say(N, 'join'); this.note(h.i, 'Der Fremde hat sich mit ' + this.W(B.whoI).name + ' geprügelt, du bist dazwischengegangen (' + TIME.stamp() + ').'); return; }
+    if (BN && B.st === 'brawl' && N.fight && this.W(h.i).fight.courage >= 0.6 && !PHP.out) { h.ph = 'brawl'; N.fight.start(); this.react(h, 'join', 'Der Fremde prügelt sich mit ' + this.W(B.whoI).name + ', du gehst mit den Fäusten dazwischen.'); this.note(h.i, 'Der Fremde hat sich mit ' + this.W(B.whoI).name + ' geprügelt, du bist dazwischengegangen (' + TIME.stamp() + ').'); return; }
     if (BN && B.st === 'brawl' && !h.said.stop) { h.said.stop = 1; this.say(N, 'stop'); }
     if (BN && lying && BN.room === N.room) return this.tend(h, dt, BN);
     if (h.t > 12 && !(BN && B.st === 'brawl')) { if (G.room === R && !h.said.quiet) { h.said.quiet = 1; this.say(N, 'quiet'); } h.ph = 'up'; this.toStairs(h); }
@@ -330,8 +369,8 @@ const CREW = {
         h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
         // you are still here, standing over him: he knows
         const seen = (h.caught || h.saw) && inside && dP < 14;
-        this.say(N, seen ? 'griefSeen' : 'grief');
-        if (seen) { this.learnKiller(h.i); setTimeout(() => this.say(N, 'caught'), 2600); h.angry = true; }
+        if (seen) { this.learnKiller(h.i); this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
+        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
       }
       return;
     }
@@ -343,7 +382,7 @@ const CREW = {
   },
   gone(h) {
     const i = this.helpers.indexOf(h); if (i >= 0) this.helpers.splice(i, 1);
-    const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; }
+    const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; m.d.talkLog = (h.npc.talkLog || []).slice(-12); m.d.asked = [...(h.npc.asked || [])]; }
     h.npc.dispose();
   },
   // he knows you did it: how he takes it (the tempers of npc/barkeep_fate.js), unless he already has

@@ -107,6 +107,7 @@ function lookBy(dx, dy, touch) {
   const sens = (touch ? SETTINGS.v.sensTouch : SETTINGS.v.sensMouse) / 100;
   dx *= sens; dy *= sens * (SETTINGS.v.invertY ? -1 : 1);
   if (DEV.fly) { DEV.look(dx, dy, touch); return; }
+  if (Math.abs(dx) + Math.abs(dy) > 0.5) PLAY.userLookT = G.time;
   if (!touch) FIST.look(dx, dy);
   if (GUN.camW > 0.3) {
     const k = touch ? 0.0042 : 0.0026;
@@ -150,6 +151,7 @@ function pollGamepad(onAction) {
   if (b(2) && !prev[2]) GUN.pressReload();
   if (b(4) && !prev[4]) GUN.toggleHolster();
   INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b);
+  if (INPUT.padLookX || INPUT.padLookY) PLAY.userLookT = G.time;
   if (GUN.camW > 0.3) { PLAY.camYaw -= INPUT.padLookX * 0.05; PLAY.aimPitch = clamp(PLAY.aimPitch + INPUT.padLookY * 0.03, -0.75, 0.9); INPUT.padLookX = INPUT.padLookY = 0; }
   if (INPUT.padX || INPUT.padY) onAction('move');
 }

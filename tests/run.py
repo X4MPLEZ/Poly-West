@@ -677,11 +677,11 @@ async def check_quick(g):
       TALK.close(); TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1]; SETTINGS.v.aiSave = keep[2]; TALK.via = keep[3]; B.forget();
       for (let k = 0; k < 60 * 6 && B.st === 'duck'; k++) G.stepFrame(1/60);
       // a gun on him: first his own reaction (asked from the AI), and if it goes on, a firmer one
-      const sits = [], rk = TALK.remark, am = B.aimedAtMe; TALK.remark = (n, sit) => { sits.push(sit); return false; }; B.aimedAtMe = () => true; B.standoff = null;
+      const sits = [], rk = TALK.remark, am = B.aimedAtMe; TALK.remark = (n, sit) => { if (n === B.npc) sits.push(sit); return false; }; B.aimedAtMe = () => true; B.standoff = null;
       GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true);
       for (let k = 0; k < 60 * 7; k++) G.stepFrame(1/60);
       GUN.setAim(false); TALK.remark = rk; B.aimedAtMe = am; if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; }
-      out.standoff = [sits.length, /Revolver auf dich/.test(sits[0] || ''), /Sekunden/.test(sits[1] || '')]; B.forget();
+      out.sits = sits.map((x) => x.slice(0, 50)); out.standoff = [sits.length, /Revolver auf dich/.test(sits[0] || ''), /Sekunden/.test(sits[1] || '')]; B.forget();
       return out; }''')
     ok = r['order'] == [0, True, True, True] and r['plain'] == 0 and r['question'] == 1 and r['noRepeat'] and r['att'][1] < r['att'][0] and r['ctx'] and r['standoff'] == [2, True, True]
     return ok, json.dumps(r, ensure_ascii=False)
@@ -947,6 +947,58 @@ async def check_crew(g):
     ok = (r['at18'] == 'Walt' and r['told'] and r['at2'] == 'Jeb' and r['at10'] == 'Hank' and r['hankKept'] and r['seen'][0] == 'Walt' and r['seen'][1] == 'return'
           and 'Hank:up' in r['seen'][2] and r['after'][0] == 'idle' and r['after'][1] == 0 and r['after'][2] == 'Walt' and len(r['come']) == 2 and r['pressed'] and r['fetched']
           and r['treated'] and 'geholt' in (r['docMem'] or '') and r['upAgain'] == '' and r['closed'] == ['closed', False, 0] and r['owner'] == 'Silas' and r['gun'] and r['ownerCtx'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_mission(g):
+    """hit on his way (up the stairs): he stops, turns to you and takes it; the old timid one runs up the stairs,
+       the brave one fights back and, once it is over, goes up after all"""
+    await g.js(RESET)
+    r = await g.js('''() => { G.noRender = true; CREW.hold = true; const B = BARKEEP, R = B.R, out = {};
+          const run = (s, f) => { for (let k = 0; k < 60 * s; k++) { G.stepFrame(1/60); if (f) f(k); } };
+          TIME.min = 1440 + 12 * 60; PLAY.pos.copy(rwp(R, 1, R.floorY, -9)); G.room = R; GAIT.init = false;
+          for (const who of [2, 0]) {
+            if (who === 0) { CREW.hold = false; TIME.min = 1440 * 2 + 17 * 60 + 59.8; PLAY.pos.copy(rwp(R, 1, R.floorY, -9)); run(3); }   // Hank goes off at 18:00 and up the stairs
+            else { const h = CREW.makeBody(2, rwp(R, 2, R.floorY, -9), 0); h.ph = 'up'; CREW.toStairs(h); }
+            const h = CREW.helpers.find((x) => x.i === who); if (!h) { out['w' + who] = 'no helper'; continue; }
+            const N = h.npc; run(1.0);
+            PLAY.pos.set(N.pos.x + 0.9, N.pos.y, N.pos.z); PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z);
+            const sp0 = N.speed; const dir = new THREE.Vector3(N.pos.x - PLAY.pos.x, 0, N.pos.z - PLAY.pos.z).normalize();
+            N.hp.blow({ head: true, power: 1, dir, heavy: false, ground: false }); N.onHarm({ type: 'blow', head: true, res: 'hit', heavy: false, ground: false });
+            let minSp = 9, faced = 0; run(0.6, () => { minSp = Math.min(minSp, N.speed); faced = Math.abs(wrapA(N.yaw - Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z))); });
+            const ph1 = h.ph; let phs = [ph1]; run(3, () => { if (phs[phs.length - 1] !== h.ph) phs.push(h.ph); }); PLAY.pos.set(20, 0, 3); G.room = null; run(40, () => { if (phs[phs.length - 1] !== h.ph) phs.push(h.ph); });
+            out[N.name] = { speedBefore: +sp0.toFixed(2), minSpeed: +minSp.toFixed(2), facing: +faced.toFixed(2), phases: phs, gone: !CREW.helpers.includes(h) };
+          }
+          return out; }''')
+    await g.js('() => { CREW.reset(); CREW.hold = true; }')
+    J, H = r.get('Jeb', {}), r.get('Hank', {})
+    ok = (J.get('minSpeed', 9) < 0.2 and J.get('gone') and J.get('phases', [None])[0] == 'up' and H.get('phases') == ['brawl', 'up'] and H.get('gone') and H.get('facing', 9) < 0.3)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_aim(g):
+    """the bullet hits what the crosshair is on: a thigh under the apron is the thigh, an arm beside the chest the
+       arm, a head under the hat brim the head, and a shot in the head kills at once; aiming in a corner of the saloon
+       the view does not jump (no swinging round, the shoulder camera eases)"""
+    await g.js(RESET)
+    r = await g.js('''() => { G.noRender = true; const B = BARKEEP, N = B.npc, R = B.R, out = {};
+      B.toStreet(); N.pos.set(-8, 0, 2); N.yaw = 0; N.faceYaw = 0; B.st = 'street'; B.streetT = -999; PLAY.pos.set(-20, 0, 8); G.room = null;
+      for (let k = 0; k < 60; k++) { G.stepFrame(1/60); B.streetT = -999; } N.ch.root.updateMatrixWorld(true);
+      const at = (who, name) => { const part = who.ch.p[name], g = part.geometry; if (!g.boundingBox) g.computeBoundingBox(); const c = g.boundingBox.getCenter(new THREE.Vector3()).applyMatrix4(part.matrixWorld);
+        const o = new THREE.Vector3(who.pos.x, who.pos.y + 1.6, who.pos.z + 5), h = HARM.trace(o, c.clone().sub(o).normalize(), 0.3, 30); return h ? h.part + '/' + h.zone : 'miss'; };
+      out.thigh = at(N, 'thighL'); out.arm = at(N, 'uArmR'); out.chest = at(N, 'torso');
+      const h = CREW.makeBody(3, new THREE.Vector3(-4, 0, 2), 0), S = h.npc; h.ph = 'look'; S.yaw = 0; S.faceYaw = 0;
+      for (let k = 0; k < 40; k++) G.stepFrame(1/60); S.ch.root.updateMatrixWorld(true);
+      const fh = new THREE.Vector3(0, 0.2, 0.12).applyMatrix4(S.ch.p.head.matrixWorld), o = new THREE.Vector3(S.pos.x, S.pos.y + 1.75, S.pos.z + 5), d = fh.clone().sub(o).normalize();
+      const hit = HARM.trace(o, d, 0.3, 30); out.brim = hit && hit.zone; if (hit && hit.npc) HARM.shot(hit, d); out.dead = S.hp.dead; out.hatOff = S.hp.hatOff;
+      CREW.gone(h);
+      // aiming in the far corner of the saloon, turning slowly
+      PLAY.pos.copy(rwp(R, -5.8, R.floorY, -0.6)); G.room = R; GAIT.init = false; PLAY.camYaw = 0.3; PLAY.yaw = PLAY.camYaw + Math.PI;
+      GUN.state = 'drawn'; GUN.inHand = true; GUN.setAim(true); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      let jump = 0, turn = 0, prev = null, pd = null; const f = new THREE.Vector3();
+      for (let k = 0; k < 240; k++) { lookBy(1.5, 0, false); G.stepFrame(1/60); G.cam.getWorldDirection(f); if (prev) jump = Math.max(jump, prev.distanceTo(G.cam.position)); if (pd) turn = Math.max(turn, Math.acos(Math.min(1, pd.dot(f)))); prev = G.cam.position.clone(); pd = f.clone(); }
+      out.camJump = +jump.toFixed(3); out.turn = +turn.toFixed(4);
+      GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; B.revive(); G.noRender = false; return out; }''')
+    ok = (r['thigh'] == 'thighL/thigh' and r['arm'] == 'uArmR/arm' and r['chest'].startswith('torso/') and r['brim'] == 'head' and r['dead'] and r['hatOff']
+          and r['camJump'] < 0.12 and r['turn'] < 0.008)
     return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_block(g):
@@ -1382,7 +1434,7 @@ async def check_beating(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('mission', check_mission), ('aim', check_aim), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

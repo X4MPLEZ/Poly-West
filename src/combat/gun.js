@@ -223,8 +223,8 @@ const GUN = {
     this.fovPunch = Math.max(0, this.fovPunch - dt * 7);
     // touch: aim assist pulls the crosshair gently onto what is right next to it (a person first, then glass);
     // only what can be seen from here, and only when it is already almost on it
-    if (this.touch && this.camW > 0.6) {
-      const b = this.assist(0.055, 35);
+    if (this.touch && this.camW > 0.6 && SETTINGS.v.aimAssist !== 'off') {
+      const b = this.assist(0.055, 35, true);
       if (b) {
         const u = b.dir;
         const ty = Math.atan2(-u.x, -u.z), tp = -Math.asin(clamp(u.y, -1, 1));
@@ -236,7 +236,8 @@ const GUN = {
     const moveS = Math.hypot(PLAY.vx, PLAY.vz);
     if (this.camW > 0.8 && moveS < 0.3 && this.wantAim) this.steady = Math.min(1, this.steady + dt * 1.1);
     else this.steady = Math.max(0, this.steady - dt * 3);
-    const base = lerp(0.035, lerp(0.006, 0.0012, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
+    // (aimed and standing still the bullet goes where the crosshair is: a hair's breadth, a little more at once after a shot)
+    const base = lerp(0.035, lerp(0.0022, 0.0004, smoothstep(0, 1, this.steady)), this.aimW) + moveS * 0.012 + DRUNK.level * 0.03;
     this.spread += (base - this.spread) * (1 - Math.exp(-dt * 7));
     const b = this.bestBottle(0.03, 60); this.aimDist = b ? b.dist : 25;
     let mz = null;
@@ -255,20 +256,26 @@ const GUN = {
   /* what the aim assist may take: a person (the chest or the head, whichever is nearer the crosshair) before any
      glass, inside maxAng of where the camera looks, and only if nothing stands between (a wall, the bar, the
      corner you stand in) */
-  assist(maxAng, maxDist) {
+  assist(maxAng, maxDist, sticky) {
     const cam = G.cam, fwd = this._af || (this._af = new THREE.Vector3()), u = this._au || (this._au = new THREE.Vector3()), p = this._ap || (this._ap = new THREE.Vector3());
     cam.getWorldDirection(fwd);
     let best = null;
+    /* it keeps to the one it has (no hopping between head and chest, or between two people, which made the
+       crosshair jump), and lets go only when you have clearly moved off him */
+    const L = sticky && this.lock && G.time - this.lock.t < 0.5 ? this.lock : null;
     for (const N of NPCS.list) {
       if (N.hp.dead || !N.ch.root.visible) continue;
       for (const part of ['torso', 'head']) {
         N.ch.p[part].getWorldPosition(p); if (part === 'torso') p.y += 0.15;
         u.subVectors(p, cam.position); const d = u.length(); if (d > maxDist || d < 0.8) continue;
         u.multiplyScalar(1 / d);
-        const ang = Math.acos(clamp(u.dot(fwd), -1, 1));
-        if (ang < maxAng && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, ang, dist: d, dir: u.clone() };
+        let ang = Math.acos(clamp(u.dot(fwd), -1, 1));
+        const mine = L && L.npc === N && L.part === part;
+        if (L && !mine) continue;
+        if (ang < (mine ? maxAng * 1.6 : maxAng) && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, part, ang, dist: d, dir: u.clone() };
       }
     }
+    if (sticky) this.lock = best ? { npc: best.npc, part: best.part, t: G.time } : null;
     if (best) return best;
     const b = this.bestBottle(maxAng, maxDist);
     return b && this.seen(cam.position, b.dir, b.dist) ? b : null;
@@ -300,7 +307,7 @@ const GUN = {
     this.ammo--; this.cool = 0.42;
     const cam = G.cam, dir = new THREE.Vector3();
     cam.getWorldDirection(dir);
-    if (this.touch) { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35); if (b) dir.copy(b.dir); }
+    if (this.touch && SETTINGS.v.aimAssist !== 'off') { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35, true); if (b) dir.copy(b.dir); }
     const sp = this.spread * Math.sqrt(Math.random()), a = Math.random() * TAU;
     const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize(), up = new THREE.Vector3().crossVectors(side, dir);
     dir.addScaledVector(side, Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp).normalize();
@@ -318,7 +325,7 @@ const GUN = {
     PLAY.aimPitch = clamp(PLAY.aimPitch - 0.012, -0.75, 0.9);
     PLAY.camShake = 0.045;
     this.fovPunch = 1;
-    this.steady *= 0.35;
+    this.steady *= 0.6;
     if (this.touch && navigator.vibrate) { try { navigator.vibrate(22); } catch (e) { /* ignore */ } }
     GSFX.shot(!!G.room);
     setTimeout(() => GSFX.cock(), 260);

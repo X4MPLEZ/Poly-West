@@ -24,7 +24,8 @@ function updateCamera(dt) {
       return want;
     };
     // a wall right behind you: swing the camera round to where the room is, unless you are steering it yourself
-    if (!INPUT.look && reach(pitch) < 2.4) {
+    // (never while you aim, or while you are turning the view yourself: it would pull the crosshair off the target)
+    if (!INPUT.look && GUN.camW < 0.02 && !GUN.wantAim && G.time - (PLAY.userLookT || -99) > 2.5 && reach(pitch) < 2.4) {
       // prefer views that look into the room: camera on the far side from the room centre
       const r0 = R.rects[0], [px, pz] = rLocal(R, PLAY.pos.x, PLAY.pos.z);
       const cxl = (r0[0] + r0[1]) / 2 - px, czl = (r0[2] + r0[3]) / 2 - pz, cl = Math.hypot(cxl, czl) || 1;
@@ -62,7 +63,7 @@ function updateCamera(dt) {
   let lookT = G.lookAt;
   const aw = GUN.camW;
   if (aw > 0.001) {
-    const A = aimCamera(R);
+    const A = aimCamera(R, dt);
     cam.position.lerp(A.pos, aw);
     lookT = (PLAY._lt || (PLAY._lt = new THREE.Vector3())).copy(G.lookAt).lerp(A.look, aw);
   }
@@ -88,7 +89,7 @@ function updateCamera(dt) {
 }
 
 /* over the right shoulder, looking along camYaw / aimPitch; pulled in if a wall is in the way */
-function aimCamera(R) {
+function aimCamera(R, dt) {
   const c = PLAY.camYaw, p = PLAY.aimPitch + GUN.kickP;
   const v = new THREE.Vector3(-Math.sin(c) * Math.cos(p), -Math.sin(p), -Math.cos(c) * Math.cos(p));
   const right = new THREE.Vector3(Math.cos(c), 0, -Math.sin(c));
@@ -102,10 +103,16 @@ function aimCamera(R) {
   };
   const piv = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.58, PLAY.pos.z);
   let off = 0.78;
-  while (off > 0.1 && blocked(piv.x + right.x * off, piv.y, piv.z + right.z * off)) off -= 0.15;
-  piv.addScaledVector(right, off);
+  while (off > 0.1 && blocked(piv.x + right.x * off, piv.y, piv.z + right.z * off)) off -= 0.05;
+  /* in a corner the room for the camera changes with every turn of the view: it moves in at once (never into the
+     wall) but out again only slowly, so the view glides instead of jumping (the direction of the aim stays the same) */
+  const k = 1 - Math.exp(-(dt || 0.016) * 3);
+  PLAY.aimOff = PLAY.aimOff === undefined || off < PLAY.aimOff ? off : PLAY.aimOff + (off - PLAY.aimOff) * k;
+  piv.addScaledVector(right, PLAY.aimOff);
   let dist = 2.7;
-  for (let s = 0.3; s <= 2.7; s += 0.1) { if (blocked(piv.x - v.x * s, piv.y - v.y * s, piv.z - v.z * s)) { dist = Math.max(0.3, s - 0.15); break; } }
+  for (let s = 0.3; s <= 2.7; s += 0.05) { if (blocked(piv.x - v.x * s, piv.y - v.y * s, piv.z - v.z * s)) { dist = Math.max(0.3, s - 0.15); break; } }
+  PLAY.aimDistS = PLAY.aimDistS === undefined || dist < PLAY.aimDistS ? dist : PLAY.aimDistS + (dist - PLAY.aimDistS) * k;
+  dist = PLAY.aimDistS;
   const pos = piv.clone().addScaledVector(v, -dist);
   const gy = R ? R.floorY + 0.4 : surfaceHeight(pos.x, pos.z) + 0.35;
   if (pos.y < gy) pos.y = gy;

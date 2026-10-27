@@ -179,7 +179,9 @@ const BARKEEP = {
       if (this.st !== 'brawl' && N.hp.blood > BLOOD_WEAK && !N.hp.dead && this.st !== 'dead') {
         if (F.punches === 1) this.note('Er hat dich geschlagen.');
         this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
-        setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy()) this.shout('brawl'); }, 350);
+        // (his own words once per fight, if the AI has answered here before: what happened is a punch, not a shot)
+        const sit = 'Der Fremde hat dir gerade mit der bloßen Faust ' + (info.head ? 'ins Gesicht' : 'in den Leib') + ' geschlagen, ohne Waffe. Du wehrst dich mit den Fäusten.';
+        setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy() && !TALK.remark(N, sit, () => this.shout('brawl'), 'angry', 1)) this.shout('brawl'); }, 350);
       } else if (info.ground && Math.random() < 0.35) this.shout('groan');
       return;
     }
@@ -235,7 +237,10 @@ const BARKEEP = {
         const kind = this.aimedT > 0.2 ? 'mercy' : bleeding && Math.random() < 0.7 ? 'bleed' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
         // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
         const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
-        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'bleed' ? 'Du liegst am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
+        const shot = H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5);
+        const sitDown = !shot ? 'Der Fremde hat dich mit den Fäusten zu Boden geschlagen (geschossen hat er nicht). Dir dröhnt der Schädel, du kommst kaum hoch.'
+          : kind === 'bleed' ? 'Du liegst angeschossen am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du bist angeschossen und spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst angeschossen hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst angeschossen am Boden, die Schusswunde brennt.';
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, sitDown, () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)

@@ -173,8 +173,9 @@ class Vitals {
   shot(info) {
     const N = this.npc, Z = ZONES[info.zone], dir = info.dir;
     if (this.dead) { this.blood = Math.max(0, this.blood - 0.05); HARM.bloodFx(info.point, dir, 0.6, N); return { zone: info.zone, onBody: true }; }
-    this.lastHit = G.time;
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + 1.1 };
     if (info.zone === 'hat') { this.hatOff = true; HARM.knockHat(N, dir); this.flinchBy(dir, 0.5, 'head'); this.pain += 0.1; return { zone: 'hat' }; }
+    if ((info.hatToo || info.zone === 'head') && !this.hatOff) { this.hatOff = true; HARM.knockHat(N, dir); }   // (a bullet in the head takes the hat with it)
     HARM.bloodFx(info.point, dir, info.zone === 'head' ? 1.6 : 1, N);
     const w = { zone: info.zone, side: info.side || '', kind: 'shot', sev: Z.sev || 1, at: Math.round(TIME.min), heal: 0, bandaged: false, part: info.part, lp: info.local ? [+info.local.x.toFixed(3), +info.local.y.toFixed(3), +info.local.z.toFixed(3)] : null };
     // how it bleeds: a vein (closes by itself in time) or the artery (does not); only the upper arm has the big one
@@ -210,7 +211,7 @@ class Vitals {
   blow(o) {
     if (this.dead) return null;
     const N = this.npc;
-    this.lastHit = G.time;
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + (o.heavy ? 0.9 : 0.55) };
     const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
     /* a beating knocks a man out long before it kills him: blows daze him, enough of them put him out cold (ko,
        lying there with his eyes shut); only a long, long beating of a man who is already out kills (trauma) */
@@ -912,7 +913,7 @@ const HARM = {
           const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
           this._inv.copy(part.matrixWorld).invert();
           const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
-          let t0 = near, t1 = best ? best.t : far, ok = true;
+          let t0 = near, t1 = best ? best.t + (pass === 0 ? 0.1 : 0) : far, ok = true;
           for (const ax of ['x', 'y', 'z']) {
             const inv = 1 / (ld[ax] || 1e-9), sl = ax === 'y' ? m * 0.5 : m;
             let ta = (B.min[ax] - sl - lo[ax]) * inv, tb = (B.max[ax] + sl - lo[ax]) * inv;
@@ -921,15 +922,45 @@ const HARM = {
             if (t0 > t1) { ok = false; break; }
           }
           if (!ok) continue;
+          // the exact pass: the bullet against the part's own triangles (the boxes overlap: the pelvis box takes in
+          // the tops of the thighs, the chest box the upper arms), so it hits what you see where you aimed
+          if (pass === 0) { const te = this.triHit(g, lo, ld, near, t1); if (te === null) continue; t0 = te; }
           const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
           // the point onto the part itself (for the zone, the wound and the stain)
           local.x = clamp(local.x, B.min.x, B.max.x); local.y = clamp(local.y, B.min.y, B.max.y); local.z = clamp(local.z, B.min.z, B.max.z);
-          best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
+          const h = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
+          /* what hangs over a limb (an apron or a coat over the thigh, a vest over the upper arm) does not stop the
+             bullet: a limb right behind such a layer (≤ 8 cm) is what it hits */
+          const cover = (x) => x.part === 'pelvis' || x.part === 'torso', limb = (x) => this.THIN.test(x.part) && x.part !== 'hat';
+          if (!best || (t0 < best.t && !(cover(h) && limb(best) && best.t - t0 < 0.08)) || (limb(h) && cover(best) && t0 - best.t < 0.08)) best = h;
         }
       }
     }
     if (bestItem && (!best || bestItem.t < best.t + 0.06)) return bestItem;
+    // through the hat into the head: the head counts (the hat goes as well)
+    if (best && best.part === 'hat') {
+      const N = best.npc, part = N.ch.p.head; this._inv.copy(part.matrixWorld).invert();
+      const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
+      const te = this.triHit(part.geometry, lo, ld, best.t, best.t + 0.4);
+      if (te !== null) best = { t: te, npc: N, part: 'head', local: new THREE.Vector3(lo.x + ld.x * te, lo.y + ld.y * te, lo.z + ld.z * te), point: new THREE.Vector3(o.x + d.x * te, o.y + d.y * te, o.z + d.z * te), hatToo: true };
+    }
     if (best && best.part) Object.assign(best, this.zoneOf(best.part, best.local));
+    return best;
+  },
+  // the nearest triangle of a geometry a ray (local frame) goes through between t0 and t1, or null
+  triHit(g, o, d, t0, t1) {
+    const P = g.attributes.position.array, I = g.index ? g.index.array : null, n = I ? I.length : P.length / 3;
+    const ray = this._ray || (this._ray = new THREE.Ray()), A = this._ta || (this._ta = new THREE.Vector3()), Bv = this._tb || (this._tb = new THREE.Vector3()), C = this._tc || (this._tc = new THREE.Vector3()), X = this._tx || (this._tx = new THREE.Vector3());
+    ray.origin.copy(o); ray.direction.copy(d).normalize();
+    const sc = d.length() || 1;   // (local and world lengths: the part frames are not scaled, but be safe)
+    let best = null;
+    for (let k = 0; k < n; k += 3) {
+      const a = I ? I[k] : k, b = I ? I[k + 1] : k + 1, c = I ? I[k + 2] : k + 2;
+      A.fromArray(P, a * 3); Bv.fromArray(P, b * 3); C.fromArray(P, c * 3);
+      if (!ray.intersectTriangle(A, Bv, C, false, X)) continue;
+      const t = X.distanceTo(ray.origin) / sc;
+      if (t >= t0 && t <= t1 && (best === null || t < best)) best = t;
+    }
     return best;
   },
   // the zone of a point on a part (part frame: +x his left, +y up, +z ahead)
@@ -954,7 +985,7 @@ const HARM = {
   shot(hit, dir) {
     const N = hit.npc;
     if (hit.item) { this.itemShot(N, hit.item, dir, hit.point); return; }
-    const w = N.hp.shot({ zone: hit.zone, side: hit.side, part: hit.part, local: hit.local, dir, point: hit.point });
+    const w = N.hp.shot({ zone: hit.zone, side: hit.side, part: hit.part, local: hit.local, dir, point: hit.point, hatToo: hit.hatToo });
     if (hit.zone !== 'hat') {
       this.fleshSound(hit.point, hit.zone === 'head');
       // the bullet comes out the other side and marks the wall behind (not every time)
