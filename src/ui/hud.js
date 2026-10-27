@@ -19,6 +19,32 @@ const HUD = {
     document.getElementById('app').classList.toggle('fighting', fight || armed);
     void bt;
   },
+  /* ---- the fight cue round the cross: you see a blow coming, you see that you caught it, and that now is the moment
+     to hit back. flash(kind, text): 'block' | 'hit' for a moment; the steady ones ('warn', 'counter') come from tick ---- */
+  cueFlash(kind, text, secs) { this.cueHold = { kind, text, until: G.time + (secs || 0.6) }; this.cueKey = null; },
+  fightCue() {
+    let kind = '', text = '';
+    const H = this.cueHold;
+    if (H && G.time < H.until) { kind = H.kind; text = H.text; }
+    else if (FIST.counterReady()) { kind = 'counter'; text = 'Konter!'; }
+    else if (GUN.state === 'holster') {
+      for (const N of NPCS.list) {
+        const F = N.fight;
+        if (F && F.on && F.st === 'wind' && !N.hp.busy() && Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 3.2) { kind = FIST.blocking ? 'warn guard' : 'warn'; break; }
+      }
+      if (!kind && FIST.blocking) kind = 'guard';
+    }
+    if (FIST.blocking !== this.cueBlk) { this.cueBlk = FIST.blocking; this.$('bAim').classList.toggle('on', FIST.blocking); }
+    const key = kind + '/' + text + '/' + (H ? H.until : 0);
+    if (key === this.cueKey) return;
+    this.cueKey = key;
+    const el = this.cueEl || (this.cueEl = this.$('cue'));
+    el.className = ''; void el.offsetWidth;   // (restart the animation)
+    if (kind) el.className = kind;
+    if (kind === 'counter') el.style.setProperty('--cueDur', Math.max(0.1, FIST.COUNTER_WIN - (G.time - FIST.counterT)).toFixed(2) + 's');
+    this.$('cueT').textContent = text;
+    this.$('bFire').classList.toggle('counter', kind === 'counter');
+  },
   // the clock only shows when it means something: on waking, after hours went by, at the full hour, with the bag open
   showClock(secs) { this.clockT = Math.max(this.clockT, secs || 5); },
   // life and stamina under the cross: only in a fight or while hurt
@@ -34,7 +60,7 @@ const HUD = {
     if (st !== this.lastSt) { this.lastSt = st; this.$('vStam').style.transform = `scaleX(${st})`; el.classList.toggle('lowStam', FIST.stamina < 0.2); }
   },
   tick(dt) {
-    this.buttons(); this.vitals(dt);
+    this.buttons(); this.vitals(dt); this.fightCue();
     const h = TIME.hour(), full = Math.floor(h);
     if (this.lastHour !== undefined && full !== this.lastHour) this.showClock(4);
     this.lastHour = full;

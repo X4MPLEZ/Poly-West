@@ -120,7 +120,7 @@ class Brawler {
       e = smoothstep(0, 1, this.t / W);
       const f = V(C.from); N.reach(i, f.x, f.y, f.z);
       N.tw = lerp(0, C.tw[0] * m, e); N.leanF = lerp(0.08, C.lean[0], e);
-      if (this.t >= W) { this.st = 'strike'; this.t = 0; N.vx += Math.sin(face) * 1.2; N.vz += Math.cos(face) * 1.2; FSFX.whoosh(this.clipName === 'hook'); }
+      if (this.t >= W) { this.st = 'strike'; this.t = 0; N.vx += Math.sin(face) * 1.2; N.vz += Math.cos(face) * 1.2; FSFX.whoosh(this.clipName === 'hook'); if (Math.random() < 0.55) FOLEY.grunt(N.pos, 0.82, this.clipName === 'hook' ? 1.1 : 0.8); }
     } else if (this.st === 'strike') {
       e = 1 - Math.pow(1 - Math.min(1, this.t / C.strike), 3);
       const a = V(C.from).clone(), b = V(C.to).clone();
@@ -164,7 +164,7 @@ class Brawler {
       const cost = 0.13 * C.power * this.power * (heavy ? 1.5 : 1);
       if (FIST.stamina > cost) {
         FIST.stamina -= cost; FIST.rest = 0.5; FIST.counterT = G.time;
-        FSFX.block(p); FX.impactStar(p, 0.16);
+        FSFX.block(p); FX.impactStar(p, 0.16); HUD.cueFlash('block', 'Geblockt', 0.35); G.hitStop = 0.045; PLAY.camShake = Math.max(PLAY.camShake, 0.045);
         PHP.hit({ power: C.power * this.power * (heavy ? 0.3 : 0.1), head: false, chip: true, dir: { x: fx, z: fz }, by: N });
         N.hp.flinchBy(this._f.set(-fx, 0, -fz), 0.3, 'arm', '', true);
         this.cool += 0.15;
@@ -176,7 +176,7 @@ class Brawler {
     this.landedNow = true; this.landed++;
     FX.impactStar(p, heavy ? 0.4 : 0.24);
     FSFX.flesh(p, C.power * this.power, heavy, head);
-    G.hitStop = heavy ? 0.09 : 0.05;
+    G.hitStop = heavy ? 0.12 : 0.07;
     const res = PHP.hit({ power: C.power * this.power * (N.hp.armUse[C.side === 1 ? 1 : 0] < 0.6 ? 0.5 : 1), head, heavy, dir: { x: fx, z: fz }, by: N });
     worldEvent('npcPunch', p.x, p.y, p.z, { by: N.id, kind: this.clipName, res });
     if (N.onHarm) N.onHarm({ type: 'landed', res, kind: this.clipName });

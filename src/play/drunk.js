@@ -202,7 +202,7 @@ const DRUNK = {
     P.spRoll += B.x * 0.9 * k; P.spPitch += B.y * 0.8 * k + 0.04 * L;
     if (!seated) { P.pelRoll += B.x * 0.25; P.pel.x += B.x * 0.08; P.pel.z -= B.y * 0.06; P.pel.y -= Math.abs(B.x) * 0.04; }
     // the head leads: its own lean on top of the body's, heavy and loose
-    P.hdRoll = (H.x - B.x) * 1.3 * k;
+    P.hdRoll = (P.hdRoll || 0) + (H.x - B.x) * 1.3 * k;
     P.hdPitch += (H.y - B.y) * 1.1 * k + 0.12 * L;
     P.hdYaw += (H.x - B.x) * 0.25 * k;
     // the arms come out to catch the balance: soft curves (no kinks) and smoothed, so they float instead of twitching

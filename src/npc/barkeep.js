@@ -284,6 +284,7 @@ const BARKEEP = {
     const N = this.npc; if (!N) return;
     const H = N.hp;
     for (const m of H.bandages) if (m.parent) m.parent.remove(m);
+    HARM.hatBack(N);
     for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
     N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
     // healed and back at his place behind the bar, whatever he was doing
@@ -660,12 +661,14 @@ const BARKEEP = {
       N.reach(0, 0.06, 1.12 + Math.sin(t * 0.7) * 0.02, 0.36);
       N.reach(1, 0.0 + Math.cos(a) * 0.035, 1.2 + Math.sin(a) * 0.025, 0.38);
       N.leanT = 0.05; N.lookTW = inside ? N.lookTW * 0.5 : 0;
+      if ((this.fT = (this.fT || 0) - dt) <= 0) { this.fT = 0.5 + Math.random() * 0.6; FOLEY.polish(N.handWorld(1, this._w)); }
       if (!inside || Math.sin(t * 0.3) > 0.3) { N.lookAt(N.toWorld(0.05, 1.15, 0.4, this._v), 0.8); }
     } else if (this.act === 'wipe') {
       // the rag in wide circles on the counter
       const a = t * 2.4;
       N.reach(1, -0.05 + Math.cos(a) * 0.18, 1.15, 0.55 + Math.sin(a) * 0.1);
       N.reach(0, 0.3, 1.15, 0.45); N.leanT = 0.45;
+      const stroke = Math.floor(a / Math.PI); if (stroke !== this.fStroke) { this.fStroke = stroke; FOLEY.wipe(N.handWorld(1, this._w), 1); }
       if (!inside) N.lookAt(N.toWorld(-0.05, 1.1, 0.6, this._v), 0.6);
     } else if (this.act === 'stand') {
       N.free(1); N.reach(0, 0.3, 1.15, 0.45, 0.7); N.leanT = 0.2;
@@ -701,7 +704,7 @@ const BARKEEP = {
         const u = clamp(S.t / 0.55, 0, 1);
         N.reach(1, -0.12, 1.15 + 0.3 * Math.sin(u * Math.PI), 0.38 + 0.14 * Math.sin(u * Math.PI));
         N.lookAt(N.toWorld(-0.1, 1.45, 0.6, this._v), 1);
-        if (S.t > 0.3) S.bottle = true;
+        if (S.t > 0.3 && !S.bottle) { S.bottle = true; FOLEY.bottleOut(N.handWorld(1, this._v)); }
         if (S.t > 0.6) go('toPour');
         break;
       }
@@ -716,7 +719,7 @@ const BARKEEP = {
         N.reach(1, -0.14, 1.05, 0.28);
         if (u < 0.5) N.reach(0, 0.18, 0.9, 0.36);
         else N.reach(0, sp.x + 0.02, sp.y + 0.05, sp.z - 0.04);
-        if (u >= 0.5 && !S.glassOut) { S.glassOut = true; this.props.glass.geometry = VESSEL.geo[it.vessel + 'false']; this.glassKnock(0.6); }
+        if (u >= 0.5 && !S.glassOut) { S.glassOut = true; this.props.glass.geometry = VESSEL.geo[it.vessel + 'false']; FOLEY.setDown(this.pourWorld(this._w), 0.7, it.vessel); }
         if (S.t > 0.7) go('pour');
         break;
       }
@@ -726,14 +729,14 @@ const BARKEEP = {
         N.reach(1, sp.x - 0.06, sp.y + 0.3, sp.z - 0.1);
         S.tilt = Math.sin(Math.min(1, u * 1.25) * Math.PI) * 1.9;
         N.lookAt(N.toWorld(sp.x, sp.y, sp.z, this._v), 1);
-        if (!S.poured && u > 0.15) { S.poured = true; this.pourSound(0.8); }
+        if (!S.poured && u > 0.15) { S.poured = true; FOLEY.pour(this.pourWorld(this._w), 0.8); }
         if (u > 0.55) this.props.glass.geometry = VESSEL.geo[it.vessel + 'true'];
         if (S.t > 1.2) { S.tilt = 0; go('stow'); }
         break;
       }
       case 'stow': {     // the bottle goes back under the counter
         N.reach(1, -0.2, 0.9, 0.32); N.free(0);
-        if (S.t > 0.35) S.bottle = false;
+        if (S.t > 0.35 && S.bottle) { S.bottle = false; FOLEY.setDown(N.handWorld(1, this._v), 0.45, 'bottle'); }
         if (S.t > 0.45) go('push');
         break;
       }
@@ -752,7 +755,7 @@ const BARKEEP = {
         const sp = this.pourLocal();
         N.reach(1, sp.x - 0.04, sp.y + 0.12, sp.z - 0.02);
         if (S.t > 0.45 && !S.given) {
-          S.given = true; S.bottle = false; this.glassKnock(0.8);
+          S.given = true; S.bottle = false; FOLEY.setDown(this.pourWorld(this._w), 0.9, 'bottle');
           INV.add(S.o.id); TOAST.show(it.name + ' gekauft. Trinken mit T oder im Menü unter „Tasche“.', 'long');
         }
         if (S.t > 0.8) { this.cur = null; this.attending = false; this.atBarT = 0.8; }

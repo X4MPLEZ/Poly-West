@@ -46,7 +46,14 @@ const HURT_KEYS = {
   deadBack:  { pel: [0, 0.13, -0.32], pp: -1.52, sp: 0.03, hd: 0.05, hr: 0.75, ank: [[0.3, 0.085, 0.6], [-0.2, 0.085, 0.68]], arm: [[0.4, 1.55, 0.15], [-0.25, 1.25, 0.45]] },
   deadFace:  { pel: [0, 0.13, -0.2], pp: 1.52, sp: 0.03, hd: 0.0, hr: 1.1, ank: [[0.2, 0.1, -0.98], [-0.16, 0.1, -0.95]], fp: [1.5, 1.5], arm: [[2.3, 0.6, 0.4], [0.2, 0.4, 0.2]] },
   slump:     { pel: [0, 0.17, -0.25], pp: -0.55, sp: 0.55, hd: -0.7, hr: 0.4, ank: [[0.2, 0.085, 0.5], [-0.17, 0.085, 0.55]], arm: [[0.1, 0.35, 0.3], [0.0, 0.4, 0.4]] },
-  sitHold:   { pel: [0, 0.17, -0.22], pp: -0.25, sp: 0.5, hd: -0.35, ank: [[0.17, 0.085, 0.4], [-0.15, 0.085, 0.3]], arm: [[0.9, 0.2, 0.9], [0.8, 0.25, 1.0]] }
+  sitHold:   { pel: [0, 0.17, -0.22], pp: -0.25, sp: 0.5, hd: -0.35, ank: [[0.17, 0.085, 0.4], [-0.15, 0.085, 0.3]], arm: [[0.9, 0.2, 0.9], [0.8, 0.25, 1.0]] },
+  // against something: slammed back into a wall, slid down it; thrown back over the bar; propped half up; into a wall face first
+  wallHit:   { pel: [0, 0.86, -0.18], pp: -0.12, sp: -0.14, hd: 0.5, ank: [[0.15, 0.085, 0.18], [-0.13, 0.085, 0.1]], arm: [[-0.5, 0.75, 0.3], [-0.45, 0.8, 0.35]] },
+  wallSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.46, hd: -0.55, hr: 0.35, ank: [[0.2, 0.085, 0.55], [-0.17, 0.085, 0.5]], arm: [[-0.15, 0.5, 0.3], [0.05, 0.45, 0.4]] },
+  overBar:   { pel: [0, 0.9, -0.12], pp: -0.25, sp: -0.8, hd: 0.55, ank: [[0.16, 0.085, 0.32], [-0.14, 0.085, 0.26]], arm: [[-0.7, 1.35, 0.25], [-0.6, 1.25, 0.35]] },
+  propped:   { pel: [0, 0.15, -0.3], pp: -0.95, sp: 0.1, hd: -0.35, hr: 0.4, ank: [[0.22, 0.085, 0.55], [-0.2, 0.085, 0.6]], arm: [[-0.3, 0.6, 0.3], [-0.2, 0.7, 0.4]] },
+  wallFront: { pel: [0, 0.8, 0.1], pp: 0.3, sp: 0.22, hd: -0.1, hr: 0.5, ank: [[0.13, 0.085, -0.22], [-0.13, 0.085, -0.1]], fp: [0.3, 0], arm: [[1.55, 0.35, 0.35], [1.45, 0.4, 0.45]] },
+  deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] }
 };
 function hurtKey(name) { return HURT_KEYS[name] || FALL_KEYS[name]; }
 
@@ -73,6 +80,7 @@ class KeyAnim {
       k.pel[0] += r(0.03); k.pp += r(0.06); k.sp += r(0.08); k.sr += r(0.08); k.hd += r(0.12); k.hr += r(0.15);
       for (const a of k.arm) { a[0] += r(0.25); a[1] += r(0.15); a[2] += r(0.2); }
     }
+    if (this.fit && this.fit[name]) this.fit[name](k);
     return (this.jit[name] = k);
   }
   // steps: { k, d, e ('in' | 'out' | 'inout'), thud, lie: hold (stays on the last lie until next() is called) }
@@ -83,7 +91,7 @@ class KeyAnim {
     if (this.t >= s.d) {
       if (s.hold) { this.t = s.d; return; }
       this.t -= s.d;
-      if (s.thud && onThud) onThud(s.thud);
+      if ((s.thud || s.slam) && onThud) onThud(s.thud || 0, s);
       this.from = KeyAnim.copy(this.snap);
       this.i++;
       if (this.i >= this.seq.length) { this.i = this.seq.length - 1; this.done = true; }
@@ -182,14 +190,26 @@ class Vitals {
     else this.wounds.push({ zone, side: '', kind: 'blow', sev: 0.12 * p, at: Math.round(TIME.min), heal: 0, bandaged: false, n: 1 });
     const dir = this._w.set(o.dir.x, 0, o.dir.z);
     if (this.trauma >= 1) { this.die(o.ground ? 'totgeschlagen' : 'erschlagen', dir, 'back'); return 'dead'; }
-    if (this.anim) { if (this.lowness > 0.5) { this.downFor += 1.2 * p; this.anim.jit = {}; } return 'ground'; }
+    if (this.anim) {
+      if (this.lowness > 0.5) {
+        this.downFor += 1.2 * p; this.anim.jit = {};
+        // the body on the ground jolts with it and is shoved a little
+        const c = Math.cos(N.yaw), sn = Math.sin(N.yaw);
+        this.jolt = { x: o.dir.x * c - o.dir.z * sn, z: o.dir.x * sn + o.dir.z * c, k: Math.min(1.5, p), head: head };
+        if (!this.pinned) { N.vx += o.dir.x * 0.9 * p; N.vz += o.dir.z * 0.9 * p; }
+        this.pain = Math.min(1.5, this.pain + 0.2);
+      }
+      return 'ground';
+    }
     if (this.daze >= 1 || (o.heavy && head && this.daze > 0.6)) {
       this.knocked = true;
       this.fall(o.heavy || Math.random() < 0.5 ? 'back' : 'side', dir, Math.random() < 0.5 ? 'L' : 'R', 2.5 + this.daze * 2.2);
       return 'down';
     }
-    this.flinchBy(dir, (o.heavy ? 1.4 : 0.75) * (head ? 1 : 0.7), head ? 'head' : 'chest', '', true);
-    N.vx += o.dir.x * (o.heavy ? 2.4 : 1.1); N.vz += o.dir.z * (o.heavy ? 2.4 : 1.1);
+    this.flinchBy(dir, (o.heavy ? 1.8 : 1.05) * (head ? 1 : 0.75) * Math.min(1.3, p), head ? 'head' : 'chest', '', true);
+    // knocked back a step (more by a big one)
+    const kb = (o.heavy || o.shove ? 3.4 : 1.7) * Math.min(1.4, p);
+    N.vx += o.dir.x * kb; N.vz += o.dir.z * kb;
     this.stunT = o.heavy ? 0.8 : head ? 0.3 : 0.2;
     return 'hit';
   }
@@ -225,11 +245,67 @@ class Vitals {
       : [S('reel', 0.3, 'out'), S('seat', 0.3, 'in', 0.7), S('flat', 0.6, 'in', 1), { lie: 1, d: 1, hold: true }]; this.downFor = 1e9; }
     else { dk = f > 0.2 ? 'fwd' : 'back'; seq = dk === 'fwd' ? [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), S('face', 0.3, 'in', 0.9), S('prone', 0.4, 'inout'), { lie: 1, d: 0.8, hold: true }, S('hands', 0.5, 'inout'), S('kneel', 0.45, 'inout'), S('lunge', 0.4, 'inout'), S('stand', 0.45, 'inout')]
       : [S('reel', 0.28, 'out'), S('seat', 0.26, 'in', 0.8), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.55, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 4 + Math.random() * 3; }
+    const lay = kind === 'side' ? 'side' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
+    const fit = lay ? this.fitFall(lay, sd, dir, false) : null;
+    if (fit && fit.seq) seq = fit.seq;
     this.anim = new KeyAnim(seq, dk, sd, this.currentKey());
+    if (fit) { this.anim.fit = fit.keys || null; this.spin = fit.off ? { to: N.yaw + fit.off, t: 0 } : null; this.contact = fit.contact || null; this.pinned = !!fit.seq; }
+    else this.pinned = false;
     this.downT = 0; this.fallKind = kind;
-    // the body turns into the fall a little
-    N.goal = null; N.vx += dir.x * 1.2; N.vz += dir.z * 1.2;
+    // the body turns into the fall a little (it stays put when it falls against something: the keys carry it there)
+    N.goal = null;
+    if (this.pinned) { N.vx = N.vz = 0; } else { N.vx += dir.x * 1.2; N.vz += dir.z * 1.2; }
     worldEvent('npcDown', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, kind });
+  }
+  /* ---- will the body fit where it falls? A body that goes down needs about its length of floor. The way it falls is
+     tried first, then turned a little to either side (the body twists into the free space as it goes); with no
+     room anywhere it falls against what is there: back into a wall and slides down it, back over the bar, propped
+     up against something, or face first into a wall. lay: 'back' | 'fwd' | 'side'; returns { off } (turn by off) or
+     { seq, keys, contact } (another way down; keys: per-key changes so it touches what it hit) ---- */
+  fitFall(lay, sd, dir, dead) {
+    const N = this.npc, ax = lay === 'side' ? -sd : 0, az = lay === 'back' ? -1 : lay === 'fwd' ? 1 : 0;
+    const len = lay === 'fwd' ? 1.4 : lay === 'side' ? 1.35 : 1.55;
+    const ox = N.pos.x, oz = N.pos.z;
+    const probe = (off) => {
+      const yaw = N.yaw + off, c = Math.cos(yaw), s = Math.sin(yaw), wx = ax * c + az * s, wz = -ax * s + az * c;
+      for (let d = 0.3; d <= len + 0.01; d += 0.12) { const h = HARM.blockedAt(ox + wx * d, oz + wz * d, N.pos.y, 0.16); if (h) return { free: d, h, x: ox + wx * d, z: oz + wz * d, wx, wz }; }
+      return null;
+    };
+    const p0 = probe(0);
+    if (!p0) return { off: 0 };
+    const offs = Math.random() < 0.5 ? [0.35, -0.35, 0.7, -0.7, 1.0, -1.0] : [-0.35, 0.35, -0.7, 0.7, -1.0, 1.0];
+    for (const o of offs) if (!probe(o)) return { off: o };
+    // no room: against it
+    const S = (k, d, e, thud, slam) => ({ k, d, e, thud, slam });
+    const free = p0.free, contact = { x: p0.x, z: p0.z, top: N.pos.y + Math.min(p0.h, 1.3), wx: p0.wx, wz: p0.wz, h: p0.h };
+    const shift = (dz) => (k) => { k.pel[2] += dz; for (const a of k.ank) a[2] += dz; };
+    const end = dead ? [] : null;
+    if (lay === 'fwd') {
+      const dz = Math.max(0, free - 0.45);
+      if (free < 0.95) return { contact, keys: { wallFront: shift(dz), kneelHurt: shift(dz * 0.7) }, seq: dead
+        ? [S('trip', 0.16, 'out'), S('wallFront', 0.14, 'in', 0, 1), S('kneelHurt', 0.4, 'in', 0.6), S('deadSit', 0.6, 'inout', 0.5)]
+        : [S('trip', 0.16, 'out'), S('wallFront', 0.14, 'in', 0, 1), S('kneelHurt', 0.45, 'in', 0.6), { lie: 1, d: 0.8, hold: true }, S('lunge', 0.45, 'inout'), S('stand', 0.45, 'inout')] };
+      return { contact: null, seq: dead ? [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), S('kneelHurt', 0.5, 'inout', 0.5), S('deadSit', 0.6, 'inout', 0.4)]
+        : [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), { lie: 1, d: 0.8, hold: true }, S('kneel', 0.45, 'inout'), S('lunge', 0.4, 'inout'), S('stand', 0.45, 'inout')] };
+    }
+    if (lay === 'side') {
+      return { contact: free < 0.8 ? contact : null, seq: dead ? [S('lean', 0.2, 'out'), S('hip', 0.24, 'in', 0.9, free < 0.8 ? 0.6 : 0), S('deadSit', 0.6, 'inout', 0.4)]
+        : [S('lean', 0.22, 'out'), S('hip', 0.24, 'in', 0.9, free < 0.8 ? 0.6 : 0), S('sitHold', 0.5, 'inout'), { lie: 1, d: 0.8, hold: true }, S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')] };
+    }
+    // backwards
+    const sit = dead ? 'deadSit' : 'wallSit', up = dead ? [] : [{ lie: 1, d: 0.8, hold: true }, S('squat', 0.55, 'inout'), S('stand', 0.5, 'inout')];
+    if (free < 1.05 && p0.h > 0.65 && p0.h < 1.35) {
+      // thrown back over the bar (or a table), then down in front of it
+      const dz = -Math.max(0, free - 0.24);
+      return { contact, keys: { overBar: shift(dz), [sit]: shift(-Math.max(0, free - 0.38)) }, seq: [S('reel', 0.15, 'out'), S('overBar', 0.17, 'in', 0, 1), S('overBar', 0.35, 'out'), S(sit, 0.45, 'in', 0.7)].concat(up) };
+    }
+    if (free < 1.05) {
+      const dz = -Math.max(0, free - 0.3);
+      return { contact, keys: { wallHit: shift(dz), [sit]: shift(-Math.max(0, free - 0.38)) }, seq: [S('reel', 0.15, 'out'), S('wallHit', 0.13, 'in', 0, 1), S(sit, 0.42, 'in', 0.7)].concat(up) };
+    }
+    // a little short of room: down, and propped up against it with the shoulders
+    const dz = -Math.max(0, free - 0.95);
+    return { contact, keys: { propped: shift(dz) }, seq: [S('reel', 0.2, 'out'), S('seat', 0.26, 'in', 0.8), S('propped', 0.36, 'in', 0.8, 0.5)].concat(dead ? [] : [{ lie: 1, d: 0.8, hold: true }, S('sitUp', 0.5, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]) };
   }
   // how the body stands right now, as a key (so a fall starts from wherever it is)
   currentKey() {
@@ -250,8 +326,11 @@ class Vitals {
     else if (how === 'fwd') seq = [S('squat', 0.18, 'in'), S('face', 0.28, 'in', 1), S('deadFace', 0.4, 'inout')];
     else if (how === 'crumple') seq = [S('squat', 0.2, 'in'), S('seat', 0.22, 'in', 0.8), S('slump', 0.3, 'in'), S('deadBack', 0.5, 'in', 0.9)];
     else seq = [S('reel', 0.14, 'out'), S('seat', 0.24, 'in', 0.8), S('deadBack', 0.32, 'in', 1)];
+    let fit = null;
+    if (!(this.anim && this.lowness > 0.5)) { fit = this.fitFall(how === 'fwd' ? 'fwd' : 'back', 1, dir || this._w.set(0, 0, 0), true); if (fit.seq) seq = fit.seq; }
     this.anim = new KeyAnim(seq.concat([{ lie: 1, d: 1, hold: true }]), 'fwd', Math.random() < 0.5 ? 1 : -1, from);
-    N.goal = null; if (dir) { N.vx += dir.x * 1.5; N.vz += dir.z * 1.5; }
+    if (fit) { this.anim.fit = fit.keys || null; this.spin = fit.off ? { to: N.yaw + fit.off, t: 0 } : null; this.contact = fit.contact || null; this.pinned = !!fit.seq; }
+    N.goal = null; if (this.pinned) { N.vx = N.vz = 0; } else if (dir) { N.vx += dir.x * 1.5; N.vz += dir.z * 1.5; }
     N.body.r = 0;
     if (N.sayEl) SAY.hide(N);
     HARM.dropAll(N);
@@ -262,7 +341,9 @@ class Vitals {
   update(dt) {
     const N = this.npc;
     if (this.anim) {
-      this.anim.update(dt, (k) => HARM.thud(N, k));
+      this.anim.update(dt, (k, step) => HARM.thud(N, k, step, this.contact));
+      // the body twists into the free space while it goes down
+      if (this.spin) { const S = this.spin; S.t += dt; N.yaw += wrapA(S.to - N.yaw) * (1 - Math.exp(-dt * 7)); if (S.t > 0.9) this.spin = null; }
       if (this.anim.holding()) {
         this.downT += dt;
         if (this.dying > 0) { this.dying -= dt; if (this.dying <= 0) this.die('verblutet'); }
@@ -296,7 +377,15 @@ class Vitals {
   /* ---- the pose: after the behaviour and the walk have set theirs, before the parts are placed ---- */
   pose(P, dt) {
     const N = this.npc;
-    if (this.anim) { this.lowness = this.anim.pose(P); if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
+    if (this.anim) { this.lowness = this.anim.pose(P);
+      const J = this.jolt;
+      if (J && J.k > 0.01) {
+        J.k *= Math.exp(-dt * 9);
+        P.pel.x += J.x * 0.09 * J.k; P.pel.z += J.z * 0.09 * J.k; P.pel.y += 0.04 * J.k;
+        P.pelRoll += J.x * 0.25 * J.k; P.spPitch += (J.head ? -0.1 : 0.35) * J.k; P.hdPitch += (J.head ? 0.5 : -0.2) * J.k; P.hdRoll = (P.hdRoll || 0) + J.x * 0.4 * J.k;
+        for (let i = 0; i < 2; i++) if (P.armOv[i]) { P.armOv[i].sw += 0.35 * J.k; P.armOv[i].el += 0.4 * J.k; }
+      }
+      if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
     this.lowness = 0;
     // the jerk of a hit
     const F = this.flinch, k = F.k;
@@ -571,22 +660,70 @@ const HARM = {
       SFX.noiseHit(t + 0.004, g, { type: 'bandpass', freq: 2400, q: 2, gain: 0.12, attack: 0.001, decay: 0.03 });
     });
   },
-  thud(N, k) {
-    GSFX.run(() => { const { g, t } = GSFX.out(0.6 * k, N.pos); SFX.thump(t, g, 105, 38, 0.7 * k, 0.16); SFX.noiseHit(t, g, { type: 'lowpass', freq: 480, q: 0.7, gain: 0.35 * k, attack: 0.003, decay: 0.12 }); });
+  // a body lands (k: how hard) or slams into something (step.slam): sound, dust, the view shakes when close,
+  // glasses on the bar it hit jump and break
+  thud(N, k, step, contact) {
+    const close = Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 6 && (N.room || null) === (G.room || null);
+    if (step && step.slam && contact) {
+      const p = this._tp.set(contact.x, contact.top - 0.25, contact.z);
+      FOLEY.slam(p, step.slam);
+      if (close) PLAY.camShake = Math.max(PLAY.camShake, 0.06 * step.slam);
+      for (let i = 0; i < 5; i++) FX.smoke.spawn({ x: p.x, y: p.y - Math.random() * 0.5, z: p.z, vx: -contact.wx * 0.6 + (Math.random() - 0.5) * 0.8, vy: 0.3, vz: -contact.wz * 0.6 + (Math.random() - 0.5) * 0.8, life: 0.7, size: 0.06, grow: 4, drag: 3, a0: 0.25 }, [0.62, 0.55, 0.47]);
+      const L = N.room && BREAK.byRoom.get(N.room);
+      if (L) for (const g of L) if (g.alive && Math.hypot(g.x - contact.x, g.z - contact.z) < 0.75 && g.y0 > contact.top - 0.3 && g.y0 < contact.top + 0.5 && Math.random() < 0.7) BREAK.shatter(g, this._td.set(contact.wx, 0.6, contact.wz));
+      worldEvent('npcSlam', p.x, p.y, p.z, { by: 'world', npc: N.id });
+    }
+    if (!k) return;
+    FOLEY.bodyFall(N.pos, k, !!N.room);
+    if (k >= 0.7) { DUST.burst && DUST.burst(N.pos, N.yaw, 6); if (close) PLAY.camShake = Math.max(PLAY.camShake, 0.035 * k); }
+  },
+  _tp: new THREE.Vector3(), _td: new THREE.Vector3(),
+  // is a point taken by a wall or furniture of at least knee height? returns its height (0: free)
+  blockedAt(x, z, y, r) {
+    for (const c of COLL) {
+      if (c.y0 !== undefined && y + 1 < c.y0) continue;
+      if (c.top !== undefined && y > c.top) continue;
+      if (c.r !== undefined) { const h = c.h || 0.8; if (h < 0.45) continue; const dx = x - c.cx, dz = z - c.cz, rr = c.r + r; if (dx * dx + dz * dz < rr * rr) return h; continue; }
+      if ((c.h || 3) < 0.45) continue;
+      const dx = x - c.cx, dz = z - c.cz;
+      if (Math.abs(dx) > c.hx + c.hz + r + 0.5 || Math.abs(dz) > c.hx + c.hz + r + 0.5) continue;
+      const ca = Math.cos(c.a), sa = Math.sin(c.a), lx = dx * ca - dz * sa, lz = dx * sa + dz * ca;
+      if (Math.abs(lx) < c.hx + r && Math.abs(lz) < c.hz + r) return c.h || 3;
+    }
+    return 0;
   },
   // the hat flies off and lies on the ground (a loose piece, until picked up again — later)
-  knockHat(N, dir) {
+  // (blow: knocked off by a fist; he gets it back once you have left the room or after a while)
+  knockHat(N, dir, blow) {
     const hat = N.ch.p.hat; if (!hat || !hat.visible) return;
     hat.visible = false;
     const m = new THREE.Mesh(hat.geometry, hat.material); m.matrixAutoUpdate = true; m.frustumCulled = false;
     hat.updateMatrixWorld(); m.matrix.copy(hat.matrixWorld); m.matrix.decompose(m.position, m.quaternion, m.scale);
     G.scene.add(m);
-    this.loose.push({ m, vx: dir.x * 3, vy: 2.2, vz: dir.z * 3, spin: (Math.random() - 0.5) * 14, t: 0, rest: false, R: N.room });
+    this.loose.push({ m, vx: dir.x * 3, vy: 2.2, vz: dir.z * 3, spin: (Math.random() - 0.5) * 14, t: 0, rest: false, R: N.room, npc: blow ? N : null });
+  },
+  // the hat comes back on (a blow's hat, or everything when he is put back on his feet)
+  hatBack(N) {
+    const hat = N.ch.p.hat; if (hat) hat.visible = true;
+    this.loose = this.loose.filter((L) => { if (L.npc !== N) return true; G.scene.remove(L.m); return false; });
+  },
+  // what flies off a face that is hit: sweat and spit, and a puff of dust off the clothes on the body
+  blowFx(N, p, dir, head, k, ground) {
+    const n = Math.round((head ? 9 : 5) * Math.min(2, k));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, v = 0.4 + Math.random() * 1.2;
+      FX.debris.spawn({ x: p.x, y: p.y, z: p.z, vx: dir.x * (1.8 + Math.random() * 2.2) + Math.cos(a) * v * 0.6, vy: 0.5 + Math.random() * 1.5, vz: dir.z * (1.8 + Math.random() * 2.2) + Math.sin(a) * v * 0.6,
+        life: 0.35 + Math.random() * 0.35, size: 0.007 + Math.random() * 0.01, grav: 9.8, drag: 1, bounce: false }, head ? [0.86, 0.88, 0.86] : [0.7, 0.62, 0.52]);
+    }
+    const dn = ground ? 6 : head ? 2 : 4;
+    for (let i = 0; i < dn; i++) FX.smoke.spawn({ x: p.x, y: ground ? N.pos.y + 0.1 : p.y, z: p.z, vx: dir.x * 0.9 + (Math.random() - 0.5) * 0.9, vy: ground ? 0.25 : 0.1, vz: dir.z * 0.9 + (Math.random() - 0.5) * 0.9, life: 0.5, size: 0.05, grow: 4, drag: 4, a0: ground ? 0.35 : 0.2 }, N.room ? [0.62, 0.55, 0.47] : [0.78, 0.66, 0.5]);
   },
   loose: [],
   update(dt) {
-    for (const L of this.loose) {
-      if (L.rest) continue;
+    for (let i = this.loose.length - 1; i >= 0; i--) {
+      const L = this.loose[i];
+      if (L.npc && L.rest && (L.t > 120 || (G.room || null) !== (L.R || null)) && !L.npc.hp.dead) { this.hatBack(L.npc); i = Math.min(i, this.loose.length); continue; }
+      if (L.rest) { L.t += dt; continue; }
       L.t += dt; L.vy -= 9.8 * dt;
       L.m.position.x += L.vx * dt; L.m.position.y += L.vy * dt; L.m.position.z += L.vz * dt;
       L.m.rotation.x += L.spin * dt; L.m.rotation.z += L.spin * 0.6 * dt;

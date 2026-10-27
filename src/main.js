@@ -55,6 +55,8 @@
   function frame(dt, frameMs, ts) {
     // hit-stop: a landed punch freezes the world for a few frames
     if (G.hitStop > 0) { G.hitStop -= dt; dt *= 0.04; }
+    // a knockdown: half a second of slow motion (counted in real time)
+    if (G.slowT > 0) { G.slowT -= dt; dt *= 0.3; }
     G.time += dt;
     G.frameNo++;
     TIME.update(dt);

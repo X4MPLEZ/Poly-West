@@ -138,6 +138,14 @@ const DOC = {
     if (this.act === 'desk') { N.leanT = 0.35; N.reach(1, -0.05 + Math.sin(t * 1.7) * 0.06, 0.95, 0.55 + Math.sin(t * 0.9) * 0.03); N.reach(0, 0.25, 0.92, 0.5, 0.7); }
     else if (this.act === 'cabinet') { const k = Math.sin(t * 0.6); N.reach(1, -0.1 + k * 0.15, 1.35 + Math.cos(t * 0.7) * 0.25, 0.42); N.free(0); }
     else if (this.act === 'wash') { const a = t * 6; N.leanT = 0.2; N.reach(0, 0.06 + Math.cos(a) * 0.03, 0.95, 0.42); N.reach(1, -0.06 - Math.cos(a) * 0.03, 0.95 + Math.sin(a) * 0.02, 0.44); }
+    // what it sounds like: the pen, the cabinet doors and bottles, the water
+    if ((this.fT = (this.fT || 0) - dt) <= 0 && N.arrived() && N.canBeHeard()) {
+      const h = N.handWorld(1, this._fv || (this._fv = new THREE.Vector3()));
+      if (this.act === 'desk') { this.fT = 0.8 + Math.random() * 1.6; FOLEY.scribble(h); }
+      else if (this.act === 'cabinet') { this.fT = 1.5 + Math.random() * 2.5; if (Math.random() < 0.4) FOLEY.cabinet(h); else FOLEY.clink(h, 0.5, Math.random() < 0.5 ? 'bottle' : 'shot'); }
+      else if (this.act === 'wash') { this.fT = 0.9 + Math.random() * 0.8; FOLEY.splash(h); }
+      else this.fT = 2;
+    }
     else { N.free(0); N.free(1); if (!inside || dP > 5) N.lookAt(N.toWorld(Math.sin(t * 0.3) * 2, 1.6, 5, this._v), 0.6); }
   },
   // the treatment: patient to the couch, Doc to the patient, hands on the wound, wrap, done

@@ -55,6 +55,7 @@ function poseBody(P, o) {
   P.spRoll = -P.pelRoll * 0.7 - o.bank * 0.6;
   P.hdYaw = -(P.pelYaw + P.spYaw) * 0.9 + o.look;
   P.hdPitch = -(P.pelPitch + P.spPitch) * 0.75 + 0.025 * c2 * amp * (1 - k);
+  P.hdRoll = 0;   // (everything after this adds its tilt for the frame; nothing may stay from the last one)
   const tgt = [];
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1;

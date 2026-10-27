@@ -38,6 +38,31 @@ PUNCH.groundH = [
   { ph: 'follow', dur: 0.14, ease: 'out', fist: [0.05, 0.46, 0.62], pole: [-0.4, -0.8, 0.3], ty: 0.45, tp: 1.0, pz: 0.22, dy: 0.62, roll: -0.1 },
   { ph: 'recover', dur: 0.5, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05, roll: 0 }
 ];
+/* on a man on the ground the feet do most of it. leg: where the kicking foot goes (ankle, for the right leg, in the
+   character's frame), fp: the foot's pitch; the fists keep their guard. */
+PUNCH.kick = [
+  { ph: 'windup', dur: 0.14, ease: 'out', fist: null, leg: [-0.12, 0.36, -0.42], fp: 0.7, ty: -0.2, tp: -0.08, pz: -0.05, dy: 0.04 },
+  { ph: 'strike', dur: 0.09, ease: 'cubic', fist: null, leg: [-0.04, 0.24, 0.74], fp: -0.35, ty: 0.3, tp: -0.16, pz: 0.1, dy: 0.06, hit: true },
+  { ph: 'hold', dur: 0.06, ease: 'out', fist: null, leg: [-0.05, 0.26, 0.66], fp: -0.3, ty: 0.28, tp: -0.14, pz: 0.09, dy: 0.06 },
+  { ph: 'recover', dur: 0.24, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05 }
+];
+// the boot comes down on him: knee high, then stamped down with the weight behind it
+PUNCH.stomp = [
+  { ph: 'windup', dur: 0.24, ease: 'out', fist: null, leg: [-0.1, 0.64, 0.3], fp: 0.25, ty: 0.12, tp: 0.02, pz: -0.02, dy: -0.02 },
+  { ph: 'strike', dur: 0.08, ease: 'in', fist: null, leg: [-0.06, 0.17, 0.52], fp: 0, ty: 0.15, tp: 0.28, pz: 0.12, dy: 0.13, hit: true },
+  { ph: 'hold', dur: 0.12, ease: 'out', fist: null, leg: [-0.06, 0.18, 0.52], fp: 0, ty: 0.15, tp: 0.26, pz: 0.12, dy: 0.12 },
+  { ph: 'recover', dur: 0.32, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05 }
+];
+// dropped onto him knee first
+PUNCH.knee = [
+  { ph: 'windup', dur: 0.13, ease: 'out', fist: null, leg: [-0.12, 0.46, 0.22], fp: 0.4, ty: 0.05, tp: 0.18, pz: 0.02, dy: 0.08 },
+  { ph: 'strike', dur: 0.1, ease: 'in', fist: null, leg: [-0.12, 0.12, -0.3], fp: 1.45, ty: 0.15, tp: 0.4, pz: 0.2, dy: 0.46, hit: true },
+  { ph: 'hold', dur: 0.14, ease: 'out', fist: null, leg: [-0.12, 0.12, -0.3], fp: 1.45, ty: 0.15, tp: 0.38, pz: 0.2, dy: 0.46 },
+  { ph: 'recover', dur: 0.36, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05 }
+];
+for (const k of ['kick', 'stomp', 'knee']) PUNCH[k].leg = true;
+const GROUND_MOVE = { ground: { reach: 0.95, near: 0.95, power: 1, head: 0.55 }, groundH: { reach: 0.95, near: 0.95, power: 1, head: 0.55 },
+  kick: { reach: 1.05, near: 0.95, power: 1.3, head: 0.25 }, stomp: { reach: 0.8, near: 0.62, power: 1.7, head: 0.3 }, knee: { reach: 0.75, near: 0.58, power: 1.45, head: 0.15 } };
 const CHARGE_R = { fist: [-0.62, 1.55, -0.2], pole: [-1, 0.12, -0.5], ty: -0.85, tp: 0.05, pz: -0.08, dy: 0.1, roll: 0.05 };
 const COMBO = [['straight', -1], ['straight', 1], ['hook', -1], ['hook', 1]];   // jab, cross, left hook, right hook
 const EASE = {
@@ -92,6 +117,9 @@ const FIST = {
      your next punch is a counter (harder, cannot be blocked) ---- */
   blockWant: false, blocking: false, blockW: 0, counterT: -9,
   setBlock(on) { this.blockWant = !!on; },
+  // straight after a caught blow: the next punch is a counter
+  COUNTER_WIN: 1.0,
+  counterReady() { return G.time - this.counterT < this.COUNTER_WIN && GUN.state === 'holster'; },
   // somebody is fighting you (or you have just thrown a punch): the second button is the block, not the aim
   inFight() {
     if (this.fight > 0) return true;
@@ -105,7 +133,7 @@ const FIST = {
     return best;
   },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked() || PHP.busy()) return; this.blockWant = false; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked() || PHP.busy()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;
@@ -119,7 +147,7 @@ const FIST = {
   },
   cancel() { this.clip = PUNCH.straight; this.k = 3; this.t = 0; this.st = 'recover'; this.snapFrom(); },
   start(heavy) {
-    this.heavy = heavy;
+    this.heavy = heavy; this.counterNow = false;
     const cost = heavy ? 0.3 : 0.12;
     this.weak = this.stamina < cost;
     this.stamina = Math.max(0, this.stamina - cost); this.rest = 0.8;
@@ -130,7 +158,15 @@ const FIST = {
     if (heavy) { this.side = Math.random() < 0.5 ? 1 : -1; this.st = 'charge'; this.t = 0; this.clipName = 'overhand'; this.snapFrom(); FSFX.cloth(); return; }
     // someone lies in front of you: the punch goes down to him
     const gt = this.groundTarget();
-    if (gt) { this.closeIn(gt); this.combo++; this.lastPunch = G.time; this.clipName = 'ground'; this.side = this.side === 1 ? -1 : 1; this.clip = PUNCH.ground; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom(); return; }
+    if (gt) {
+      // kicks mostly, a knee, now and then the fist
+      const r = Math.random(), name = r < 0.45 ? 'kick' : r < 0.72 ? 'knee' : 'ground';
+      this.closeIn(gt, GROUND_MOVE[name].near); this.combo++; this.lastPunch = G.time; this.clipName = name; this.side = this.side === 1 ? -1 : 1;
+      this.clip = PUNCH[name]; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom(); return;
+    }
+    // straight after a block: the counter, a hook from the rear hand, fast and hard
+    this.counterNow = this.counterReady();
+    if (this.counterNow) { this.counterT = -9; this.combo++; this.lastPunch = G.time; this.clipName = 'hook'; this.side = 1; this.clip = PUNCH.hook; this.k = 1; this.t = 0; this.st = 'strike'; this.snapFrom(); FOLEY.grunt(PLAY.pos, 1, 1); return; }
     // each tap picks a punch at random: mostly the other hand, rarely the same punch twice in a row
     const fresh = G.time - this.lastPunch > 0.9;
     const wts = COMBO.map(([n, sd]) => (n === 'hook' ? 0.4 : 1) * (fresh ? 1 : (sd === this.side ? 0.25 : 1) * (n === this.clipName ? 0.5 : 1)));
@@ -142,16 +178,18 @@ const FIST = {
     this.snapFrom();
   },
   release() {
+    this.counterNow = false;
     this.charge = clamp(this.t, 0.15, 0.7);
-    const low = this.groundTarget();
-    if (low) this.closeIn(low);
-    this.clip = low ? PUNCH.groundH : PUNCH.overhand; this.clipName = low ? 'groundH' : 'overhand'; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom();
+    const low = this.groundTarget(), lowName = low ? (Math.random() < 0.6 ? 'stomp' : 'groundH') : null;
+    if (low) this.closeIn(low, GROUND_MOVE[lowName].near);
+    this.clip = low ? PUNCH[lowName] : PUNCH.overhand; this.clipName = low ? lowName : 'overhand'; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom();
     this.faceYaw = this.aimYaw(); this.lastPunch = G.time; this.combo = 0;
   },
   snapFrom() {
     if (!this.fists) this.fists = [this.guardOf(0), this.guardOf(1)];
     this.from = this.fists.map((f) => ({ fist: f.fist.clone(), pole: f.pole.clone() }));
     this.bodyFrom = Object.assign({}, this.body);
+    this.legFrom = this.clip && this.clip.leg && this.legCur && this.k > 0 ? Object.assign({}, this.legCur) : null;
   },
   // the guard rides on the upper body, so twisting and leaning never bring the face into the fists
   guardOf(i) {
@@ -190,8 +228,8 @@ const FIST = {
     return null;
   },
   // a step in towards the man on the ground, so the fist reaches him
-  closeIn(T) {
-    const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz), v = clamp((d - 0.95) * 3.4, 0, 5);
+  closeIn(T, near) {
+    const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz), v = clamp((d - (near || 0.95)) * 3.4, -2, 5);
     if (d > 0.01) { PLAY.vx += dx / d * v; PLAY.vz += dz / d * v; }
     this.faceYaw = Math.atan2(dx, dz);
   },
@@ -224,7 +262,8 @@ const FIST = {
       const K = this.clip[this.k];
       if (K.hit && !this.hitDone && this.t >= K.dur * 0.85) { this.hitDone = true; this.connect(); }
       const first = this.clip.find((c) => c.ph === 'strike' || c.ph === 'arc');
-      if (K === first && this.t < dt * 1.5) { this.lunge(this.heavy ? 2.4 : this.clipName === 'hook' ? 1.5 : 1.3); FSFX.whoosh(this.heavy || this.clipName === 'hook'); this.trail.length = 0; this.trailT = this.heavy ? 0.3 : 0.22; }
+      if (K === first && this.t < dt * 1.5 && (this.heavy || this.clip.leg || Math.random() < 0.3)) FOLEY.grunt(PLAY.pos, 1, this.heavy ? 1.2 : 0.8);
+      if (K === first && this.t < dt * 1.5) { this.lunge(this.clip.leg ? 0.5 : this.heavy ? 2.4 : this.clipName === 'hook' ? 1.5 : 1.3); FSFX.whoosh(this.heavy || this.clipName === 'hook'); this.trail.length = 0; this.trailT = this.heavy ? 0.3 : 0.22; }
       if (this.t >= K.dur) {
         // drunk: the swing carries him after it
         if (K.hit && DRUNK.level > 0.1) this.drunkFollow();
@@ -263,11 +302,12 @@ const FIST = {
     if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
   },
   connect() {
-    const kind = this.clipName, ground = kind === 'ground' || kind === 'groundH', reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : ground ? 0.95 : 1.02;
+    const kind = this.clipName, GM = GROUND_MOVE[kind], ground = !!GM, foot = kind === 'kick' || kind === 'stomp' || kind === 'knee';
+    const reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : ground ? GM.reach : 1.02;
     const yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw);
     const fistY = PLAY.pos.y + (ground ? 0.45 : kind === 'overhand' ? 1.45 : 1.48);
-    const counter = G.time - this.counterT < 0.8;
-    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25) * (counter ? 1.35 : 1);
+    const counter = this.counterNow;
+    const power = (foot ? GM.power * (this.heavy ? 1 + this.charge * 0.6 : 1) : this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25) * (counter ? 1.35 : 1);
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
@@ -283,10 +323,12 @@ const FIST = {
     const reachD = Math.min(hd - hit.r * 0.6, reach);
     const p = new THREE.Vector3(PLAY.pos.x + fx * reachD, fistY, PLAY.pos.z + fz * reachD);
     const big = this.heavy;
-    G.hitStop = big ? 0.13 : kind === 'hook' ? 0.085 : 0.055;
-    PLAY.camShake = big ? 0.09 : kind === 'hook' ? 0.055 : 0.035;
-    PLAY.camPush.set(fx, big ? -0.25 : 0, fz).multiplyScalar(big ? 0.24 : 0.1);
-    GUN.fovPunch = big ? 1 : 0.4;
+    // weight: the world stops for a beat, the view is knocked the way the fist went
+    const solid = hit.kind === 'npc' || hit.kind === 'dummy';
+    G.hitStop = !solid ? 0.04 : big ? 0.16 : kind === 'hook' ? 0.1 : 0.07;
+    PLAY.camShake = big ? 0.13 : kind === 'hook' ? 0.08 : 0.05;
+    PLAY.camPush.set(fx, big ? -0.25 : -0.05, fz).multiplyScalar(big ? 0.32 : 0.15);
+    GUN.fovPunch = big ? 1.3 : 0.6;
     if (GUN.touch && navigator.vibrate) { try { navigator.vibrate(big ? 40 : 15); } catch (e) { /* ignore */ } }
     FX.impactStar(p, big ? 0.46 : 0.26);
     if (hit.kind === 'dummy') {
@@ -303,12 +345,19 @@ const FIST = {
         worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: 'npc', npc: N.id, kind, blocked: true });
         return;
       }
-      const head = ground ? Math.random() < 0.55 : fistY - N.pos.y > 1.32 - N.crouch * 0.4;
-      const res = N.hp.blow({ head, power, dir, heavy: big, ground });
-      FSFX.flesh(p, power, big || kind === 'hook', head);
-      if (head && Math.random() < (ground ? 0.5 : 0.25)) HARM.bloodFx(p, dir, 0.3, N);
+      const head = ground ? Math.random() < GM.head : fistY - N.pos.y > 1.32 - N.crouch * 0.4;
+      const res = N.hp.blow({ head, power, dir, heavy: big, ground, shove: counter });
+      if (foot) { FOLEY.kick(p, big || kind === 'stomp'); G.hitStop = Math.max(G.hitStop, big ? 0.15 : 0.09); PLAY.camShake = Math.max(PLAY.camShake, kind === 'knee' || big ? 0.1 : 0.06); }
+      else FSFX.flesh(p, power, big || kind === 'hook' || counter, head);
+      HARM.blowFx(N, p, dir, head, power * (big || counter ? 1.5 : 1), ground);
+      if (big || counter || foot || Math.random() < 0.4) FOLEY.grunt(N.pos, 0.78, big || counter || foot ? 1.2 : 0.8);   // the air knocked out of him
+      if (head && Math.random() < (ground ? 0.5 : big ? 0.45 : 0.25)) HARM.bloodFx(p, dir, 0.3, N);
+      // a big one to the head: the hat goes flying
+      if (head && !ground && (big || counter || res === 'down') && Math.random() < 0.6) HARM.knockHat(N, dir, true);
       if (N.fight) N.fight.gotHit();
-      if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.1); }
+      if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.13); PLAY.camShake = Math.max(PLAY.camShake, 0.1); HUD.cueFlash('hit', 'Konter!', 0.7); }
+      // he goes down: a moment of slow motion
+      if (res === 'down' || res === 'dead') { G.slowT = 0.55; G.hitStop = Math.max(G.hitStop, 0.12); PLAY.camShake = Math.max(PLAY.camShake, 0.14); }
       if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
@@ -364,7 +413,20 @@ const FIST = {
     else { const k2 = 1 - Math.exp(-dt * 12); for (const k of ['ty', 'tp', 'pz', 'dy', 'roll']) B[k] += (bodyGoal[k] - B[k]) * k2; }
     P.spYaw += B.ty * gw; P.pelYaw += B.ty * 0.4 * gw; P.spRoll += B.roll * gw;
     P.spPitch += B.tp * gw; P.pel.z += B.pz * gw; P.pel.y -= B.dy * gw;
-    P.hdYaw -= B.ty * 1.15 * gw; P.hdPitch += (0.12 - B.tp * 0.9) * gw; P.hdRoll = -B.roll * gw;   // chin tucked, eyes on the target
+    P.hdYaw -= B.ty * 1.15 * gw; P.hdPitch += (0.12 - B.tp * 0.9) * gw; P.hdRoll = (P.hdRoll || 0) - B.roll * gw;   // chin tucked, eyes on the target
+    // a kick, a stamp, a knee: the foot leaves the ground and goes where the key says; back to the gait in the recovery
+    const Kc = this.clip && this.clip[this.k];
+    if (this.clip && this.clip.leg && Kc) {
+      const li = this.side === 1 ? 1 : 0, m = this.side, L = this.legCur || (this.legCur = { x: 0, y: 0, z: 0, fp: 0, w: 0 });
+      if (!this.legFrom) this.legFrom = { x: P.ank[li].x, y: P.ank[li].y, z: P.ank[li].z, fp: P.ftPitch[li], w: 0 };
+      const F = this.legFrom;
+      if (Kc.leg) { L.x = lerp(F.x, Kc.leg[0] * m, e); L.y = lerp(F.y, Kc.leg[1], e); L.z = lerp(F.z, Kc.leg[2], e); L.fp = lerp(F.fp, Kc.fp || 0, e); L.w = lerp(F.w, 1, Math.min(1, e * 2)); }
+      else L.w = F.w * (1 - e);
+      // turned towards the target like the fists
+      const rl = clamp(wrapA((this.faceYaw !== null ? this.faceYaw : PLAY.yaw) - PLAY.yaw), -0.9, 0.9), c = Math.cos(rl), sn = Math.sin(rl);
+      const x = L.x * c + L.z * sn, z = -L.x * sn + L.z * c;
+      P.ank[li].x = lerp(P.ank[li].x, x, L.w); P.ank[li].y = lerp(P.ank[li].y, L.y, L.w); P.ank[li].z = lerp(P.ank[li].z, z, L.w); P.ftPitch[li] = lerp(P.ftPitch[li], L.fp, L.w);
+    }
     // fists: the punching one follows its path, the other keeps its guard; all in the frame turned towards the target
     torsoInverse(P); AIK.ready = true;
     const busy = this.st !== 'idle';
@@ -435,8 +497,11 @@ const FSFX = {
       const pick = heavy ? 'punchH' : ['punch1', 'punch2', 'punch3', 'punch4'][Math.floor(Math.random() * 4)];
       const lv = clamp(0.55 + power * 0.3, 0.4, 1.15);
       if (!GSFX.play(pick, g, t, (head ? 1.02 : 0.9) + Math.random() * 0.1, lv)) SFX.noiseHit(t, g, { freq: 1600, q: 0.8, gain: 0.45, attack: 0.001, decay: 0.05 });
-      SFX.thump(t, g, head ? 140 : 100, head ? 60 : 42, heavy ? 0.8 : 0.5, heavy ? 0.14 : 0.08);
-      SFX.noiseHit(t, g, { type: 'lowpass', freq: head ? 700 : 380, q: 0.8, gain: heavy ? 0.55 : 0.35, attack: 0.002, decay: 0.07 });
+      SFX.thump(t, g, head ? 140 : 100, head ? 55 : 38, heavy ? 1.05 : 0.7, heavy ? 0.18 : 0.1);
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: head ? 700 : 380, q: 0.8, gain: heavy ? 0.7 : 0.45, attack: 0.002, decay: 0.08 });
+      // a crack on the jaw, a deep boom under a big one
+      if (head) SFX.noiseHit(t, g, { type: 'highpass', freq: 2400, q: 0.7, gain: heavy ? 0.22 : 0.14, attack: 0.001, decay: 0.02 });
+      if (heavy) { SFX.thump(t + 0.01, g, 70, 30, 0.8, 0.28); GSFX.play('punch1', g, t + 0.008, 0.72, lv * 0.45); }
     });
   },
   block(p) {

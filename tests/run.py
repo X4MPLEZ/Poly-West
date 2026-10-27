@@ -819,7 +819,7 @@ async def check_doctor(g):
       out.noBar = !barActions(BARKEEP.C, null).some((a) => a.label === 'Bestellen');
       PLAY.pos.set(10, 0, 3); let last = '';
       for (let k = 0; k < 60 * 240; k++) { G.stepFrame(1/60); const st = BARKEEP.st + '/' + (N.room ? N.room.type : 'street'); if (st !== last) { last = st; out.trip.push(st); } if (k > 600 && BARKEEP.st === 'idle') break; }
-      out.bandaged = N.hp.wounds.some((w) => w.kind === 'shot' && w.bandaged); out.docKnows = DOC.knows.length > 0 && /Schulter/.test(DOC.knows[0]);
+      out.bandaged = N.hp.wounds.some((w) => w.kind === 'shot' && w.bandaged); out.docKnows = DOC.knows.length > 0 && /Schulter|Arm/.test(DOC.knows[0]);
       out.home = BARKEEP.st === 'idle' && N.room === R;
       // the player at the doctor's
       const D = DOC.npc; D.stop(); const mid = rwp(DOC.R, 0, 0, -4.4), md = Math.hypot(mid.x - D.pos.x, mid.z - D.pos.z) || 1;
@@ -833,7 +833,7 @@ async def check_doctor(g):
       BARKEEP.revive(); BARKEEP.forget(); DOC.persona().forget(); G.noRender = false;
       return out; }''')
     trip = '>'.join(r['trip'])
-    ok = (r['zone'] == 'shoulder' and r['noBar'] and 'toDoc/street' in trip and 'atDoc/doctor' in trip and 'return/saloon' in trip and r['bandaged'] and r['docKnows'] and r['home']
+    ok = (r['zone'] in ('shoulder', 'arm') and r['noBar'] and 'toDoc/street' in trip and 'atDoc/doctor' in trip and 'return/saloon' in trip and r['bandaged'] and r['docKnows'] and r['home']
           and r['offer'] and r['healed'] and r['paid'] == 50)
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -914,11 +914,42 @@ async def check_block(g):
       // no stamina: the guard breaks
       FIST.setBlock(true); FIST.stamina = 0.03; const hp1 = PHP.hp; let k = 0;
       for (; k < 60 * 8 && PHP.hp >= hp1 - 0.02; k++) { face(); FIST.stamina = Math.min(FIST.stamina, 0.03); G.stepFrame(1/60); }
-      out.broken = +(hp1 - PHP.hp).toFixed(2);
-      FIST.setBlock(false); N.fight.stop(); PHP.hp = 1; PHP.out = null; FALL.cancel(); B.revive(); B.forget(); G.noRender = false;
+      out.broken = +(hp1 - PHP.hp).toFixed(2); out.npc = [N.fight.st, N.hp.busy(), +N.hp.daze.toFixed(2), +Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z).toFixed(2), FIST.blocking, +FIST.stamina.toFixed(2)];
+      FIST.setBlock(false); N.fight.stop(); PHP.hp = 1; PHP.out = null; FALL.cancel(); B.revive(); B.forget();
+      // afterwards the head is straight again (nothing left over from the blows and the guard)
+      PLAY.pos.set(-12, 0, 2); for (let k = 0; k < 150; k++) G.stepFrame(1/60); out.headRoll = +(W.ch.pose.hdRoll || 0).toFixed(3); G.noRender = false;
       return out; }''')
-    ok = (r['calm'][0] == 'Zielen' and r['calm'][1] and r['fight'][0] == 'Deckung' and not r['fight'][1] and r['blocked'] >= 2 and r['lost'] < 0.1
+    ok = (abs(r['headRoll']) < 0.02 and r['calm'][0] == 'Zielen' and r['calm'][1] and r['fight'][0] == 'Deckung' and not r['fight'][1] and r['blocked'] >= 2 and r['lost'] < 0.1
           and r['stamina'] < 0.95 and r['pose'] > 0.8 and r['counter'] > 0.2 and r['broken'] > 0.05)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_falls(g):
+    """a man knocked down never ends up inside the bar or a wall: with the bar at his back he is thrown over it and
+       slides down in front of it, with the shelves behind him he slams into them and sits; in the open he falls flat.
+       On the ground the player kicks, knees and (sometimes) punches him"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, R = B.R, F = R.floorY, out = {}; G.noRender = true;
+      const down = (c) => { B.revive(); const n = rwp(R, c[0], F, c[1]), p = rwp(R, c[2], F, c[3]);
+        PLAY.pos.copy(p); GAIT.init = false; N.pos.copy(n); N.room = R; N.vx = N.vz = 0; B.st = 'brawl';
+        for (let k = 0; k < 5; k++) G.stepFrame(1/60);
+        N.yaw = Math.atan2(p.x - n.x, p.z - n.z); PLAY.yaw = Math.atan2(n.x - p.x, n.z - p.z);
+        const dir = new THREE.Vector3(n.x - p.x, 0, n.z - p.z).normalize(); N.hp.daze = 0.95; N.hp.blow({ head: true, power: 1.5, dir, heavy: true });
+        const seq = N.hp.anim ? N.hp.anim.seq.map((s) => s.k || 'lie').join(',') : '';
+        for (let k = 0; k < 90; k++) G.stepFrame(1/60);
+        N.ch.root.updateMatrixWorld(true);
+        const inside = ['head', 'torso', 'pelvis'].filter((nm) => { const e = N.ch.p[nm].matrixWorld.elements; return HARM.blockedAt(e[12], e[14], F, 0) > 0.45; });
+        return { seq, inside, down: N.hp.down() }; };
+      out.bar = down([2.75, -6.0, 1.75, -6.0]);
+      out.shelf = down([5.4, -6.0, 2.4, -6.0]);
+      out.open = down([0.5, -5.0, -0.5, -5.0]);
+      // on the ground: what the player does to him
+      const names = {}, tr = N.hp.trauma; N.hp.downFor = 60;
+      for (let i = 0; i < 10; i++) { PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); FIST.stamina = 1; FIST.down(false); G.stepFrame(1/60); FIST.up(); names[FIST.clipName] = (names[FIST.clipName] || 0) + 1; for (let k = 0; k < 50; k++) G.stepFrame(1/60); if (N.hp.dead) break; }
+      out.moves = names; out.trauma = +(N.hp.trauma - tr).toFixed(2);
+      B.revive(); B.forget(); G.noRender = false;
+      return out; }''')
+    ok = ('overBar' in r['bar']['seq'] and not r['bar']['inside'] and 'wallHit' in r['shelf']['seq'] and not r['shelf']['inside']
+          and 'flat' in r['open']['seq'] and not r['open']['inside'] and r['moves'].get('kick', 0) > 0 and len(r['moves']) >= 2 and r['trauma'] > 0.3)
     return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_deepgram(g):
@@ -957,7 +988,7 @@ async def check_deepgram(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

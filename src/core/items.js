@@ -27,6 +27,7 @@ SAVE.part('inv', () => ({ money: INV.money, items: INV.items, sips: INV.sips }),
 /* short messages at the top of the screen: money spent, a bottle empty, what happened while you were out */
 const TOAST = {
   show(text, kind) {
+    if (kind === 'money' && typeof FOLEY !== 'undefined') FOLEY.coins(PLAY.pos, 3);
     const box = document.getElementById('toasts');
     if (!box) return;
     const el = document.createElement('div'); el.className = 'toast' + (kind ? ' ' + kind : ''); el.textContent = text;
