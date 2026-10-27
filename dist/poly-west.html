@@ -39,6 +39,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #perf { position: absolute; top: 10px; left: max(12px, env(safe-area-inset-left, 0px)); display: flex; align-items: center; gap: 6px; }
 #fpsBox { font-family: var(--f-mono); font-size: 11px; color: var(--dust); background: rgba(22, 15, 10, 0.55); border-radius: 6px; padding: 3px 7px; font-variant-numeric: tabular-nums; line-height: 1.3; }
 #fps { font-weight: 600; color: var(--good); }
+#lockHint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); pointer-events: none; background: rgba(22, 15, 10, 0.6); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 14px; font-family: var(--f-ui); font-size: 13px; color: var(--bone); white-space: nowrap; }
+#app.touch #lockHint, #app.paused #lockHint { display: none; }
+@media (pointer: coarse) { #lockHint { display: none; } }
 #slowBtn { background: rgba(22, 15, 10, 0.55); border: 1px solid var(--edge); border-radius: 999px; padding: 3px 9px; font-family: var(--f-ui); font-weight: 700; font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--bone); }
 #slowBtn[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: var(--ink); }
 
@@ -404,6 +407,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
+    <div id="lockHint" hidden>Klick ins Bild: Maus steuert die Kamera · Esc: Menü</div>
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek<span id="clock"></span></span>
@@ -501,12 +505,15 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
       <section data-pane="keys" class="mPane" hidden>
         <table class="mKeys">
+          <tr><th scope="row">Maus fangen</th><td>Klick ins Bild (Esc lässt sie los und pausiert)</td><td>–</td></tr>
           <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>unten links ziehen, weit = rennen</td></tr>
-          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>überall sonst wischen</td></tr>
-          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
-          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
+          <tr><th scope="row">Kamera</th><td>Maus bewegen · Rad = Abstand (auch + / −)</td><td>überall sonst wischen</td></tr>
+          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand · im Kampf Rechtsklick = Deckung</td><td>Schlag antippen, halten = Overhand</td></tr>
+          <tr><th scope="row">Revolver</th><td>Q ziehen/wegstecken · Rechtsklick halten = zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
           <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
-          <tr><th scope="row">Tasche</th><td>Tab halten, zeigen, loslassen · T trinkt direkt aus der Flasche</td><td>Knopf „Tasche“</td></tr>
+          <tr><th scope="row">Reden</th><td>V (dann sprechen oder tippen)</td><td>Knopf „Reden“</td></tr>
+          <tr><th scope="row">Tasche</th><td>Tab halten, zeigen, loslassen · T trinkt aus der Flasche</td><td>Knopf „Tasche“</td></tr>
+          <tr><th scope="row">Sonstiges</th><td>Z Zeitlupe · H Anzeige aus · M Ton</td><td>–</td></tr>
           <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
           <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
         </table>
@@ -4930,13 +4937,30 @@ function initInput(app, canvas, onAction) {
       INPUT.joy = { id: e.pointerId, ox: x, oy: y };
       joyEl.hidden = false; joyEl.style.left = x + 'px'; joyEl.style.top = y + 'px'; knob.style.transform = 'translate(0px, 0px)';
       onAction('move');
-    } else if (!INPUT.look) {
+    } else if (!INPUT.look && !(touchLike === false && INPUT.locked())) {
       INPUT.look = { id: e.pointerId, x: e.clientX, y: e.clientY };
       onAction('look');
     } else return;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    e.preventDefault();
+    // (not for the mouse: a cancelled pointerdown swallows the mousedown, and the buttons punch and aim there)
+    if (touchLike) e.preventDefault();
   });
+  /* PC: a click into the picture catches the mouse (pointer lock): moving it turns the camera, left punches or
+     fires, right aims (in a fight: guard). Esc lets it go and pauses. Where the page may not lock it (a frame that
+     forbids it), dragging turns the camera instead. Windows that need the pointer (menu, order list, sleep wheel,
+     developer tools) let it go by themselves; a click catches it again. */
+  INPUT.locked = () => document.pointerLockElement === canvas;
+  INPUT.lockable = () => !INPUT.noLock && !!canvas.requestPointerLock && !MENU.open && !SHOP.open && !SLEEP.busy() && !DEV.on && !app.classList.contains('touch');
+  INPUT.lock = () => { if (!INPUT.lockable() || INPUT.locked()) return; try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { INPUT.noLock = true; } };
+  INPUT.unlock = () => { if (!INPUT.locked()) return; INPUT.letGo = true; try { document.exitPointerLock(); } catch (err) { /* ignore */ } };
+  document.addEventListener('pointerlockchange', () => {
+    if (INPUT.locked()) { INPUT.everLocked = true; return; }
+    INPUT.keys.clear(); FIST.up(); if (INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); } GUN.setAim(false);
+    // let go by Esc (not by a window of the game): the game pauses
+    if (!INPUT.letGo && !MENU.open && !SHOP.open && !SLEEP.busy() && !DEV.on) { MENU.show('game', true); INPUT.pausedAt = performance.now(); }
+    INPUT.letGo = false;
+  });
+  document.addEventListener('pointerlockerror', () => { if (!INPUT.everLocked) INPUT.noLock = true; });
   canvas.addEventListener('pointermove', (e) => {
     if (INPUT.joy && e.pointerId === INPUT.joy.id) {
       const rect = app.getBoundingClientRect();
@@ -4962,18 +4986,20 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('mousedown', (e) => {
     // phones send a mouse click after a tap: that is not a punch (only the button punches)
     if ((e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || performance.now() - (INPUT.lastTouch || -1e9) < 1000) return;
+    // the first click only catches the mouse (no punch into the air)
+    if (!INPUT.locked() && INPUT.lockable() && !INPUT.everLocked) { INPUT.lock(); return; }
+    if (!INPUT.locked()) INPUT.lock();
     if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
       // in a fight with the revolver in the holster the right button is the guard; otherwise it draws and aims
       if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.rmbBlock = true; onAction('fire'); return; }
       GUN.setAim(true); onAction('aim');
-      try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
     } else if (e.button === 0) { if (GUN.state === 'holster') FIST.down(true); else GUN.pressFire(); onAction('fire'); }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) FIST.up();
     if (e.button === 2 && INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); return; }
-    if (e.button === 2) { GUN.setAim(false); try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (err) { /* ignore */ } }
+    if (e.button === 2) GUN.setAim(false);
   });
   document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === canvas) lookBy(e.movementX, e.movementY, false); });
   canvas.addEventListener('wheel', (e) => { SETTINGS.set('camDist', +clamp(PLAY.camDist * Math.exp(e.deltaY * 0.0012), 3.2, 12).toFixed(1)); e.preventDefault(); }, { passive: false });
@@ -4984,6 +5010,7 @@ function initInput(app, canvas, onAction) {
     if (TALK.open && TALK.key(e, k)) { e.preventDefault(); return; }
     if (SLEEP.busy()) return;   // the sleep wheel has its own keys (ui/sleep.js)
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
+    if (k === 'Escape' && performance.now() - (INPUT.pausedAt || -1e9) < 500) return;   // (that Esc already let the mouse go and paused)
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (DRUNK.blocked() && k !== 'F2') return;
     if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
@@ -4994,7 +5021,7 @@ function initInput(app, canvas, onAction) {
     if (k === 'v' && !e.repeat && TALK.target()) { TALK.start(); return; }
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
-    if (k === 't') { onAction('slow'); return; }
+    if (k === 'z') { onAction('slow'); return; }
     if (k === 'e' && !e.repeat && BARKEEP.pending && G.room === BARKEEP.R) { BARKEEP.pay(); return; }   // money for what was ordered in words
     if (k === 'e' && !e.repeat) { INTERACT.use(0); onAction('use'); return; }
     if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
@@ -5035,6 +5062,9 @@ function lookBy(dx, dy, touch) {
 }
 
 function pollGamepad(onAction) {
+  if (INPUT.locked && INPUT.locked() && (MENU.open || SHOP.open || SLEEP.busy() || DEV.on)) INPUT.unlock();
+  // "click into the picture" while the mouse is free and could be caught
+  if (INPUT.locked) { const want = !INPUT.locked() && INPUT.lockable(); if (want !== INPUT.hintOn) { INPUT.hintOn = want; const h = document.getElementById('lockHint'); if (h) h.hidden = !want; } }
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   const p = pads && Array.from(pads).find((g) => g && g.connected);
   INPUT.padX = INPUT.padY = 0; INPUT.padRun = false; INPUT.padLookX = INPUT.padLookY = 0;
@@ -15861,7 +15891,7 @@ const MENU = {
     this.el = $('menu');
     $('menuBtn').addEventListener('click', () => this.toggle());
     $('mClose').addEventListener('click', () => this.close());
-    $('mResume').addEventListener('click', () => this.close());
+    $('mResume').addEventListener('click', () => { this.close(); if (INPUT.lock) INPUT.lock(); });   // (the click catches the mouse again)
     $('mSave').addEventListener('click', () => { const ok = SAVE.write(); this.note(ok ? 'Gespeichert.' : 'Speichern ist in diesem Browser nicht möglich.'); });
     $('mNew').addEventListener('click', () => {
       // two taps, so that nobody loses the game by accident

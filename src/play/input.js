@@ -15,13 +15,30 @@ function initInput(app, canvas, onAction) {
       INPUT.joy = { id: e.pointerId, ox: x, oy: y };
       joyEl.hidden = false; joyEl.style.left = x + 'px'; joyEl.style.top = y + 'px'; knob.style.transform = 'translate(0px, 0px)';
       onAction('move');
-    } else if (!INPUT.look) {
+    } else if (!INPUT.look && !(touchLike === false && INPUT.locked())) {
       INPUT.look = { id: e.pointerId, x: e.clientX, y: e.clientY };
       onAction('look');
     } else return;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    e.preventDefault();
+    // (not for the mouse: a cancelled pointerdown swallows the mousedown, and the buttons punch and aim there)
+    if (touchLike) e.preventDefault();
   });
+  /* PC: a click into the picture catches the mouse (pointer lock): moving it turns the camera, left punches or
+     fires, right aims (in a fight: guard). Esc lets it go and pauses. Where the page may not lock it (a frame that
+     forbids it), dragging turns the camera instead. Windows that need the pointer (menu, order list, sleep wheel,
+     developer tools) let it go by themselves; a click catches it again. */
+  INPUT.locked = () => document.pointerLockElement === canvas;
+  INPUT.lockable = () => !INPUT.noLock && !!canvas.requestPointerLock && !MENU.open && !SHOP.open && !SLEEP.busy() && !DEV.on && !app.classList.contains('touch');
+  INPUT.lock = () => { if (!INPUT.lockable() || INPUT.locked()) return; try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { INPUT.noLock = true; } };
+  INPUT.unlock = () => { if (!INPUT.locked()) return; INPUT.letGo = true; try { document.exitPointerLock(); } catch (err) { /* ignore */ } };
+  document.addEventListener('pointerlockchange', () => {
+    if (INPUT.locked()) { INPUT.everLocked = true; return; }
+    INPUT.keys.clear(); FIST.up(); if (INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); } GUN.setAim(false);
+    // let go by Esc (not by a window of the game): the game pauses
+    if (!INPUT.letGo && !MENU.open && !SHOP.open && !SLEEP.busy() && !DEV.on) { MENU.show('game', true); INPUT.pausedAt = performance.now(); }
+    INPUT.letGo = false;
+  });
+  document.addEventListener('pointerlockerror', () => { if (!INPUT.everLocked) INPUT.noLock = true; });
   canvas.addEventListener('pointermove', (e) => {
     if (INPUT.joy && e.pointerId === INPUT.joy.id) {
       const rect = app.getBoundingClientRect();
@@ -47,18 +64,20 @@ function initInput(app, canvas, onAction) {
   canvas.addEventListener('mousedown', (e) => {
     // phones send a mouse click after a tap: that is not a punch (only the button punches)
     if ((e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || performance.now() - (INPUT.lastTouch || -1e9) < 1000) return;
+    // the first click only catches the mouse (no punch into the air)
+    if (!INPUT.locked() && INPUT.lockable() && !INPUT.everLocked) { INPUT.lock(); return; }
+    if (!INPUT.locked()) INPUT.lock();
     if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
       // in a fight with the revolver in the holster the right button is the guard; otherwise it draws and aims
       if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.rmbBlock = true; onAction('fire'); return; }
       GUN.setAim(true); onAction('aim');
-      try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
     } else if (e.button === 0) { if (GUN.state === 'holster') FIST.down(true); else GUN.pressFire(); onAction('fire'); }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) FIST.up();
     if (e.button === 2 && INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); return; }
-    if (e.button === 2) { GUN.setAim(false); try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (err) { /* ignore */ } }
+    if (e.button === 2) GUN.setAim(false);
   });
   document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === canvas) lookBy(e.movementX, e.movementY, false); });
   canvas.addEventListener('wheel', (e) => { SETTINGS.set('camDist', +clamp(PLAY.camDist * Math.exp(e.deltaY * 0.0012), 3.2, 12).toFixed(1)); e.preventDefault(); }, { passive: false });
@@ -69,6 +88,7 @@ function initInput(app, canvas, onAction) {
     if (TALK.open && TALK.key(e, k)) { e.preventDefault(); return; }
     if (SLEEP.busy()) return;   // the sleep wheel has its own keys (ui/sleep.js)
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
+    if (k === 'Escape' && performance.now() - (INPUT.pausedAt || -1e9) < 500) return;   // (that Esc already let the mouse go and paused)
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (DRUNK.blocked() && k !== 'F2') return;
     if (k === 'F2') { e.preventDefault(); DEV.toggle(); return; }
@@ -79,7 +99,7 @@ function initInput(app, canvas, onAction) {
     if (k === 'v' && !e.repeat && TALK.target()) { TALK.start(); return; }
     if (k === 'm') { onAction('sound'); return; }
     if (k === 'h') { onAction('hud'); return; }
-    if (k === 't') { onAction('slow'); return; }
+    if (k === 'z') { onAction('slow'); return; }
     if (k === 'e' && !e.repeat && BARKEEP.pending && G.room === BARKEEP.R) { BARKEEP.pay(); return; }   // money for what was ordered in words
     if (k === 'e' && !e.repeat) { INTERACT.use(0); onAction('use'); return; }
     if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
@@ -120,6 +140,9 @@ function lookBy(dx, dy, touch) {
 }
 
 function pollGamepad(onAction) {
+  if (INPUT.locked && INPUT.locked() && (MENU.open || SHOP.open || SLEEP.busy() || DEV.on)) INPUT.unlock();
+  // "click into the picture" while the mouse is free and could be caught
+  if (INPUT.locked) { const want = !INPUT.locked() && INPUT.lockable(); if (want !== INPUT.hintOn) { INPUT.hintOn = want; const h = document.getElementById('lockHint'); if (h) h.hidden = !want; } }
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   const p = pads && Array.from(pads).find((g) => g && g.connected);
   INPUT.padX = INPUT.padY = 0; INPUT.padRun = false; INPUT.padLookX = INPUT.padLookY = 0;

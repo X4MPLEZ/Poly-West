@@ -8,7 +8,7 @@ const MENU = {
     this.el = $('menu');
     $('menuBtn').addEventListener('click', () => this.toggle());
     $('mClose').addEventListener('click', () => this.close());
-    $('mResume').addEventListener('click', () => this.close());
+    $('mResume').addEventListener('click', () => { this.close(); if (INPUT.lock) INPUT.lock(); });   // (the click catches the mouse again)
     $('mSave').addEventListener('click', () => { const ok = SAVE.write(); this.note(ok ? 'Gespeichert.' : 'Speichern ist in diesem Browser nicht möglich.'); });
     $('mNew').addEventListener('click', () => {
       // two taps, so that nobody loses the game by accident

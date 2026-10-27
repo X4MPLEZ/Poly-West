@@ -39,6 +39,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #perf { position: absolute; top: 10px; left: max(12px, env(safe-area-inset-left, 0px)); display: flex; align-items: center; gap: 6px; }
 #fpsBox { font-family: var(--f-mono); font-size: 11px; color: var(--dust); background: rgba(22, 15, 10, 0.55); border-radius: 6px; padding: 3px 7px; font-variant-numeric: tabular-nums; line-height: 1.3; }
 #fps { font-weight: 600; color: var(--good); }
+#lockHint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); pointer-events: none; background: rgba(22, 15, 10, 0.6); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 14px; font-family: var(--f-ui); font-size: 13px; color: var(--bone); white-space: nowrap; }
+#app.touch #lockHint, #app.paused #lockHint { display: none; }
+@media (pointer: coarse) { #lockHint { display: none; } }
 #slowBtn { background: rgba(22, 15, 10, 0.55); border: 1px solid var(--edge); border-radius: 999px; padding: 3px 9px; font-family: var(--f-ui); font-weight: 700; font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--bone); }
 #slowBtn[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: var(--ink); }
 
@@ -404,6 +407,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   <div id="blackout" hidden aria-hidden="true"></div>
   <div id="joy" hidden><div id="joyKnob"></div></div>
   <div id="hud">
+    <div id="lockHint" hidden>Klick ins Bild: Maus steuert die Kamera · Esc: Menü</div>
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
       <span id="name">Dust Creek<span id="clock"></span></span>
@@ -501,12 +505,15 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <section data-pane="set" class="mPane" hidden><div id="mSettings"></div><button id="mReset" type="button" class="mSmallBtn">Alles zurücksetzen</button></section>
       <section data-pane="keys" class="mPane" hidden>
         <table class="mKeys">
+          <tr><th scope="row">Maus fangen</th><td>Klick ins Bild (Esc lässt sie los und pausiert)</td><td>–</td></tr>
           <tr><th scope="row">Gehen / Rennen</th><td>WASD · Shift</td><td>unten links ziehen, weit = rennen</td></tr>
-          <tr><th scope="row">Kamera</th><td>Maus (Rechtsklick fängt sie), Rad = Abstand</td><td>überall sonst wischen</td></tr>
-          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand</td><td>Schlag antippen, halten = Overhand</td></tr>
-          <tr><th scope="row">Revolver</th><td>Q ziehen · Rechtsklick zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
+          <tr><th scope="row">Kamera</th><td>Maus bewegen · Rad = Abstand (auch + / −)</td><td>überall sonst wischen</td></tr>
+          <tr><th scope="row">Schlagen</th><td>Linksklick oder F, halten = Overhand · im Kampf Rechtsklick = Deckung</td><td>Schlag antippen, halten = Overhand</td></tr>
+          <tr><th scope="row">Revolver</th><td>Q ziehen/wegstecken · Rechtsklick halten = zielen · Linksklick schießen · R laden</td><td>Zielen zieht ihn · Feuer · Laden · steckt sich nach kurzer Zeit selbst weg</td></tr>
           <tr><th scope="row">Benutzen</th><td>E, zweite Möglichkeit R</td><td>Knöpfe, die an Orten erscheinen</td></tr>
-          <tr><th scope="row">Tasche</th><td>Tab halten, zeigen, loslassen · T trinkt direkt aus der Flasche</td><td>Knopf „Tasche“</td></tr>
+          <tr><th scope="row">Reden</th><td>V (dann sprechen oder tippen)</td><td>Knopf „Reden“</td></tr>
+          <tr><th scope="row">Tasche</th><td>Tab halten, zeigen, loslassen · T trinkt aus der Flasche</td><td>Knopf „Tasche“</td></tr>
+          <tr><th scope="row">Sonstiges</th><td>Z Zeitlupe · H Anzeige aus · M Ton</td><td>–</td></tr>
           <tr><th scope="row">Menü</th><td>Esc oder P</td><td>☰ oben rechts</td></tr>
           <tr><th scope="row">Gamepad</th><td colspan="2">Sticks · RT schlagen/schießen · LT zielen · LB Revolver · X laden · Y benutzen · A rennen · Start Menü</td></tr>
         </table>
