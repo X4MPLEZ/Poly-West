@@ -837,8 +837,58 @@ async def check_doctor(g):
           and r['offer'] and r['healed'] and r['paid'] == 50)
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_revenge(g):
+    """a grudge: no drinks; a bigger one: he comes round the bar with his fists; the biggest: the shotgun (warning shot,
+       then at you; you come to at the doctor's) and then you are quits"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, R = B.R, out = {}; B.revive(); B.forget(); G.noRender = true; PHP.hp = 1; PHP.out = null;
+      const bar = rwp(R, 2.4, R.floorY, -6.4); PLAY.pos.copy(bar); PLAY.yaw = Math.atan2(N.pos.x - bar.x, N.pos.z - bar.z); GAIT.init = false;
+      B.grudge = 0.52; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      INTERACT.update(true); out.noOrder = !barActions(B.C, null).some((a) => a.label === 'Bestellen');
+      // fists
+      B.grudge = 0.6; B.ambushT = -999; let k = 0;
+      for (; k < 60 * 15 && B.st !== 'brawl'; k++) G.stepFrame(1/60);
+      out.ambush = B.st;
+      for (k = 0; k < 60 * 15 && PHP.hp > 0.95; k++) G.stepFrame(1/60);
+      out.reached = +PHP.hp.toFixed(2) < 0.95;
+      N.fight.stop(); B.st = 'return'; B.returnT = 0; for (k = 0; k < 60 * 30 && B.st !== 'idle'; k++) G.stepFrame(1/60);
+      // the shotgun
+      PHP.hp = 1; B.grudge = 0.95; B.gunDownT = -99; const shots = []; const off = onWorldEvent((e) => { if (e.type === 'npcShot2') shots.push(e.warning); });
+      const door = rwp(R, 0, R.floorY, -2.5); PLAY.pos.copy(door); GAIT.init = false;
+      for (k = 0; k < 60 * 40 && !(PHP.out && PHP.out.woke); k++) G.stepFrame(1/60);
+      out.shotgun = shots; out.out = !!PHP.out; out.atDoc = G.room && G.room.type;
+      for (k = 0; k < 60 * 6 && PHP.out; k++) G.stepFrame(1/60);
+      out.quits = B.grudge < 0.85; out.mem = B.mem.slice(-1)[0];
+      PHP.hp = 1; PHP.out = null; PHP.fx = null; FALL.cancel(); B.revive(); B.forget(); G.noRender = false;
+      return out; }''')
+    ok = (r['noOrder'] and r['ambush'] == 'brawl' and r['reached'] and len(r['shotgun']) >= 2 and r['shotgun'][0] is True and r['out'] and r['atDoc'] == 'doctor' and r['quits'] and 'quitt' in (r['mem'] or ''))
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_fate(g):
+    """death is for good: no more service, the body is taken away (a grave), a day later his brother takes over,
+       knows who did it and greets you accordingly; all of it in the save"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, R = B.R, out = {}; B.revive(); B.forget(); G.noRender = true;
+      const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); GAIT.init = false; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(0, 0.15, 0.1).applyMatrix4(N.ch.p.head.matrixWorld);
+      const o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
+      GUN.hitResult(hit, d, 0); for (let k = 0; k < 120; k++) G.stepFrame(1/60);
+      out.dead = N.hp.dead && B.st === 'dead'; out.noBar = !barActions(B.C, null).some((a) => a.label === 'Bestellen');
+      PLAY.pos.set(10, 0, 3); TIME.skip(8 * 60); G.stepFrame(1/60);
+      out.grave = GRAVES.list.length === 1 && GRAVES.list[0].name === 'Hank' && B.st === 'gone' && !NPCS.list.some((n) => n.name === 'Hank');
+      TIME.skip(20 * 60); G.stepFrame(1/60);
+      out.next = B.npc && B.npc.name; out.knows = B.mem.some((m) => /umgebracht/.test(m)); out.grudge = +B.grudge.toFixed(2);
+      out.ctx = /Walt/.test(B.npc.persona.rules) && /Hank/.test(B.npc.persona.rules);
+      const snap = SAVE.snapshot(); out.saved = snap.parts.hank.whoI === 1 && snap.parts.graves.length === 1;
+      // back to Hank for the other checks
+      B.npc.dispose(); B.whoI = 0; B.makeNpc(B.scene0); B.st = 'idle'; B.pickIdle(); B.forget(); B.killedBy = null; B.diedAt = null; B.metNew = false;
+      for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.list = []; GRAVES.meshes = [];
+      G.noRender = false; return out; }''')
+    ok = r['dead'] and r['noBar'] and r['grave'] and r['next'] == 'Walt' and r['knows'] and r['grudge'] >= 0.55 and r['ctx'] and r['saved']
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('doctor', check_doctor), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

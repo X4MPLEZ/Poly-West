@@ -48,7 +48,10 @@ class Brawler {
       if (d > want + 0.25 || d < want - 0.3) {
         const k = (d - want) / Math.max(d, 0.01);
         N.hurry = d > 2.5 ? 1.9 : 1.25;
-        if (d > 2.5) N.walkTo(N.pos.x + dx * k, N.pos.z + dz * k, face);
+        // not in the same part of the room (behind the bar, say): round by the way
+        this.areaT = (this.areaT || 0) - 1;
+        if (this.areaT <= 0) { this.areaT = 15; this.apart = NAV.area(N.pos.x, N.pos.z, N.pos.y).key !== NAV.area(P.x, P.z, P.y).key; }
+        if (d > 2.5 || this.apart) { if (!N.walking() || (this.walkT = (this.walkT || 0) + 1) % 30 === 0) N.walkTo(N.pos.x + dx * k, N.pos.z + dz * k, face); }
         else N.goTo(N.pos.x + dx * k, N.pos.z + dz * k, face);
       } else {
         this.circle += dt; if (this.circle > 2 + Math.random()) { this.circle = 0; this.circleDir = -this.circleDir; }

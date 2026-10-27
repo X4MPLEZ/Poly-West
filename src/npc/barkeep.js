@@ -119,10 +119,12 @@ const BARKEEP = {
     if (P.glass.visible && !(this.cur && this.cur.glassOut)) out.push(this._hg || (this._hg = mk('glass', 0, 0.065, 0.05)));
     if (P.bottle.visible) out.push(this._hb || (this._hb = mk('bottle', 1, 0.075, 0.12)));
     if (P.rag.visible) out.push(this._hr || (this._hr = mk('rag', 1, 0.07, 0)));
+    if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = mk('shotgun', 1, 0.11, 0)));
     return out;
   },
   lose(kind) {
     this.props[kind].visible = false; this.lostT = G.time;
+    if (kind === 'shotgun') { this.st = 'idle'; this.sg = null; this.gunDownT = G.time + 90; this.pickIdle(); return; }
     if (kind === 'bottle' || (kind === 'glass' && this.cur)) this.abortServe();
     if (this.act === 'polish' || this.act === 'wipe') { this.act = 'stand'; this.actT = 6; }
   },
@@ -130,7 +132,7 @@ const BARKEEP = {
   onHarm(info) {
     const N = this.npc;
     this.pending = null; this.attending = false; this.standoff = null;
-    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; return; }
+    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
     if (info.type === 'blow') {
       const F = this.fightLog || (this.fightLog = { punches: 0, downs: 0, ground: 0, landed: 0 });
@@ -243,9 +245,12 @@ const BARKEEP = {
   },
   // the hours of a night (sleep) at once: what he would have done meanwhile is done
   skipped(m) {
+    if (m >= 60 && this.st === 'dead') this.removeBody();
+    if (this.st === 'gone') { if (TIME.min - (this.diedAt || 0) >= 1440 && G.room !== this.R && this.whoI < this.WHO.length - 1) this.arrive(); return; }
     const N = this.npc; if (!N || N.hp.dead || m < 60) return;
+    if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; }
     if (N.fight.on) N.fight.stop();
-    if (['hurt', 'toDoc', 'atDoc', 'return', 'street', 'brawl', 'duck'].includes(this.st) || N.room !== this.R) {
+    if (['hurt', 'toDoc', 'atDoc', 'return', 'street', 'brawl', 'duck', 'shotgun'].includes(this.st) || N.room !== this.R) {
       if (DOC.npc && !DOC.npc.hp.dead && N.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { N.hp.bandageAll(); this.remember('Der Doc hat deine Wunde verbunden (' + TIME.stamp() + ').'); }
       if (N.hp.anim && !N.hp.dead) { N.hp.anim = null; N.body.r = 0.32; }
       const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; N.vx = N.vz = 0;
@@ -290,11 +295,7 @@ const BARKEEP = {
     this.C = COUNTERS.find((c) => c.room === R) || null;
     const F = R.floorY, p = this.roomPt(this.X.stand, -6.4, this._v);
     this.faceYaw = this.yawFor(-1); this.backYaw = this.yawFor(1);
-    this.npc = new NPC({
-      id: 'barkeep', name: 'Hank', room: R, scene, pos: p, yaw: this.faceYaw,
-      colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
-      look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) }
-    });
+    this.makeNpc(scene);
     void F;
     // what he handles: a glass, a bottle, a rag
     const mk = (geo) => { const m = new THREE.Mesh(geo, G.litMat); m.matrixAutoUpdate = false; m.visible = false; m.frustumCulled = false; scene.add(m); return m; };
@@ -304,14 +305,38 @@ const BARKEEP = {
     this.props.rag = mk(rag.build());
     this.pickIdle();
     onWorldEvent((e) => this.event(e));
-    this.npc.persona = this.persona();
-    this.npc.held = () => this.held();
-    // he can take a punch and give one back
-    this.npc.fight = new Brawler(this.npc, { courage: 0.7, power: 1, skill: 0.55 });
     TIME.onSkip((m) => this.skipped(m));
-    this.npc.onHarm = (info) => this.onHarm(info);
-    // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
-    this.npc.voiceProfile = { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
+    this.scene0 = scene;
+  },
+  /* who stands behind the bar: Hank, and after him (if he dies) the ones who take the saloon over (npc/barkeep_fate.js) */
+  WHO: [
+    { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
+      colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
+      look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) },
+      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.55 } },
+    { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
+      colors: { shirt: rgb(0xd8cdb6), vest: rgb(0x5a3a28), jeans: rgb(0x3e3a34), jeansD: rgb(0x34302b), bandana: rgb(0x8a2a22), stache: rgb(0x9a5a2a), skin: rgb(0xe0aa86), skinD: rgb(0xc89070), boot: rgb(0x3a2418), belt: rgb(0x2a1d15) },
+      look: { hat: 'none', gun: false, apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), hair: rgb(0x8a4a22) },
+      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.6 } },
+    { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
+      colors: { shirt: rgb(0xcfc6b0), vest: rgb(0x3a3a30), jeans: rgb(0x4a4238), jeansD: rgb(0x3e372e), bandana: rgb(0x3a3a30), stache: rgb(0xb0aaa0), skin: rgb(0xd09a78), skinD: rgb(0xb88464), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
+      look: { hat: 'none', gun: false, apron: rgb(0xcfc8b4), hair: rgb(0xb0aaa0) },
+      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.5 } }
+  ],
+  whoI: 0,
+  who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },
+  makeNpc(scene) {
+    const W = this.who(), p = this.roomPt(this.X.stand, -6.4, this._v);
+    this.npc = new NPC({ id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, colors: W.colors, look: W.look });
+    const N = this.npc;
+    N.persona = this.persona();
+    N.held = () => this.held();
+    // he can take a punch and give one back
+    N.fight = new Brawler(N, W.fight);
+    N.onHarm = (info) => this.onHarm(info);
+    // the voice: the best fitting German voice of the device (see TALK.pickVoice), his own pitch and pace
+    N.voiceProfile = W.voice;
+    return N;
   },
   // what he remembers (for conversations): a few notable things, newest last
   remember(text) { this.mem.push(text); if (this.mem.length > 10) this.mem.shift(); },
@@ -357,8 +382,8 @@ const BARKEEP = {
     const B = this;
     return {
       rules: [
-        'Du bist Hank, der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
-        'Wer du bist: Mitte fünfzig, Schnurrbart, weiße Schürze. Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen. Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.',
+        'Du bist ' + B.who().name + ', der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
+        'Wer du bist: ' + B.who().age + '. ' + B.who().more + ' Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.' + (B.whoI > 0 ? ' Du hast den Saloon übernommen, nachdem ' + B.WHO.slice(0, B.whoI).map((w) => w.name).join(' und dann ') + ' tot war' + (B.whoI > 1 ? 'en' : '') + '.' : ''),
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
         'Dein Ton: ruhig, souverän und glaubwürdig, wie ein Mann, der schon alles gesehen hat. Ernst, wenn es ernst ist. Trockener Humor nur ab und zu, nicht in jedem Satz, kein Clown. Sag nie zweimal dasselbe; finde jedes Mal neue Worte.',
@@ -395,7 +420,7 @@ const BARKEEP = {
         if (/bier/.test(t)) return { say: r(['Ein Bier, kommt.', 'Bier. Gute Wahl.']), action: 'serve_beer' };
         if (/wasser/.test(t)) return { say: 'Wasser. Wie du meinst.', action: 'serve_water' };
         if (/\b(hallo|howdy|hi|hey|servus|moin|guten (tag|abend|morgen))\b/.test(t)) return { say: r(['Howdy.', 'Tag auch.']), action: 'nod' };
-        if (/name|wer bist|heißt du|heisst du/.test(t)) return { say: 'Hank. Der Laden hier gehört mir.', action: 'none' };
+        if (/name|wer bist|heißt du|heisst du/.test(t)) return { say: B.who().name + '. Der Laden hier gehört mir.', action: 'none' };
         if (/sheriff/.test(t)) return { say: 'Der Sheriff? Sitzt in seinem Büro und wartet auf Ärger.', action: 'none' };
         if (/stadt|dust creek|hier los/.test(t)) return { say: 'Dust Creek. Staub, Sonne und mein Whiskey.', action: 'none' };
         if (/danke/.test(t)) return { say: 'Schon gut.', action: 'nod' };
@@ -515,12 +540,12 @@ const BARKEEP = {
   },
   update(dt) {
     const N = this.npc;
-    if (!N) return;
+    if (!N) { if (this.st === 'gone') this.fate(dt); return; }
     this.t += dt;
     const inside = G.room === this.R;
     this.att *= 1 - dt * 0.002;
     // dead: nothing more (the body lies where it fell); hurt or down: his own state
-    if (N.hp.dead || this.st === 'dead') { this.st = 'dead'; this.pending = null; for (const k in this.props) this.props[k].visible = false; const pb0 = this.payEl; if (pb0 && !pb0.hidden) { pb0.hidden = true; pb0.dataset.l = ''; } return; }
+    if (N.hp.dead || this.st === 'dead') { this.st = 'dead'; this.pending = null; for (const k in this.props) this.props[k].visible = false; const pb0 = this.payEl; if (pb0 && !pb0.hidden) { pb0.hidden = true; pb0.dataset.l = ''; } this.fate(dt); return; }
     // the button for the money (E on the keyboard), while he waits for it
     const pb = this.payEl || (this.payEl = document.getElementById('bPay'));
     if (pb && !pb.wired) { pb.wired = true; pb.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.pay(); }); }
@@ -528,7 +553,7 @@ const BARKEEP = {
     if (pb && lab !== (pb.dataset.l || '')) { pb.dataset.l = lab; pb.hidden = !lab; pb.innerHTML = '<kbd>E</kbd>'; pb.appendChild(document.createTextNode(lab)); }
     if (this.pending && (G.time - this.pending.t > 45 || !inside)) { const was = this.pending; this.pending = null; if (inside && G.time - was.t > 45) this.say('nopay'); }   // grudges and good will fade slowly (about a tenth a minute)
     // the player: greet him, look at him, mind him
-    if (inside && !this.wasInside) this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
+    if (inside && !this.wasInside && !this.greetSuccessor() && this.st !== 'shotgun') this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
     this.wasInside = inside;
     const head = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55 - 0.45 * (FALL.down || 0), PLAY.pos.z);
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
@@ -565,6 +590,8 @@ const BARKEEP = {
     if (this.st === 'return') { this.updReturn(dt); this.placeProps(); return; }
     if (this.st === 'toDoc' || this.st === 'atDoc') { this.updDoc(dt); this.placeProps(); return; }
     if (this.st === 'street') { this.updStreet(dt); this.placeProps(); return; }
+    if (this.st === 'shotgun') { this.updShotgun(dt, inside); this.placeProps(); return; }
+    if (this.st === 'idle' && !handsUp && this.revenge(dt, inside, dP)) { this.placeProps(); return; }
     if (this.st === 'duck') this.updDuck(dt);
     else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }
     else if (this.cur || this.orders.length) this.updServe(dt);
@@ -759,6 +786,13 @@ const BARKEEP = {
       N.handWorld(1, this._v); this._m.makeRotationY(N.yaw + G.time * 2); this._m.setPosition(this._v.x, this._v.y - 0.03, this._v.z);
       P.rag.matrix.copy(this._m); P.rag.matrixWorldNeedsUpdate = true;
     }
+    if (P.shotgun && P.shotgun.visible) {
+      // from the right hand (the grip) along to the left (the forend)
+      N.handWorld(1, this._v); N.handWorld(0, this._w);
+      const q = this._q.lookAt(this._w, this._v, this._up || (this._up = new THREE.Vector3(0, 1, 0)));
+      this._m.copy(q); this._m.setPosition(this._v);
+      P.shotgun.matrix.copy(this._m); P.shotgun.matrixWorldNeedsUpdate = true;
+    }
     for (const k in P) { if (!vis) P[k].visible = false; P[k].material = mat || G.litMat; }
   },
   /* ---- sounds ---- */
@@ -782,10 +816,16 @@ const BARKEEP = {
   }
 };
 // what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
-SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3), grudge: +BARKEEP.grudge.toFixed(3), body: BARKEEP.npc ? BARKEEP.npc.hp.save() : null }), (d) => {
+SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3), grudge: +BARKEEP.grudge.toFixed(3), body: BARKEEP.npc ? BARKEEP.npc.hp.save() : null,
+  whoI: BARKEEP.whoI, gone: BARKEEP.st === 'gone', diedAt: BARKEEP.diedAt || null, killedBy: BARKEEP.killedBy || null, cause: BARKEEP.cause || null }), (d) => {
   if (!d) return;
+  // who is behind the bar (a successor, or nobody since the body was taken away)
+  BARKEEP.diedAt = d.diedAt || null; BARKEEP.killedBy = d.killedBy || null; BARKEEP.cause = d.cause || null;
+  const want = clamp(d.whoI | 0, 0, BARKEEP.WHO.length - 1);
+  if (want !== BARKEEP.whoI && BARKEEP.npc) { BARKEEP.npc.dispose(); BARKEEP.whoI = want; BARKEEP.makeNpc(BARKEEP.scene0); BARKEEP.st = 'idle'; BARKEEP.pickIdle(); }
+  if (d.gone) { if (BARKEEP.npc) BARKEEP.npc.dispose(); BARKEEP.npc = null; BARKEEP.st = 'gone'; }
   BARKEEP.grudge = clamp(+d.grudge || 0, 0, 1);
-  if (d.body && BARKEEP.npc) { BARKEEP.npc.hp.load(d.body); if (BARKEEP.npc.hp.dead) BARKEEP.st = 'dead'; else if (BARKEEP.npc.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { BARKEEP.st = 'hurt'; BARKEEP.hurtT = 0; } }
+  if (d.body && BARKEEP.npc && !d.gone) { BARKEEP.npc.hp.load(d.body); if (BARKEEP.npc.hp.dead) BARKEEP.st = 'dead'; else if (BARKEEP.npc.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { BARKEEP.st = 'hurt'; BARKEEP.hurtT = 0; } }
   BARKEEP.att = clamp(+d.att || 0, -1, 1);
   BARKEEP.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
   BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];

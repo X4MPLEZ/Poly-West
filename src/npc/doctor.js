@@ -19,6 +19,7 @@ const DOC = {
     broke: ['Fünfzig Cent. Ohne Geld kein Verband.', 'Ich arbeite nicht umsonst, mein Freund.', 'Erst bezahlen. Dann flicken.'],
     shot: [['Nicht in meiner Praxis!', 'angry'], ['Leg die Waffe weg, verdammt!', 'angry'], ['Ich flicke Löcher, ich will keine machen!', 'angry']],
     hurt: [['Aaah! Bist du verrückt?!', 'angry'], ['Verdammt! Ich bin Arzt!', 'angry'], ['Du schießt auf den einzigen Arzt im Umkreis?!', 'angry']],
+    refuse: [['Für dich? Nein. Such dir einen anderen Arzt.', 'disgusted'], ['Dich flick ich nicht. Raus.', 'angry']],
     thanks: ['Schon gut.', 'Dafür bin ich da.', 'Bezahlt ist bezahlt.'],
     bye: ['Pass auf dich auf.', 'Und komm nicht so bald wieder.', 'Bis zum nächsten Loch.']
   },
@@ -71,6 +72,7 @@ const DOC = {
   // someone comes to be treated; done(npc) is called once the wound is bandaged
   request(patient, done) { if (!this.queue.some((q) => q.npc === patient)) this.queue.push({ npc: patient, done, t: G.time }); },
   treatPlayer() {
+    if (this.att < -0.6) { this.say('refuse'); return; }
     if (PHP.hp > 0.97) { this.say('healthy'); return; }
     if (INV.money < this.PRICE) { this.say('broke'); return; }
     INV.money -= this.PRICE; TOAST.show('Behandlung (−' + this.PRICE + ' ¢).', 'money');

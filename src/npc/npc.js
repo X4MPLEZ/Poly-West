@@ -43,6 +43,16 @@ class NPC {
     NPCS.list.push(this);
     this.update(0);
   }
+  // gone for good (a body taken away): out of the scene and out of every list
+  dispose() {
+    if (this.ch.root.parent) this.ch.root.parent.remove(this.ch.root);
+    const i = NPCS.list.indexOf(this); if (i >= 0) NPCS.list.splice(i, 1);
+    const j = NPCS.bodies.indexOf(this.body); if (j >= 0) NPCS.bodies.splice(j, 1);
+    const a = ACTORS.list.findIndex((x) => x.id === this.id && x.kind === 'npc'); if (a >= 0) ACTORS.list.splice(a, 1);
+    if (ACTORS.byId.get(this.id) && ACTORS.byId.get(this.id).kind === 'npc') ACTORS.byId.delete(this.id);
+    if (this.sayEl && this.sayEl.parentNode) this.sayEl.parentNode.removeChild(this.sayEl);
+    if (TALK.npc === this) TALK.close();
+  }
   goTo(x, z, faceYaw, leg) {
     this.faceYaw = faceYaw === undefined ? null : faceYaw;
     if (!leg) { this.path = null; this.dest = null; this.legPass = false; }
