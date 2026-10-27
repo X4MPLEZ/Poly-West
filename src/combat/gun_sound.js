@@ -68,6 +68,33 @@ const GSFX = {
       SFX.env(og, t + 0.004, 0.035, 0.001, 0.06); o.start(t); o.stop(t + 0.1);
     });
   },
+  // a sweep of noise through a moving band (leather sliding: high to low, dry, a little grain)
+  sweep(g, t, f0, f1, dur, gain, q) {
+    const c = SFX.ctx, src = c.createBufferSource(); src.buffer = SFX.noise;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = q || 1.2;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const a = c.createGain(); src.connect(f); f.connect(a); a.connect(g);
+    a.gain.setValueAtTime(0.0001, t); a.gain.exponentialRampToValueAtTime(gain, t + dur * 0.25); a.gain.exponentialRampToValueAtTime(gain * 0.6, t + dur * 0.7); a.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.start(t, Math.random() * 0.8, dur + 0.05);
+  },
+  // drawing: the grip leaves the leather (a quick rising rasp), the hammer comes back under the thumb
+  draw() {
+    this.run(() => { const { g, t } = this.out(0.55); this.sweep(g, t, 650, 1500, 0.11, 0.3, 1.4); SFX.noiseHit(t + 0.1, g, { type: 'highpass', freq: 3200, q: 0.8, gain: 0.14, attack: 0.001, decay: 0.01 }); });
+  },
+  // one turn of the twirl: air past the frame, the cylinder ticks
+  spin(i) {
+    this.run(() => { const { g, t } = this.out(0.35); this.sweep(g, t, 900 + i * 120, 1700, 0.09, 0.16, 2.2); SFX.noiseHit(t + 0.06, g, { freq: 4200, q: 8, gain: 0.07, attack: 0.0008, decay: 0.012 }); });
+  },
+  // into the holster: the barrel slides down the leather (falling rasp), the frame seats with a dull knock, a creak
+  holster() {
+    this.run(() => {
+      const { g, t } = this.out(0.6);
+      this.sweep(g, t, 1300, 520, 0.15, 0.32, 1.3);
+      SFX.thump(t + 0.14, g, 170, 85, 0.22, 0.06);
+      SFX.noiseHit(t + 0.145, g, { freq: 380, q: 6, gain: 0.12, attack: 0.004, decay: 0.07 });
+      SFX.noiseHit(t + 0.15, g, { type: 'highpass', freq: 3600, q: 0.7, gain: 0.1, attack: 0.0008, decay: 0.01 });
+    });
+  },
   leather() { this.run(() => { const { g, t } = this.out(0.5); SFX.noiseHit(t, g, { freq: 760, q: 0.8, gain: 0.22, attack: 0.03, decay: 0.12 }); SFX.noiseHit(t + 0.12, g, { type: 'highpass', freq: 3000, q: 0.7, gain: 0.12, attack: 0.001, decay: 0.012 }); }); },
   box() { this.run(() => { const { g, t } = this.out(0.4); for (let i = 0; i < 4; i++) SFX.noiseHit(t + i * 0.05, g, { freq: 2600 + i * 300, q: 5, gain: 0.15, attack: 0.001, decay: 0.03 }); }); },
   glass(p, big) {

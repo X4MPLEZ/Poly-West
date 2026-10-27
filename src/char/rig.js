@@ -313,7 +313,11 @@ function applyPose(ch) {
     boneBasis(p['shin' + side].matrix, RM.K, RM.A, RM.pole);
     rotTo(p['foot' + side].matrix, RM.A.x, RM.A.y, RM.A.z, P.ftPitch[i], fy, 0);
   }
-  if (p.gun) p.gun.matrix.multiplyMatrices(P.gunInHand ? p.fArmR.matrix : RM.pel, P.gunInHand ? GUNM.hand : GUNM.holster);
+  if (p.gun) {
+    p.gun.matrix.multiplyMatrices(P.gunInHand ? p.fArmR.matrix : RM.pel, P.gunInHand ? GUNM.hand : GUNM.holster);
+    // a twirl round the trigger finger (gun frame: across the gun is x, the pivot at the trigger guard)
+    if (P.gunInHand && P.gunSpin) { const m = RM.spin || (RM.spin = new THREE.Matrix4()), q = RM.spinQ || (RM.spinQ = new THREE.Matrix4()); m.makeTranslation(0, -0.01, 0.02).multiply(q.makeRotationX(P.gunSpin)); q.makeTranslation(0, 0.01, -0.02); m.multiply(q); p.gun.matrix.multiply(m); }
+  }
   // the hands' shapes; a part that is not there (a hat knocked off, later a lost arm) is folded into its joint
   if (ch.mesh && P.hand) {
     const I = ch.mesh.morphTargetInfluences, D = ch.mi;

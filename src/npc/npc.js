@@ -445,6 +445,8 @@ class NPC {
     P.spYaw += this.spYawL;
     // a fighter's body: twisted into a punch, leaning in, the hips forward (npc/brawl.js)
     if (this.tw || this.leanF || this.lunge) { P.spYaw += this.tw || 0; P.pelYaw += (this.tw || 0) * 0.4; P.spPitch += this.leanF || 0; P.pel.z += this.lunge || 0; }
+    // whole-body moves of his behaviour (the sheriff's kick, tackle, pin)
+    if (this.poseFx) this.poseFx(P, dt);
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
     P.hdYaw += this.hdYaw; P.hdPitch += this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;

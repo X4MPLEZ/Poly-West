@@ -30,11 +30,19 @@ const SHERIFF = {
     calm: [['Na also. Geht doch.', 'neutral']],
     halt: [['Stehen bleiben!', 'angry'], ['Halt! Bleib stehen!', 'angry']],
     halt2: [['Bleib stehen, oder ich schieße!', 'angry'], ['Letzte Warnung! Stehen bleiben!', 'angry']],
-    hunt: [['Wo ist er hin?', 'angry'], ['Du entkommst mir nicht.', 'angry'], ['Den krieg ich.', 'angry']]
+    hunt: [['Wo ist er hin?', 'angry'], ['Du entkommst mir nicht.', 'angry'], ['Den krieg ich.', 'angry']],
+    // hands on you: the boot when you hit him, the run and the tackle when you run, the knee in your back
+    kick: [['Nicht mit mir, Freundchen!', 'angry'], ['Hände weg vom Gesetz!', 'angry'], ['Da hast du dich mit dem Falschen angelegt!', 'angry'], ['Den Sheriff schlägt man nicht!', 'angry']],
+    runDown: [['Renn ruhig. Ich bin schneller!', 'angry'], ['Bleib stehen, verdammt!', 'angry'], ['Du kommst mir nicht davon!', 'angry']],
+    tackle: [['Hab dich!', 'angry'], ['Runter mit dir!', 'angry'], ['Schluss mit dem Gerenne!', 'angry']],
+    pin: [['Liegen bleiben!', 'angry'], ['Keine Bewegung, oder es tut weh!', 'angry'], ['Zappel nicht rum, das macht es nur schlimmer.', 'angry'], ['Unten bleiben, hab ich gesagt!', 'angry']],
+    pinFace: [['Gesicht in den Dreck und keine Bewegung!', 'angry'], ['Stillhalten! Hände auf den Rücken!', 'angry'], ['Liegen bleiben!', 'angry']],
+    cuffs: [['Du bist verhaftet. Die Nacht verbringst du bei mir.', 'angry'], ['So. Und jetzt ab in die Zelle mit dir.', 'neutral'], ['Das war’s. Du kommst mit.', 'neutral']],
+    cuffsBlow: [['Einen Gesetzeshüter angreifen. Das kostet dich eine Nacht hinter Gittern.', 'angry'], ['Du schlägst mich? In meiner Stadt? Ab in die Zelle.', 'angry']]
   },
   bags: {},
   line(kind, f) { const L = this.LINES[kind], B = this.bags[kind] || (this.bags[kind] = []); if (!B.length) for (let i = 0; i < L.length; i++) B.splice(Math.floor(Math.random() * (B.length + 1)), 0, i); const x = L[B.pop()]; return { text: x[0].replace('{f}', f || ''), mood: x[1] }; },
-  LOUD: { halt: 1, halt2: 1, hunt: 1, arrest: 1, out: 1, escaped: 1 },
+  LOUD: { halt: 1, halt2: 1, hunt: 1, arrest: 1, out: 1, escaped: 1, runDown: 1, tackle: 1 },
   say(kind, f) { const N = this.npc; if (!N) return false; N.loud = !!this.LOUD[kind]; if (!N.canBeHeard()) { N.loud = false; return false; } const l = this.line(kind, f); SAY.hide(N); const r = N.speak(l.text, undefined, l.mood, true); N.loud = false; return r; },
   react(kind, situation, f) { if (!TALK.remark(this.npc, situation, () => this.say(kind, f), this.line(kind, f).mood, 1)) this.say(kind, f); },
   remember(t) { this.mem.push(t); if (this.mem.length > 10) this.mem.shift(); },
@@ -72,6 +80,8 @@ const SHERIFF = {
     const s = this.SPOTS.desk, p = rwp(R, s[0], R.floorY, s[1]), L = this.LOOKS;
     const N = this.npc = new NPC({ id: 'sheriff', name: L.name, room: R, scene, pos: p, yaw: this.yawFor(0), desc: L.desc, attitude: () => this.att });
     N.role = 'Sheriff ' + L.name + ', der Sheriff von Dust Creek (' + L.age + ')';
+    N.runSpeed = RUN * 1.1;   // (he runs you down: faster than you)
+    N.poseFx = (P, dt) => this.grabPose(P, dt);
     N.voiceProfile = L.voice; N.voiceKey = 'sheriff';
     N.fight = new Brawler(N, { courage: 0.95, power: 1.2, skill: 0.8, toughness: 1.7 });
     N.gun = new Gunman(N, { kind: 'revolver', skill: 0.85, courage: 0.95, onWord: (k) => this.say(k === 'warn' ? 'warnGun' : 'warnGun2') });
@@ -122,7 +132,8 @@ const SHERIFF = {
     const N = this.npc;
     if (info.type === 'dead') { this.st = 'dead'; N.gun.drop(); return; }
     if (info.type === 'shot' && info.zone !== 'hat') { this.wanted = 1; this.att = -1; this.remember('Der Fremde hat auf dich geschossen (' + TIME.stamp() + ').'); N.gun.draw(); N.gun.provoked = G.time; if (this.st === 'office' || this.st === 'back') this.st = 'arrest'; }
-    if (info.type === 'blow') { this.wanted = Math.max(this.wanted, 0.6); this.remember('Der Fremde hat dich geschlagen (' + TIME.stamp() + ').'); if (!N.fight.on && !N.gun.on) { this.st = 'fight'; N.fight.start(); } }
+    // a fist in his face: no brawl with the law, a boot in your chest, and then he is on top of you
+    if (info.type === 'blow') { this.wanted = Math.max(this.wanted, 0.6); this.assault = true; this.remember('Der Fremde hat dich geschlagen (' + TIME.stamp() + ').'); if (!this.grab) this.kickQ = G.time; }
   },
   // the crimes he could learn of at the scene: what the people there saw
   ask() {
@@ -140,7 +151,9 @@ const SHERIFF = {
     const N = this.npc; if (!N) return;
     if (N.hp.dead) { this.st = 'dead'; return; }
     this.t += dt;
-    if (N.hp.busy()) return;
+    if (N.hp.busy()) { if (this.grab) this.endGrab(); return; }
+    if (this.grab) { this.updGrab(dt); return; }
+    if (this.kickQ) { if (G.time - this.kickQ > 2.5 || PHP.out) this.kickQ = 0; else if (!N.hitFrom || G.time > N.hitFrom.until - 0.3) { this.kickQ = 0; this.startKick(); return; } }
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (this.st === 'fight') { const r = N.fight.update(dt); if (r) { this.st = this.wanted >= 0.6 ? 'arrest' : 'back'; this.t = 0; } return; }
     // wanted and he sees you, anywhere in town: he comes for you
@@ -193,15 +206,23 @@ const SHERIFF = {
      people pointing); after long enough without you he gives up for now (but does not forget: wanted) */
   arrest(dt, dP) {
     const N = this.npc, see = this.inSight(), P = PLAY.pos, run = Math.hypot(PLAY.vx, PLAY.vz);
-    if (!this.arrT) { this.arrT = 0; this.giveT = 0; this.lostT = 0; this.fleeT = 0; this.haltN = 0; this.chaseT = 0; this.huntT = 0; this.saidA = this.reacted; this.reacted = false; }
+    if (!this.arrT) { this.arrT = 0; this.giveT = 0; this.lostT = 0; this.fleeT = 0; this.haltN = 0; this.chaseT = 0; this.huntT = 0; this.saidRun = false; this.saidA = this.reacted; this.reacted = false; }
     this.arrT += dt;
     if (see) { this.seenAt = { x: P.x, z: P.z, t: G.time }; this.lostT = 0; } else this.lostT += dt;
     const calm = see && GUN.state === 'holster' && !GUN.reloadThenHolster && run < 1.2;
+    // nothing worse than shots or a wound and you run after his "stop!": he puts the gun up and runs you down
+    const runDown = this.haltN >= 1 && this.wanted < 1 && G.time - (this.haltT || -99) > 0.8;
     // his legs: up to you (to 3 m), or after you
     let moving = false;
     this.chaseT -= dt;
     if (see) {
-      if (dP > 3.2) { moving = true; if (!N.walking() || this.chaseT <= 0) { this.chaseT = 0.5; N.hurry = calm && dP < 10 ? 1.3 : 2.2; N.walkTo(P.x, P.z); } }
+      if (runDown) {
+        if (dP < 1.6 && run < 1) { if (N.walking()) N.stop(); }
+        else { moving = true; if (!N.walking() || this.chaseT <= 0) { this.chaseT = 0.25; N.hurry = 2.4; N.walkTo(P.x + PLAY.vx * 0.3, P.z + PLAY.vz * 0.3); } }
+        if (!this.saidRun) { this.saidRun = true; this.say('runDown'); }
+        // close enough and you are still going: the dive
+        if (dP < 2.3 && run > 1.0 && !FALL.busy()) { this.startTackle(); return; }
+      } else if (dP > 3.2) { moving = true; if (!N.walking() || this.chaseT <= 0) { this.chaseT = 0.5; N.hurry = calm && dP < 10 ? 1.3 : 2.2; N.walkTo(P.x, P.z); } }
       else if (N.walking()) N.stop();
     } else {
       moving = true;
@@ -213,7 +234,7 @@ const SHERIFF = {
       }
       if ((this.huntT -= dt) <= 0) { this.huntT = 14 + Math.random() * 8; if (this.lostT > 3) this.say('hunt'); }
     }
-    N.gun.draw(); N.gun.cover = true; N.gun.update(dt, moving);
+    if (runDown) this.stowGun(); else { N.gun.draw(); N.gun.cover = true; N.gun.update(dt, moving); }
     if (see && !this.saidA) { this.saidA = true; if (!TALK.remarking) this.say('arrest'); }
     if (see && dP < 14 && !this.told) { this.told = true; TOAST.show('Der Sheriff verhaftet dich: Waffe weg und stehen bleiben, oder E „Ergeben“.', 'long'); }
     // giving up: gun away, standing, near him (or you said so: giveT set)
@@ -221,7 +242,7 @@ const SHERIFF = {
     if (this.giveT > 3 && !PHP.out) { this.say('come'); this.lockUp(); return; }
     // running from him: "stop!" twice; a killer who keeps running is shot at
     this.fleeT = see && run > 2.6 && dP > 3.5 ? this.fleeT + dt : Math.max(0, this.fleeT - dt);
-    if (this.fleeT > 0.6 && G.time - (this.haltT || -99) > 3.5 && this.haltN < 2) { this.haltT = G.time; this.haltN++; this.say(this.haltN === 1 ? 'halt' : 'halt2'); }
+    if (this.fleeT > 0.6 && G.time - (this.haltT || -99) > 3.5 && this.haltN < (this.wanted >= 1 ? 2 : 1)) { this.haltT = G.time; this.haltN++; this.say(this.haltN === 1 ? 'halt' : 'halt2'); }
     if (this.haltN >= 2 && G.time - this.haltT > 1.5 && this.fleeT > 0.6 && this.wanted >= 1 && see) N.gun.provoked = G.time;
     // you are down by his bullet: he takes you in all the same (the doc patches you up in the cell)
     if (PHP.out && PHP.out.by === N) {
@@ -234,6 +255,139 @@ const SHERIFF = {
     if (calm && this.fleeT <= 0 && G.time - GUNMAN.lastShot > 3) N.gun.provoked = null;
     if (this.lostT > 45 || dP > 90) { this.remember('Der Fremde ist dir entkommen (' + TIME.stamp() + ').'); if (N.canBeHeard()) this.say('escaped'); this.arrT = 0; this.lostT = 0; this.told = false; this.goBack(); }
   },
+  /* ---- hands on you ----
+     kick: a push kick from the chest (chamber, out, back) when you hit him; you go down on your back, he is on you.
+     dive: running you down, a flying tackle from two metres; you go down on your face under him.
+     Then he kneels on you, a hand on your back, the other on your arm, and after a moment you are his. */
+  grab: null,
+  stowGun() { const g = this.npc.gun; if (g.on) { if (g.m) g.m.visible = false; g.st = 'off'; GSFX.run(() => GSFX.holster()); } g.cover = false; },
+  startKick() {
+    const N = this.npc; if (this.grab || N.hp.busy() || PHP.out || N.hp.dead) return;
+    this.stowGun(); if (N.fight.on) N.fight.stop(); N.free(0); N.free(1);
+    this.grab = { ph: 'kick', t: 0, hit: false, why: 'assault' }; this.st = 'arrest'; this.arrT = 0.01;
+    N.stop(Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z));
+    this.say('kick');
+  },
+  startTackle() {
+    const N = this.npc; if (this.grab || N.hp.busy() || PHP.out) return;
+    this.stowGun(); N.free(0); N.free(1);
+    const lead = 0.35, tx = PLAY.pos.x + PLAY.vx * lead - N.pos.x, tz = PLAY.pos.z + PLAY.vz * lead - N.pos.z, d = Math.hypot(tx, tz) || 1;
+    this.grab = { ph: 'dive', t: 0, hit: false, dx: tx / d, dz: tz / d, why: null };
+    N.stop(); N.yaw = N.faceYaw = Math.atan2(tx, tz); N.solid = false; N.vx = N.vz = 0;
+    this.say('tackle');
+  },
+  endGrab() { const N = this.npc; this.grab = null; N.solid = true; N.crouchT = 0; N.leanT = 0; N.free(0); N.free(1); },
+  // the boot lands: you fly back and go down (and stay down, he is coming)
+  kickHit(dx, dz) {
+    const N = this.npc;
+    PHP.hit({ power: 1.1, heavy: true, dir: { x: dx, z: dz }, by: N });
+    if (PHP.out) return;
+    if (!FALL.busy()) FALL.start(true, 'back', Math.atan2(dx, dz)); else FALL.keep = true;
+    PLAY.vx += dx * 3.2; PLAY.vz += dz * 3.2;
+    FOLEY.kick(PLAY.pos, true); FOLEY.grunt(N.pos, N.voiceProfile ? N.voiceProfile.pitch : 1, 1.2);
+    G.hitStop = Math.max(G.hitStop || 0, 0.1); PLAY.camShake = Math.max(PLAY.camShake, 0.16);
+    worldEvent('npcPunch', PLAY.pos.x, PLAY.pos.y + 1, PLAY.pos.z, { by: N.id, kick: true });
+  },
+  // the tackle lands: both of you go down, you on your face
+  tackleHit() {
+    const N = this.npc, G0 = this.grab;
+    if (!FALL.busy()) FALL.start(true, 'fwd', Math.atan2(G0.dx, G0.dz)); else FALL.keep = true;
+    PLAY.vx = G0.dx * 2.5; PLAY.vz = G0.dz * 2.5;
+    FOLEY.bodyFall(PLAY.pos, 1.1); FOLEY.grunt(PLAY.pos, 1, 1.1); FOLEY.grunt(N.pos, N.voiceProfile ? N.voiceProfile.pitch : 1, 1);
+    PLAY.camShake = Math.max(PLAY.camShake, 0.2); G.hitStop = Math.max(G.hitStop || 0, 0.08);
+    PHP.hit({ power: 0.35, chip: true, dir: { x: G0.dx, z: G0.dz }, by: N });
+    worldEvent('npcPunch', PLAY.pos.x, PLAY.pos.y + 0.5, PLAY.pos.z, { by: N.id, tackle: true });
+  },
+  // where to kneel: beside your chest, on his side of you
+  pinSpot() {
+    const N = this.npc; W.ch.root.updateMatrixWorld(true);
+    const e = W.ch.p.torso.matrixWorld.elements; let tx = e[12], tz = e[14];
+    if (Math.hypot(tx - PLAY.pos.x, tz - PLAY.pos.z) > 2) { tx = PLAY.pos.x; tz = PLAY.pos.z; }   // (not posed yet)
+    let ax = N.pos.x - tx, az = N.pos.z - tz; const L = Math.hypot(ax, az) || 1; ax /= L; az /= L;
+    return { x: tx + ax * 0.5, z: tz + az * 0.5, tx, tz };
+  },
+  updGrab(dt) {
+    const N = this.npc, G0 = this.grab, P = PLAY.pos; G0.t += dt;
+    const dx = P.x - N.pos.x, dz = P.z - N.pos.z, d = Math.hypot(dx, dz) || 1;
+    if (PHP.out && G0.ph !== 'pin') { this.endGrab(); return; }
+    if (G0.ph === 'kick') {
+      if (G0.t < 0.24) N.stop(Math.atan2(dx, dz));
+      N.reach(0, 0.18, 1.35, 0.28); N.reach(1, -0.22, 1.25, 0.12); N.handShape[0] = N.handShape[1] = { fist: 0.9 };
+      if (!G0.hit && G0.t > 0.3 && G0.t < 0.44) {
+        const f = (dx * Math.sin(N.yaw) + dz * Math.cos(N.yaw)) / d;
+        if (d < 1.6 && f > 0.55 && !FALL.busy() && !SIT.busy()) { G0.hit = true; this.kickHit(dx / d, dz / d); }
+      }
+      if (G0.t > 0.85) {
+        if (G0.hit && FALL.busy() && !PHP.out) { G0.ph = 'pounce'; G0.t = 0; N.free(0); N.free(1); }
+        else { this.endGrab(); this.st = 'arrest'; this.arrT = 0; }
+      }
+      return;
+    }
+    if (G0.ph === 'pounce') {
+      // a few quick steps to you, then the jump
+      const S = this.pinSpot(), sd = Math.hypot(S.x - N.pos.x, S.z - N.pos.z);
+      if (sd > 1.5 && G0.t < 4) { N.hurry = 2.4; if (!N.walking() || (G0.wt = (G0.wt || 0) - dt) <= 0) { G0.wt = 0.3; N.walkTo(S.x, S.z); } return; }
+      N.stop(); N.solid = false; G0.ph = 'leap'; G0.t = 0; G0.from = [N.pos.x, N.pos.z]; G0.to = [S.x, S.z]; N.yaw = N.faceYaw = Math.atan2(S.tx - N.pos.x, S.tz - N.pos.z);
+      return;
+    }
+    if (G0.ph === 'leap') {
+      const u = clamp(G0.t / 0.34, 0, 1), e = u * u * (3 - 2 * u);
+      N.pos.x = lerp(G0.from[0], G0.to[0], e); N.pos.z = lerp(G0.from[1], G0.to[1], e); N.vx = N.vz = 0;
+      N.reach(0, 0.25, 0.9, 0.6); N.reach(1, -0.25, 0.9, 0.6);
+      if (u >= 1) { G0.ph = 'pin'; G0.t = 0; FOLEY.bodyFall(N.pos, 0.8); FOLEY.grunt(P, 1, 1); PLAY.camShake = Math.max(PLAY.camShake, 0.12); }
+      return;
+    }
+    if (G0.ph === 'dive') {
+      // through the air at you: fast, low, arms out
+      const v = G0.t < 0.36 ? 8.6 : 2.5 * Math.max(0, 1 - (G0.t - 0.36) / 0.25);
+      const nx = N.pos.x + G0.dx * v * dt, nz = N.pos.z + G0.dz * v * dt; const [cx, cz] = collide(nx, nz, N.pos.y + 0.1, N.body, 0.28); N.pos.x = cx; N.pos.z = cz; N.vx = N.vz = 0;
+      N.reach(0, 0.22, 0.95, 0.75); N.reach(1, -0.22, 0.95, 0.75); N.handShape[0] = N.handShape[1] = { open: 0.8 };
+      if (!G0.hit && d < 1.35 && G0.t < 0.5 && !FALL.busy()) { G0.hit = true; this.tackleHit(); }
+      if (G0.t > 0.62) {
+        if (G0.hit && FALL.busy() && !PHP.out) { const S = this.pinSpot(); G0.ph = 'leap'; G0.t = 0.2; G0.from = [N.pos.x, N.pos.z]; G0.to = [S.x, S.z]; N.yaw = N.faceYaw = Math.atan2(S.tx - N.pos.x, S.tz - N.pos.z); }
+        else { this.endGrab(); this.st = 'arrest'; this.arrT = 0; }   // (missed: up again and after you)
+      }
+      return;
+    }
+    if (G0.ph === 'pin') {
+      // knee down by you, a hand on your back, the other on your arm
+      const S = this.pinSpot(); N.stop(); N.crouchT = 1; N.leanT = 0.7; N.vx = N.vz = 0;
+      N.pos.x += (S.x - N.pos.x) * Math.min(1, dt * 6); N.pos.z += (S.z - N.pos.z) * Math.min(1, dt * 6);
+      N.yaw += wrapA(Math.atan2(S.tx - N.pos.x, S.tz - N.pos.z) - N.yaw) * Math.min(1, dt * 8); N.faceYaw = N.yaw;
+      const b = this._v.set(S.tx, PLAY.pos.y + 0.28, S.tz), lb = N.toLocal(b, this._w);
+      N.reach(0, lb.x + 0.12, lb.y + 0.02, Math.max(0.3, lb.z)); N.reach(1, lb.x - 0.14, lb.y, Math.max(0.3, lb.z - 0.05)); N.handShape[0] = N.handShape[1] = { open: 0.7 };
+      N.lookAt(b, 1);
+      if (G0.t > 0.45 && !G0.said) { G0.said = true; this.say(G0.why === 'assault' ? 'pin' : 'pinFace'); }
+      if (G0.t > 3.2 && !PHP.out) { const blow = G0.why === 'assault'; this.say(blow ? 'cuffsBlow' : 'cuffs'); this.lockUp(blow ? 'assault' : null); }
+      if (G0.t > 3.4 || PHP.out) { if (G0.t > 6 || (PHP.out && PHP.out.t > 3)) this.endGrab(); }
+      return;
+    }
+  },
+  /* his body for the grab (char/rig pose, character space: +z ahead, +x his left), after the gait */
+  grabPose(P, dt) {
+    const G0 = this.grab; if (!G0) return;
+    const sm = (a, b, x) => smoothstep(a, b, x), t = G0.t;
+    if (G0.ph === 'kick') {
+      // the right boot: knee up (chamber), driven out at chest height, back down
+      const up = t < 0.5 ? sm(0, 0.24, t) : 1 - sm(0.5, 0.82, t), out = sm(0.22, 0.34, t) * (1 - sm(0.46, 0.66, t));
+      const a = P.ank[1], cx = -0.1, cy = lerp(0.5, 0.98, out), cz = lerp(0.28, 0.82, out);
+      a.x = lerp(a.x, cx, up); a.y = lerp(a.y, cy, up); a.z = lerp(a.z, cz, up);
+      P.ftPitch[1] = lerp(P.ftPitch[1], -0.5, out);
+      P.spPitch -= 0.4 * up + 0.15 * out; P.pel.z -= 0.1 * up; P.pelPitch -= 0.12 * up; P.hdPitch += 0.25 * up;
+      P.ank[0].z -= 0.06 * up;
+    } else if (G0.ph === 'dive') {
+      // flat out through the air, then down on the ground
+      const k = sm(0, 0.2, t), land = sm(0.36, 0.55, t);
+      P.pel.y = lerp(P.pel.y, lerp(0.75, 0.35, land), k); P.pelPitch += lerp(1.25, 1.35, land) * k; P.spPitch += 0.2 * k; P.hdPitch -= 0.9 * k;
+      for (let i = 0; i < 2; i++) { const a = P.ank[i]; a.x = lerp(a.x, i === 0 ? 0.14 : -0.12, k); a.y = lerp(a.y, lerp(0.55, 0.15, land) + i * 0.08, k); a.z = lerp(a.z, -0.75 - i * 0.1, k); }
+    } else if (G0.ph === 'leap') {
+      // a short jump onto you: off the ground, landing low
+      const u = clamp(t / 0.34, 0, 1);
+      P.pel.y += Math.sin(u * Math.PI) * 0.22; P.pelPitch += 0.55 * Math.sin(u * Math.PI * 0.5); P.spPitch += 0.4;
+    } else if (G0.ph === 'pin') {
+      P.spPitch += 0.25; P.hdPitch += 0.35;
+    }
+  },
   // you give up (E "Ergeben", or you said so): your gun goes away, he takes you
   surrender() {
     if (this.st !== 'arrest' || PHP.out) return false;
@@ -242,13 +396,14 @@ const SHERIFF = {
   },
   giveUp(t) { return /ergeb|ich komm(e)? mit|nicht schießen|schieß nicht|hände hoch|ich geb(e)? auf|verhafte mich|bin unbewaffnet/i.test(t); },
   // the cell: dark, and you wake up there in the morning, the fine taken
-  lockUp() {
+  lockUp(why) {
     const N = this.npc;
     this.arrT = 0; this.told = false; this.goBack();
     if (GUN.state !== 'holster') { GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; }
     const crime = this.CRIMES.filter((c) => c.known && c.kind !== 'shots').slice(-1)[0];
     this.jailed = (this.jailed || 0) + 1;
-    PHP.out = { t: 0, by: N, jail: true, why: crime ? crime.kind : 'shots' };
+    PHP.out = { t: 0, by: N, jail: true, why: crime ? crime.kind : why || (this.assault ? 'assault' : 'shots') };
+    this.assault = false;
     this.remember('Du hast den Fremden verhaftet und eine Nacht eingesperrt (' + TIME.stamp() + ').');
     this.wanted = crime && crime.kind === 'kill' ? 0.4 : 0;   // (a killing: he keeps an eye on you)
   },
@@ -273,6 +428,7 @@ const SHERIFF = {
   beforeSkip(m, soft) {
     if (soft || m < 20 || !this.npc || this.npc.hp.dead) return;
     if (this.npc.fight.on) this.npc.fight.stop();
+    if (this.grab) this.endGrab();
     if (this.st !== 'office') { this.npc.gun.drop(); this.npc.gun.cover = false; this.arrT = 0; this.told = false; const s = this.spot('desk'); this.npc.stop(); this.npc.pos.set(s.x, this.R.floorY, s.z); this.npc.room = this.R; this.st = 'office'; }
   },
   settled() { return !this.npc || this.npc.hp.dead || this.st === 'office'; },

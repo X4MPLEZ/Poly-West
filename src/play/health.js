@@ -102,7 +102,7 @@ const PHP = {
   wakeJail(O) {
     const m = TIME.until(8); TIME.skip(Math.max(60, m < 180 ? m + 1440 : m)); DAYNIGHT.update(0, true);
     this.hp = Math.max(this.hp, O.shot ? 0.5 : 0.6); this.daze = 0;
-    const J = SHERIFF.jailSpot(), fine = Math.min(INV.money, O.why === 'kill' ? 1000 : O.why === 'wound' ? 500 : 200);
+    const J = SHERIFF.jailSpot(), fine = Math.min(INV.money, O.why === 'kill' ? 1000 : O.why === 'wound' ? 500 : O.why === 'assault' ? 300 : 200);
     INV.money -= fine;
     PLAY.pos.copy(J.p); PLAY.yaw = J.yaw; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; PLAY.camYaw = PLAY.yaw + Math.PI;
     FALL.startLying();

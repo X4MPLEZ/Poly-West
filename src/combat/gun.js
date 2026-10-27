@@ -74,12 +74,16 @@ const GUN = {
     if (this.state === 'holster') this.startDraw();
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
-  startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
+  startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; this.cocked = false; GSFX.draw(); } },
+  /* putting it away: down to the hip with a twirl round the trigger finger (two turns, slowing), then down into the
+     leather, the hand a moment on the grip. A punch cuts it short (it is in the holster at once) */
+  H: { spin0: 0.1, spin1: 0.46, seat: 0.6, end: 0.8 },
   /* the attack button (left mouse, F, RT, the touch button): aiming, it fires; otherwise it is a punch. The revolver
      is only out while you aim: let go of the aim and it goes back in the holster */
   attack(mouse) {
     if (this.wantAim && this.state !== 'holster' && this.state !== 'holstering') this.pressFire();
     else if (this.state === 'holster') FIST.down(mouse);
+    else if (this.state === 'holstering') { if (this.inHand) GSFX.holster(); this.state = 'holster'; this.inHand = false; FIST.down(mouse); }
   },
   // touch aim button: first press draws and aims, the second puts the revolver straight away
   aimButton() {
@@ -125,11 +129,16 @@ const GUN = {
     if (this.state === 'drawn' && !this.wantAim && !this.fireQ && !this.reload && !this.reloadThenHolster) { this.idleT = (this.idleT || 0) + dt; if (this.idleT > 0.18) { this.idleT = 0; this.toggleHolster(); } }
     else this.idleT = 0;
     if (this.state === 'draw') {
-      if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }
+      if (!this.inHand && this.t > 0.17) this.inHand = true;
+      if (this.t > 0.3 && !this.cocked) { this.cocked = true; GSFX.cock(); }   // (the hammer back under the thumb as it comes up)
       if (this.t > 0.42) { this.state = 'drawn'; if (this.holsterQ) { this.holsterQ = false; this.toggleHolster(); } else if (this.reloadThenHolster) { this.pressReload(); if (!this.reload) this.reloadThenHolster = false; } }
     } else if (this.state === 'holstering') {
-      if (this.inHand && this.t > 0.26) { this.inHand = false; GSFX.leather(); }
-      if (this.t > 0.45) this.state = 'holster';
+      const H = this.H, turns = Math.floor(this.spinNow / TAU);
+      if (turns > (this.spinN || 0) && this.inHand) { this.spinN = turns; GSFX.spin(turns); }
+      if (this.t < 0.05) this.spinN = 0;
+      if (this.inHand && this.t > H.seat - 0.12 && !this.seatSnd) { this.seatSnd = true; GSFX.holster(); }
+      if (this.inHand && this.t > H.seat) this.inHand = false;
+      if (this.t > H.end) { this.state = 'holster'; this.seatSnd = false; }
     } else if (this.state === 'reload') this.updateReload(dt);
     const canAim = (this.state === 'drawn' || (this.state === 'draw' && this.t > 0.2)) && !this.reload;
     const want = canAim && (this.wantAim || this.hipT > 0);
@@ -174,13 +183,16 @@ const GUN = {
     }
     // the right arm: where it should be in this state
     let goal = null;
-    const REACH = { sw: -0.1, yw: 0.05, out: 0.24, el: 0.6 }, LOW = { sw: 0.42, yw: -0.12, out: 0.1, el: 0.6 }, RELOAD = { sw: 0.62, yw: 0.6, out: 0.04, el: 1.2 };
+    const TWIRL = { sw: 0.15, yw: 0.1, out: 0.32, el: 1.45 }, REACH = { sw: -0.1, yw: 0.05, out: 0.24, el: 0.6 }, LOW = { sw: 0.42, yw: -0.12, out: 0.1, el: 0.6 }, RELOAD = { sw: 0.62, yw: 0.6, out: 0.04, el: 1.2 };
     if (this.state === 'draw') goal = this.t < 0.17 ? REACH : null;
-    else if (this.state === 'holstering') goal = this.t < 0.3 ? REACH : { sw: 0, yw: 0, out: 0.08, el: 0.15 };
+    else if (this.state === 'holstering') goal = this.t < this.H.spin1 ? TWIRL : this.t < this.H.end - 0.1 ? REACH : { sw: 0, yw: 0, out: 0.08, el: 0.15 };
     else if (this.state === 'reload') goal = RELOAD;
     else if (this.state === 'holster') goal = null;
     if (goal === null && this.state !== 'holster') goal = this.solveAim(P, tgt, LOW, w);
-    const wantW = this.state === 'holster' ? 0 : this.state === 'holstering' && this.t > 0.36 ? 0 : 1;
+    const wantW = this.state === 'holster' ? 0 : this.state === 'holstering' && this.t > this.H.end - 0.08 ? 0 : 1;
+    // the twirl: two turns round the finger, fast at first, slowing into the grip
+    const H = this.H, u = this.state === 'holstering' ? clamp((this.t - H.spin0) / (H.spin1 - H.spin0), 0, 1) : 0;
+    this.spinNow = (1 - (1 - u) * (1 - u)) * 2 * TAU; P.gunSpin = this.state === 'holstering' && this.t < H.spin1 + 0.02 ? this.spinNow : 0;
     this.ovW += (wantW - this.ovW) * (1 - Math.exp(-dt * 14));
     if (goal) for (const k of ['sw', 'yw', 'out', 'el']) this.ov[k] += (goal[k] - this.ov[k]) * f;
     const rc = Math.max(0, this.recoil);

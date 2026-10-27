@@ -129,7 +129,7 @@ async def check_gun(g):
     # touch aim button: press = draw and aim, press again = straight back into the holster (also mid-draw)
     t = await g.js('''() => { GUN.aimButton(); for (let k = 0; k < 40; k++) G.stepFrame(1/60);
       const a = [GUN.state, GUN.wantAim, HUD.$('bAim').textContent];
-      GUN.aimButton(); const b = HUD.$('bAim').textContent; for (let k = 0; k < 40; k++) G.stepFrame(1/60); const c = GUN.state;
+      GUN.aimButton(); const b = HUD.$('bAim').textContent; for (let k = 0; k < 70; k++) G.stepFrame(1/60); const c = GUN.state;
       GUN.aimButton(); for (let k = 0; k < 15; k++) G.stepFrame(1/60); GUN.aimButton(); for (let k = 0; k < 70; k++) G.stepFrame(1/60);
       return { a, b: HUD.$('bAim').textContent, c, d: GUN.state }; }''')
     ok = h['saw'] and h['ammo'] == 6 and h['st'] == 'holster' and t['a'][1] and t['a'][2] == 'Wegstecken' and t['c'] == 'holster' and t['d'] == 'holster' and t['b'] == 'Zielen'
@@ -1084,6 +1084,28 @@ async def check_chase(g):
           and any('Stehen' in s or 'stehen' in s for s in r['said']))
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_grab(g):
+    """hit the sheriff and he puts a boot in your chest, jumps on you and you are his (a night in the cell for
+       assault); run from him after a wound and he runs you down (he is faster), tackles you and kneels on you"""
+    await g.js(RESET)
+    r = await g.js('''() => { G.noRender = true; const S = SHERIFF, N = S.npc, out = {}; TIME.min = 1440 + 13 * 60; S.CRIMES = []; N.persona.forget();
+      const said = []; const sp0 = N.speak; N.speak = function (t, d, m, k) { said.push(t); return sp0.call(this, t, d, m, k); };
+      const gb = S.goBack; S.goBack = () => {}; const run = (s, f) => { for (let k = 0; k < 60 * s; k++) { G.stepFrame(1/60); if (f && f(k) === false) return; } };
+      N.pos.set(-8, 0, 3); N.room = null; PLAY.pos.set(-8, 0, 4.1); PLAY.yaw = Math.PI; G.room = null; GAIT.init = false; N.stop(0); S.st = 'office'; run(0.5);
+      N.onHarm({ type: 'blow' }); const ph = new Set(); let jail = null;
+      run(8, () => { if (S.grab) ph.add(S.grab.ph); if (PHP.out && PHP.out.jail) { jail = PHP.out.why; return false; } });
+      out.kick = [...ph]; out.jail1 = jail; PHP.out = null; PHP.fx = null; FALL.cancel(); if (S.grab) S.endGrab(); S.beforeSkip(60, false);
+      // a wound, then off down the street
+      N.pos.set(-8, 0, 3); N.room = null; PLAY.pos.set(-13, 0, 3); G.room = null; GAIT.init = false; INV.money = 1000;
+      S.CRIMES = [{ t: TIME.min, kind: 'wound', who: 'Hank', how: 'angeschossen', x: -13, z: 3, room: null, seen: true, known: false }]; S.learn(S.CRIMES[0], 'Test');
+      S.st = 'arrest'; S.arrT = 0; N.gun.draw(); run(1);
+      INPUT.keys.add('w'); INPUT.keys.add('Shift'); const ph2 = new Set(); let top = 0; jail = null;
+      run(16, () => { PLAY.camYaw = Math.PI / 2; top = Math.max(top, N.speed); if (S.grab) { ph2.add(S.grab.ph); INPUT.keys.clear(); } if (PHP.out && PHP.out.jail) { jail = PHP.out.why; return false; } });
+      INPUT.keys.clear(); out.tackle = [...ph2]; out.jail2 = jail; out.faster = +(top / 5.4).toFixed(2); out.said = said;
+      N.speak = sp0; S.goBack = gb; PHP.out = null; PHP.fx = null; FALL.cancel(); if (S.grab) S.endGrab(); S.CRIMES = []; N.persona.forget(); S.beforeSkip(60, false); G.noRender = false; return out; }''')
+    ok = (r['jail1'] == 'assault' and {'kick', 'leap', 'pin'} <= set(r['kick']) and r['jail2'] == 'wound' and {'dive', 'pin'} <= set(r['tackle']) and r['faster'] > 1.0)
+    return ok, json.dumps(r, ensure_ascii=False)
+
 async def check_armed(g):
     """shots in the saloon: the ones upstairs come down with their guns; keep yours on one of them and he warns you,
        then fires; after a killing the next man at the bar stands there with his shotgun ready"""
@@ -1541,7 +1563,7 @@ async def check_beating(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('cast', check_cast), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('mission', check_mission), ('aim', check_aim), ('sheriff', check_sheriff), ('chase', check_chase), ('armed', check_armed), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('cast', check_cast), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('mission', check_mission), ('aim', check_aim), ('sheriff', check_sheriff), ('chase', check_chase), ('grab', check_grab), ('armed', check_armed), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
