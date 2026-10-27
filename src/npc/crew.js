@@ -30,6 +30,7 @@ const CREW = {
     grief: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad'], ['Wer hat das getan?', 'sad']],
     griefSeen: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad']],
     caught: [['Du warst das.', 'angry'], ['Du Schwein. Du hast ihn umgebracht.', 'angry']],
+    chase: [['Bleib stehen, du Hund!', 'angry'], ['Du kommst nicht weg!', 'angry'], ['Halt! Mörder!', 'angry']],
     out: [['Verschwinde. Sofort.', 'angry'], ['Raus hier. Lass uns allein.', 'sad']],
     quiet: [['Na gut. Ich geh wieder hoch.', 'neutral'], ['Ruft, wenn was ist.', 'neutral']],
     hands: [['Nicht schießen!', 'surprised'], ['Ganz ruhig, Mister…', 'neutral']],
@@ -302,6 +303,23 @@ const CREW = {
     N.handShape[0] = N.handShape[1] = null;
     if (H.busy() || H.out) { N.free(0); N.free(1); N.crouchT = 0; return; }
     const inside = G.room === N.room && !!N.room, dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    /* you killed one of them and he caught you at it: run out, and he comes after you, out of the door, and shoots
+       when he has you in sight; a while, then back to the body */
+    if (h.gun && h.angry && h.ph !== 'chase' && h.ph !== 'up' && h.ph !== 'hurt' && h.ph !== 'down' && h.ph !== 'fetchS' && this.W(h.i).gun.courage >= 0.6 && !inside && N.room === R
+      && G.time - (h.chaseDone || -99) > 90 && Math.hypot(PLAY.pos.x - R.doorW.x, PLAY.pos.z - R.doorW.z) < 25 && !PHP.out) {
+      if (N.fight.on) N.fight.stop(); N.crouchT = 0; N.free(0); N.free(1); h.ph = 'chase'; h.t = 0; h.walkT = 0; if (!h.gun.on) h.gun.draw(); this.say(N, 'chase');
+    }
+    if (h.ph === 'chase') {
+      // (he shoots at you running or armed; you stand still with your gun away: he comes up and holds you there)
+      const see = h.gun.on && h.gun.sees(), run = Math.hypot(PLAY.vx, PLAY.vz), moving = !see || dP > (run > 2 ? 14 : 4);
+      if (moving && (!N.walking() || (h.walkT -= dt) <= 0)) { h.walkT = 1.2; N.hurry = 2.1; N.walkTo(PLAY.pos.x, PLAY.pos.z); }
+      if (see && (run > 2 || GUN.state !== 'holster')) h.gun.provoked = G.time; else if (see && G.time - (h.gun.provoked || -99) > 2) h.gun.provoked = null;
+      h.gun.cover = true;
+      if (!h.gun.on) h.gun.draw();
+      h.gun.update(dt, moving);
+      if (h.t > 30 || dP > 45 || PHP.out || (!see && N.room !== R && h.t > 14)) { h.gun.cover = false; h.chaseDone = G.time; h.ph = 'back'; h.t = 0; N.hurry = 1.4; if (N.room !== R) { const p = rwp(R, 1.5, 0, R.z0 + 2.5); N.walkTo(p.x, p.z); } }
+      return;
+    }
     /* armed: while you are a danger (gun out, shots, a killing) he stands his ground with it; once you have put it
        away and stayed calm, he lowers it and sees to the rest (the hurt man, the body); out of the room, he puts it up */
     if (h.gun && h.gun.on && h.ph !== 'up' && h.ph !== 'hurt' && h.ph !== 'down') {
@@ -366,7 +384,7 @@ const CREW = {
       if (!S || S.hp.dead || h.t > 120) { h.ph = 'back'; h.t = 0; return; }
       if (Math.hypot(N.pos.x - S.pos.x, N.pos.z - S.pos.z) < 3.2 && (N.room || null) === (S.room || null)) {
         const dead = this.lastDead ? this.W(this.lastDead.i).name : 'einer von uns', known = !!(this.lastDead && this.lastDead.died && this.lastDead.died.known);
-        SHERIFF.report(this.W(h.i).name, PLACEMAP.find('im Saloon'), dead + ' liegt tot im Saloon' + (known ? ', der Fremde hat ihn umgebracht' : ', wer es war, weiß keiner'), known);
+        SHERIFF.report(this.W(h.i).name, PLACEMAP.find('im Saloon'), dead + ' liegt tot im Saloon' + (known ? ', der Fremde hat ihn ' + this.howOf(this.lastDead) : ', ' + this.howOf(this.lastDead) + ', wer es war, weiß keiner'), known);
         this.say(N, 'sheriff'); this.note(h.i, 'Du hast den Sheriff in den Saloon geholt (' + TIME.stamp() + ').');
         h.ph = 'back'; h.t = 0; N.hurry = 1.8; return;
       }
@@ -430,8 +448,8 @@ const CREW = {
         h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
         // you are still here, standing over him: he knows
         const seen = (h.caught || h.saw) && inside && dP < 14;
-        if (seen) { this.learnKiller(h.i); if (h.gun && this.W(h.i).gun.courage >= 0.6) { h.gun.draw(); h.gun.provoked = G.time; } this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
-        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
+        if (seen) { this.learnKiller(h.i); if (h.gun && this.W(h.i).gun.courage >= 0.6) { h.gun.draw(); h.gun.provoked = G.time; } this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn ' + this.howOf(this.lastDead) + '. Du sagst es ihm ins Gesicht.'); h.angry = true; }
+        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet, er ist ' + HARM.howDied(this.howOf(this.lastDead)) + '. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
       }
       return;
     }
@@ -461,23 +479,25 @@ const CREW = {
     let r = Math.random() * w.reduce((a, b) => a + b, 0), k = 0; while (r > w[k] && k < T.length - 1) { r -= w[k]; k++; }
     const t = T[k]; d.temper = t.id; d.grudge = Math.max(d.grudge || 0, t.grudge); d.att = Math.min(d.att || 0, t.att); d.metNew = false;
     if (t.id === 'poison') d.poisonNext = true;
-    const txt = 'Du weißt, dass der Fremde ' + this.W(dead.i).name + ' umgebracht hat. ' + t.mem;
+    const txt = 'Du weißt, dass der Fremde ' + this.W(dead.i).name + ' ' + this.howOf(dead) + ' hat. ' + t.mem;
     if (onDuty) B.remember(txt); else this.note(i, txt);
     if (dead.died) dead.died.known = true;
   },
+  // the word for how he died ("erschossen"), also for old saves
+  howOf(m) { return (m && m.died && (m.died.how || HARM.howOf(m.died.cause))) || 'umgebracht'; },
   // one of them is dead (behind the bar or one who came down): the others learn it, as they learn it
   died(i, info, seen) {
     const m = this.m[i], B = BARKEEP;
-    const cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause || '') ? 'erschlagen worden' : 'gestorben';
-    m.died = { at: TIME.min, cause, by: info.by || 'player', known: false, seen: seen || [] };
+    const how = info.how || HARM.howOf(info.cause), cause = HARM.howDied(how);
+    m.died = { at: TIME.min, cause, how, by: info.by || 'player', known: false, seen: seen || [] };
     this.lastDead = m;
     // those who saw it (in the room) know it was you
     if ((info.by || 'player') === 'player') {
       for (const s of m.died.seen) {
-        if (s === 'doctor') { DOC.knows.push('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); if (DOC.knows.length > 6) DOC.knows.shift(); m.died.known = true; continue; }
+        if (s === 'doctor') { DOC.knows.push('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); if (DOC.knows.length > 6) DOC.knows.shift(); m.died.known = true; continue; }
         const h = this.helpers.find((x) => x.npc.id === s);
-        if (h) { this.note(h.i, 'Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(h.i); }
-        else if (s === 'barkeep' && B.npc) { B.remember('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(B.whoI); }
+        if (h) { this.note(h.i, 'Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); this.learnKiller(h.i); }
+        else if (s === 'barkeep' && B.npc) { B.remember('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); this.learnKiller(B.whoI); }
       }
     }
   },
@@ -502,7 +522,8 @@ const CREW = {
     const B = BARKEEP, o = this.m[this.OWNER]; o.away = false; o.alive = true; o.d = this.blank();
     const knew = this.m.some((m) => m.died && m.died.known && m.died.by === 'player');
     o.d.mem.push('Du hast den Saloon in Dust Creek gekauft, billig, weil drei Barkeeper hintereinander gestorben sind (' + TIME.stamp() + ').');
-    o.d.mem.push(knew ? 'Man erzählt dir in der Stadt, ein Fremder hat sie umgebracht. Du hast seine Beschreibung gehört.' : 'Wer sie umgebracht hat, weiß keiner. Du traust keinem Fremden.');
+    const hows = [...new Set(this.m.filter((m) => m.died).map((m) => this.howOf(m)))].join(' oder ');
+    o.d.mem.push(knew ? 'Man erzählt dir in der Stadt, ein Fremder hat sie ' + hows + '. Du hast seine Beschreibung gehört.' : 'Sie sind ' + hows + ' worden, wer es war, weiß keiner. Du traust keinem Fremden.');
     o.d.att = knew ? -0.6 : -0.3; o.d.grudge = knew ? 0.4 : 0.15;
     this.closedAt = null;
     if (knew) { this.lastDead = this.m.filter((m) => m.died).slice(-1)[0] || this.lastDead; }
@@ -542,7 +563,7 @@ const CREW = {
   },
   settled() { return !this.helpers.some((h) => h.ph !== 'dead') && !this.m.some((x) => x.comeT); },
   save() {
-    return { m: this.m.map((x) => ({ alive: x.alive, away: x.away, died: x.died ? { at: x.died.at, cause: x.died.cause, known: !!x.died.known, by: x.died.by || 'player' } : null, d: x.d ? { ...x.d, asked: x.d.asked || [], mem: x.d.mem.slice(-10) } : null })),
+    return { m: this.m.map((x) => ({ alive: x.alive, away: x.away, died: x.died ? { at: x.died.at, cause: x.died.cause, how: x.died.how || null, known: !!x.died.known, by: x.died.by || 'player' } : null, d: x.d ? { ...x.d, asked: x.d.asked || [], mem: x.d.mem.slice(-10) } : null })),
       closedAt: this.closedAt, lastDead: this.lastDead ? this.lastDead.i : null, helpers: this.helpers.filter((h) => h.ph !== 'dead').map((h) => h.i), deadHelpers: this.helpers.filter((h) => h.ph === 'dead').map((h) => h.i) };
   },
   load(s) {

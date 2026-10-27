@@ -5863,12 +5863,12 @@ const PHP = {
   // a night in the sheriff's cell: the morning, a fine, the door open
   wakeJail(O) {
     const m = TIME.until(8); TIME.skip(Math.max(60, m < 180 ? m + 1440 : m)); DAYNIGHT.update(0, true);
-    this.hp = Math.max(this.hp, 0.6); this.daze = 0;
+    this.hp = Math.max(this.hp, O.shot ? 0.5 : 0.6); this.daze = 0;
     const J = SHERIFF.jailSpot(), fine = Math.min(INV.money, O.why === 'kill' ? 1000 : O.why === 'wound' ? 500 : 200);
     INV.money -= fine;
     PLAY.pos.copy(J.p); PLAY.yaw = J.yaw; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; PLAY.camYaw = PLAY.yaw + Math.PI;
     FALL.startLying();
-    setTimeout(() => TOAST.show('Du wachst in der Zelle des Sheriffs auf. ' + (fine ? 'Er hat dir ' + money(fine) + ' Strafe abgenommen. ' : '') + 'Die Tür steht offen. Es ist ' + TIME.str() + ' Uhr.', 'long'), 600);
+    setTimeout(() => TOAST.show('Du wachst in der Zelle des Sheriffs auf. ' + (O.shot ? 'Der Doc hat dich hier verbunden. ' : '') + (fine ? 'Er hat dir ' + money(fine) + ' Strafe abgenommen. ' : '') + 'Die Tür steht offen. Es ist ' + TIME.str() + ' Uhr.', 'long'), 600);
   },
   // where you come to: thrown out of the saloon onto the street, or (shot) at the doctor's
   wake() {
@@ -9567,7 +9567,8 @@ class NPC {
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
-  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  // (loud: a shout carries further outside, "Stehen bleiben!")
+  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < (this.loud ? 45 : 20); }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()
@@ -10290,8 +10291,9 @@ class Vitals {
     N.body.r = 0;
     if (N.sayEl) SAY.hide(N);
     HARM.dropAll(N);
-    worldEvent('npcDead', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, cause });
-    if (N.onHarm) N.onHarm({ type: 'dead', cause });
+    const kill = HARM.how(N);
+    worldEvent('npcDead', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, cause, how: kill });
+    if (N.onHarm) N.onHarm({ type: 'dead', cause, how: kill });
   }
   /* ---- per frame (real game seconds) ---- */
   update(dt) {
@@ -10802,7 +10804,33 @@ class Vitals {
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
   THIN: /^(uArm|fArm|hand|thigh|shin|foot|hat)/, SLACK: 0.06,
+  /* how he was killed, as a word for memories and the AI ("der Fremde hat ihn erschossen"): never left for the AI to
+     guess (it made up "erstochen"). A bullet anywhere counts (bled to death after it: still shot) */
+  how(N) {
+    const H = N.hp, c = H.cause || '';
+    if (/schuss/i.test(c) || H.wounds.some((w) => w.kind === 'shot')) return 'erschossen';
+    if (/schlag/.test(c) || H.trauma > 0.4) return 'totgeschlagen';
+    return 'umgebracht';
+  },
+  // the same as it happened to him ("ist erschossen worden"), for "X ist tot (…)"
+  howDied(how) { return how === 'erschossen' ? 'erschossen worden' : how === 'totgeschlagen' ? 'totgeschlagen worden' : 'gestorben'; },
+  // an old memory without the word (saves before it was kept): from the cause
+  howOf(cause) { return /erschossen|verblutet|schuss/i.test(cause || '') ? 'erschossen' : /schlag/.test(cause || '') ? 'totgeschlagen' : 'umgebracht'; },
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
+  // a ray against a capsule along the local z axis of a matrix (seg: [z0, z1, y]): the ray distance, or null
+  capsule(o, d, M, seg, r) {
+    const e = M.elements, ax = e[8], ay = e[9], az = e[10], y = seg[2] || 0;
+    const L = Math.hypot(ax, ay, az) || 1, ux = ax / L, uy = ay / L, uz = az / L;
+    const bx = e[12] + e[4] * y + ux * seg[0], by = e[13] + e[5] * y + uy * seg[0], bz = e[14] + e[6] * y + uz * seg[0], len = seg[1] - seg[0];
+    // closest points of the line o + t d and the segment b + s u (0 ≤ s ≤ len)
+    const wx = o.x - bx, wy = o.y - by, wz = o.z - bz, b = d.x * ux + d.y * uy + d.z * uz, dd = d.x * wx + d.y * wy + d.z * wz, ee = ux * wx + uy * wy + uz * wz;
+    const den = 1 - b * b; let t, sg;
+    if (den < 1e-6) { t = -dd; sg = 0; } else { t = (b * ee - dd) / den; sg = (ee - b * dd) / den; }
+    sg = clamp(sg, 0, len); t = sg * b - dd;   // (t again for the clamped point)
+    const px = o.x + d.x * t - (bx + ux * sg), py = o.y + d.y * t - (by + uy * sg), pz = o.z + d.z * t - (bz + uz * sg), q2 = px * px + py * py + pz * pz;
+    if (q2 >= r * r || t < 0) return null;
+    return t - Math.sqrt(r * r - q2);
+  },
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
     let best = null, bestItem = null;
@@ -10813,6 +10841,8 @@ const HARM = {
       if (tc < near - 1.5 || tc > far + 1.5 || cx * cx + cy * cy + cz * cz - tc * tc > 1.6 * 1.6) continue;
       // what he holds: small balls round each visible prop (the hand is inside the glass: a bullet takes the glass first)
       for (const it of (N.held ? N.held() : [])) {
+        // a long thing (a gun): a thin capsule along it, so only a bullet that really meets the barrel takes it
+        if (it.seg) { const t = this.capsule(o, d, it.mesh.matrixWorld, it.seg, it.r); if (t !== null && t >= near && t <= far && (!bestItem || t < bestItem.t)) bestItem = { t, npc: N, item: it, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t) }; continue; }
         const p = it.mesh.matrixWorld.elements, px = p[12], py = p[13] + (it.dy || 0), pz = p[14];
         const ex = px - o.x, ey = py - o.y, ez = pz - o.z, tc2 = ex * d.x + ey * d.y + ez * d.z, r = it.r || 0.06;
         const d2 = ex * ex + ey * ey + ez * ez - tc2 * tc2;
@@ -11452,7 +11482,8 @@ class Gunman {
   drop() { if (this.m) this.m.visible = false; this.st = 'off'; this.npc.free(0); this.npc.free(1); this.lost = G.time; }
   dispose() { if (this.m && this.m.parent) this.m.parent.remove(this.m); this.m = null; this.st = 'off'; }
   // for HARM.trace: the gun is a thing in his hands a bullet can take
-  held() { return this.m && this.m.visible ? [this._held || (this._held = { mesh: this.m, kind: this.kind, hand: 1, r: this.kind === 'shotgun' ? 0.09 : 0.06, dy: 0, lose: () => this.drop() })] : []; }
+  // (a thin capsule along the barrel, npc/harm.js capsule: a head shot past it is a head shot)
+  held() { return this.m && this.m.visible ? [this._held || (this._held = { mesh: this.m, kind: this.kind, hand: 1, seg: this.kind === 'shotgun' ? [-0.47, 0.67, -0.01] : [-0.05, 0.3, -0.02], r: this.kind === 'shotgun' ? 0.04 : 0.045, dy: 0, lose: () => this.drop() })] : []; }
   // can he see you (eyes to your chest, nothing solid between)
   sees() {
     const N = this.npc, R = N.room || null;
@@ -11467,8 +11498,9 @@ class Gunman {
     const N = this.npc, cam = G.cam, d = this._v.set(N.pos.x, N.pos.y + 1.4, N.pos.z).sub(cam.position), L = d.length(); if (L > 25) return false;
     d.divideScalar(L); return cam.getWorldDirection(this._w).dot(d) > Math.cos(0.12 + 0.5 / L);
   }
-  /* every frame while out. Returns true while he is busy with it (the behaviour leaves the body to him) */
-  update(dt) {
+  /* every frame while out. Returns true while he is busy with it (the behaviour leaves the body to him, except the
+     legs when moving: then he does not stop to face you) */
+  update(dt, moving) {
     const N = this.npc;
     if (this.st === 'off') return false;
     if (N.hp.dead || N.hp.busy()) { if (this.m) this.m.visible = false; this.st = N.hp.dead ? 'off' : this.st; return false; }
@@ -11484,13 +11516,14 @@ class Gunman {
     const drawn = GUN.state !== 'holster' && !GUN.reloadThenHolster;
     const hostile = fired || killed || shotMe || (this.aimedT > 1.6 && this.warnN > 0) || (this.provoked && G.time - this.provoked < 8);
     if (fired || killed || shotMe) this.provoked = G.time;
-    const aimAt = see && (drawn || hostile || dP < 2.5);
+    const aimAt = see && (drawn || hostile || dP < 2.5 || this.cover);   // (cover: an arrest, the gun on you all the time)
     this.aimK += ((aimAt ? 1 : 0) - this.aimK) * (1 - Math.exp(-dt * 7));
-    if (see) N.stop(Math.atan2(P.x - N.pos.x, P.z - N.pos.z));
+    // (moving: his behaviour walks him, after you or to you; the gun stays on you on the way)
+    if (see && !moving) N.stop(Math.atan2(P.x - N.pos.x, P.z - N.pos.z));
     if (see) N.lookAt(this._w.set(P.x, P.y + 1.5, P.z), 1);
     this.pose(1);
     // a word first: put it down, get out (not when he is already shooting)
-    if (aimAt && !hostile && this.warnN < 2 && G.time - (this.warnT || -99) > 5) { this.warnT = G.time; this.warnN++; if (this.onWord) this.onWord(this.warnN === 1 ? 'warn' : 'warn2'); }
+    if (aimAt && drawn && !hostile && this.warnN < 2 && G.time - (this.warnT || -99) > 5) { this.warnT = G.time; this.warnN++; if (this.onWord) this.onWord(this.warnN === 1 ? 'warn' : 'warn2'); }
     if (hostile && see && this.aimK > 0.85 && this.cool <= 0 && !PHP.out && this.courage > 0.25) this.fire(dP);
     if (!see && G.time - (this.provoked || -99) > 12) this.aimedT = 0;
     this.place();
@@ -11694,7 +11727,7 @@ const BARKEEP = {
     if (P.glass.visible && !(this.cur && this.cur.glassOut)) out.push(this._hg || (this._hg = mk('glass', 0, 0.065, 0.05)));
     if (P.bottle.visible) out.push(this._hb || (this._hb = mk('bottle', 1, 0.075, 0.12)));
     if (P.rag.visible) out.push(this._hr || (this._hr = mk('rag', 1, 0.07, 0)));
-    if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = mk('shotgun', 1, 0.11, 0)));
+    if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = Object.assign(mk('shotgun', 1, 0.04, 0), { seg: [-0.47, 0.67, -0.01] })));
     if (this.gunman && this.gunman.on) for (const g of this.gunman.held()) out.push(g);
     return out;
   },
@@ -11709,7 +11742,7 @@ const BARKEEP = {
     const N = this.npc;
     if (this.gunman && this.gunman.on && (info.type === 'blow' || info.type === 'shot' || info.type === 'dead')) { this.gunman.drop(); if (this.st === 'wary') this.st = 'idle'; }
     this.pending = null; this.attending = false; this.standoff = null;
-    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; CREW.died(this.whoI, { cause: info.cause, by: 'player' }, CREW.seenBy(N)); return; }
+    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = HARM.howDied(info.how); CREW.died(this.whoI, { cause: info.cause, how: info.how, by: 'player' }, CREW.seenBy(N)); return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
     // the doctor came to him and patched him up where he was: back to work (no more need to go to him)
     if (info.type === 'treated') {
@@ -12767,6 +12800,7 @@ const CREW = {
     grief: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad'], ['Wer hat das getan?', 'sad']],
     griefSeen: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad']],
     caught: [['Du warst das.', 'angry'], ['Du Schwein. Du hast ihn umgebracht.', 'angry']],
+    chase: [['Bleib stehen, du Hund!', 'angry'], ['Du kommst nicht weg!', 'angry'], ['Halt! Mörder!', 'angry']],
     out: [['Verschwinde. Sofort.', 'angry'], ['Raus hier. Lass uns allein.', 'sad']],
     quiet: [['Na gut. Ich geh wieder hoch.', 'neutral'], ['Ruft, wenn was ist.', 'neutral']],
     hands: [['Nicht schießen!', 'surprised'], ['Ganz ruhig, Mister…', 'neutral']],
@@ -13039,6 +13073,23 @@ const CREW = {
     N.handShape[0] = N.handShape[1] = null;
     if (H.busy() || H.out) { N.free(0); N.free(1); N.crouchT = 0; return; }
     const inside = G.room === N.room && !!N.room, dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    /* you killed one of them and he caught you at it: run out, and he comes after you, out of the door, and shoots
+       when he has you in sight; a while, then back to the body */
+    if (h.gun && h.angry && h.ph !== 'chase' && h.ph !== 'up' && h.ph !== 'hurt' && h.ph !== 'down' && h.ph !== 'fetchS' && this.W(h.i).gun.courage >= 0.6 && !inside && N.room === R
+      && G.time - (h.chaseDone || -99) > 90 && Math.hypot(PLAY.pos.x - R.doorW.x, PLAY.pos.z - R.doorW.z) < 25 && !PHP.out) {
+      if (N.fight.on) N.fight.stop(); N.crouchT = 0; N.free(0); N.free(1); h.ph = 'chase'; h.t = 0; h.walkT = 0; if (!h.gun.on) h.gun.draw(); this.say(N, 'chase');
+    }
+    if (h.ph === 'chase') {
+      // (he shoots at you running or armed; you stand still with your gun away: he comes up and holds you there)
+      const see = h.gun.on && h.gun.sees(), run = Math.hypot(PLAY.vx, PLAY.vz), moving = !see || dP > (run > 2 ? 14 : 4);
+      if (moving && (!N.walking() || (h.walkT -= dt) <= 0)) { h.walkT = 1.2; N.hurry = 2.1; N.walkTo(PLAY.pos.x, PLAY.pos.z); }
+      if (see && (run > 2 || GUN.state !== 'holster')) h.gun.provoked = G.time; else if (see && G.time - (h.gun.provoked || -99) > 2) h.gun.provoked = null;
+      h.gun.cover = true;
+      if (!h.gun.on) h.gun.draw();
+      h.gun.update(dt, moving);
+      if (h.t > 30 || dP > 45 || PHP.out || (!see && N.room !== R && h.t > 14)) { h.gun.cover = false; h.chaseDone = G.time; h.ph = 'back'; h.t = 0; N.hurry = 1.4; if (N.room !== R) { const p = rwp(R, 1.5, 0, R.z0 + 2.5); N.walkTo(p.x, p.z); } }
+      return;
+    }
     /* armed: while you are a danger (gun out, shots, a killing) he stands his ground with it; once you have put it
        away and stayed calm, he lowers it and sees to the rest (the hurt man, the body); out of the room, he puts it up */
     if (h.gun && h.gun.on && h.ph !== 'up' && h.ph !== 'hurt' && h.ph !== 'down') {
@@ -13103,7 +13154,7 @@ const CREW = {
       if (!S || S.hp.dead || h.t > 120) { h.ph = 'back'; h.t = 0; return; }
       if (Math.hypot(N.pos.x - S.pos.x, N.pos.z - S.pos.z) < 3.2 && (N.room || null) === (S.room || null)) {
         const dead = this.lastDead ? this.W(this.lastDead.i).name : 'einer von uns', known = !!(this.lastDead && this.lastDead.died && this.lastDead.died.known);
-        SHERIFF.report(this.W(h.i).name, PLACEMAP.find('im Saloon'), dead + ' liegt tot im Saloon' + (known ? ', der Fremde hat ihn umgebracht' : ', wer es war, weiß keiner'), known);
+        SHERIFF.report(this.W(h.i).name, PLACEMAP.find('im Saloon'), dead + ' liegt tot im Saloon' + (known ? ', der Fremde hat ihn ' + this.howOf(this.lastDead) : ', ' + this.howOf(this.lastDead) + ', wer es war, weiß keiner'), known);
         this.say(N, 'sheriff'); this.note(h.i, 'Du hast den Sheriff in den Saloon geholt (' + TIME.stamp() + ').');
         h.ph = 'back'; h.t = 0; N.hurry = 1.8; return;
       }
@@ -13167,8 +13218,8 @@ const CREW = {
         h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
         // you are still here, standing over him: he knows
         const seen = (h.caught || h.saw) && inside && dP < 14;
-        if (seen) { this.learnKiller(h.i); if (h.gun && this.W(h.i).gun.courage >= 0.6) { h.gun.draw(); h.gun.provoked = G.time; } this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
-        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
+        if (seen) { this.learnKiller(h.i); if (h.gun && this.W(h.i).gun.courage >= 0.6) { h.gun.draw(); h.gun.provoked = G.time; } this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn ' + this.howOf(this.lastDead) + '. Du sagst es ihm ins Gesicht.'); h.angry = true; }
+        else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet, er ist ' + HARM.howDied(this.howOf(this.lastDead)) + '. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
       }
       return;
     }
@@ -13198,23 +13249,25 @@ const CREW = {
     let r = Math.random() * w.reduce((a, b) => a + b, 0), k = 0; while (r > w[k] && k < T.length - 1) { r -= w[k]; k++; }
     const t = T[k]; d.temper = t.id; d.grudge = Math.max(d.grudge || 0, t.grudge); d.att = Math.min(d.att || 0, t.att); d.metNew = false;
     if (t.id === 'poison') d.poisonNext = true;
-    const txt = 'Du weißt, dass der Fremde ' + this.W(dead.i).name + ' umgebracht hat. ' + t.mem;
+    const txt = 'Du weißt, dass der Fremde ' + this.W(dead.i).name + ' ' + this.howOf(dead) + ' hat. ' + t.mem;
     if (onDuty) B.remember(txt); else this.note(i, txt);
     if (dead.died) dead.died.known = true;
   },
+  // the word for how he died ("erschossen"), also for old saves
+  howOf(m) { return (m && m.died && (m.died.how || HARM.howOf(m.died.cause))) || 'umgebracht'; },
   // one of them is dead (behind the bar or one who came down): the others learn it, as they learn it
   died(i, info, seen) {
     const m = this.m[i], B = BARKEEP;
-    const cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause || '') ? 'erschlagen worden' : 'gestorben';
-    m.died = { at: TIME.min, cause, by: info.by || 'player', known: false, seen: seen || [] };
+    const how = info.how || HARM.howOf(info.cause), cause = HARM.howDied(how);
+    m.died = { at: TIME.min, cause, how, by: info.by || 'player', known: false, seen: seen || [] };
     this.lastDead = m;
     // those who saw it (in the room) know it was you
     if ((info.by || 'player') === 'player') {
       for (const s of m.died.seen) {
-        if (s === 'doctor') { DOC.knows.push('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); if (DOC.knows.length > 6) DOC.knows.shift(); m.died.known = true; continue; }
+        if (s === 'doctor') { DOC.knows.push('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); if (DOC.knows.length > 6) DOC.knows.shift(); m.died.known = true; continue; }
         const h = this.helpers.find((x) => x.npc.id === s);
-        if (h) { this.note(h.i, 'Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(h.i); }
-        else if (s === 'barkeep' && B.npc) { B.remember('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(B.whoI); }
+        if (h) { this.note(h.i, 'Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); this.learnKiller(h.i); }
+        else if (s === 'barkeep' && B.npc) { B.remember('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' ' + how + ' hat (' + TIME.stamp() + ').'); this.learnKiller(B.whoI); }
       }
     }
   },
@@ -13239,7 +13292,8 @@ const CREW = {
     const B = BARKEEP, o = this.m[this.OWNER]; o.away = false; o.alive = true; o.d = this.blank();
     const knew = this.m.some((m) => m.died && m.died.known && m.died.by === 'player');
     o.d.mem.push('Du hast den Saloon in Dust Creek gekauft, billig, weil drei Barkeeper hintereinander gestorben sind (' + TIME.stamp() + ').');
-    o.d.mem.push(knew ? 'Man erzählt dir in der Stadt, ein Fremder hat sie umgebracht. Du hast seine Beschreibung gehört.' : 'Wer sie umgebracht hat, weiß keiner. Du traust keinem Fremden.');
+    const hows = [...new Set(this.m.filter((m) => m.died).map((m) => this.howOf(m)))].join(' oder ');
+    o.d.mem.push(knew ? 'Man erzählt dir in der Stadt, ein Fremder hat sie ' + hows + '. Du hast seine Beschreibung gehört.' : 'Sie sind ' + hows + ' worden, wer es war, weiß keiner. Du traust keinem Fremden.');
     o.d.att = knew ? -0.6 : -0.3; o.d.grudge = knew ? 0.4 : 0.15;
     this.closedAt = null;
     if (knew) { this.lastDead = this.m.filter((m) => m.died).slice(-1)[0] || this.lastDead; }
@@ -13279,7 +13333,7 @@ const CREW = {
   },
   settled() { return !this.helpers.some((h) => h.ph !== 'dead') && !this.m.some((x) => x.comeT); },
   save() {
-    return { m: this.m.map((x) => ({ alive: x.alive, away: x.away, died: x.died ? { at: x.died.at, cause: x.died.cause, known: !!x.died.known, by: x.died.by || 'player' } : null, d: x.d ? { ...x.d, asked: x.d.asked || [], mem: x.d.mem.slice(-10) } : null })),
+    return { m: this.m.map((x) => ({ alive: x.alive, away: x.away, died: x.died ? { at: x.died.at, cause: x.died.cause, how: x.died.how || null, known: !!x.died.known, by: x.died.by || 'player' } : null, d: x.d ? { ...x.d, asked: x.d.asked || [], mem: x.d.mem.slice(-10) } : null })),
       closedAt: this.closedAt, lastDead: this.lastDead ? this.lastDead.i : null, helpers: this.helpers.filter((h) => h.ph !== 'dead').map((h) => h.i), deadHelpers: this.helpers.filter((h) => h.ph === 'dead').map((h) => h.i) };
   },
   load(s) {
@@ -13332,18 +13386,23 @@ const SHERIFF = {
     warnGun: [['Waffe runter! Ich sag’s nicht zweimal.', 'angry'], ['Leg sie hin. Langsam.', 'angry']],
     warnGun2: [['Letzte Chance, Mister.', 'angry']],
     hello: [['Tag.', 'neutral'], ['Ich hab ein Auge auf dich.', 'neutral'], ['Benimm dich in meiner Stadt.', 'neutral']],
-    calm: [['Na also. Geht doch.', 'neutral']]
+    calm: [['Na also. Geht doch.', 'neutral']],
+    halt: [['Stehen bleiben!', 'angry'], ['Halt! Bleib stehen!', 'angry']],
+    halt2: [['Bleib stehen, oder ich schieße!', 'angry'], ['Letzte Warnung! Stehen bleiben!', 'angry']],
+    hunt: [['Wo ist er hin?', 'angry'], ['Du entkommst mir nicht.', 'angry'], ['Den krieg ich.', 'angry']]
   },
   bags: {},
   line(kind, f) { const L = this.LINES[kind], B = this.bags[kind] || (this.bags[kind] = []); if (!B.length) for (let i = 0; i < L.length; i++) B.splice(Math.floor(Math.random() * (B.length + 1)), 0, i); const x = L[B.pop()]; return { text: x[0].replace('{f}', f || ''), mood: x[1] }; },
-  say(kind, f) { const N = this.npc; if (!N || !N.canBeHeard()) return false; const l = this.line(kind, f); SAY.hide(N); return N.speak(l.text, undefined, l.mood, true); },
+  LOUD: { halt: 1, halt2: 1, hunt: 1, arrest: 1, out: 1, escaped: 1 },
+  say(kind, f) { const N = this.npc; if (!N) return false; N.loud = !!this.LOUD[kind]; if (!N.canBeHeard()) { N.loud = false; return false; } const l = this.line(kind, f); SAY.hide(N); const r = N.speak(l.text, undefined, l.mood, true); N.loud = false; return r; },
   react(kind, situation, f) { if (!TALK.remark(this.npc, situation, () => this.say(kind, f), this.line(kind, f).mood, 1)) this.say(kind, f); },
   remember(t) { this.mem.push(t); if (this.mem.length > 10) this.mem.shift(); },
-  CRIMES: [],   // { t (game min), kind: 'shots' | 'wound' | 'kill', who (victim name), x, z, room, seen (anyone saw it), known (he knows it) }
-  crime(kind, e, victim) {
+  CRIMES: [],   // { t (game min), kind: 'shots' | 'wound' | 'kill', who (victim name), how ('erschossen' …), x, z, room, seen (anyone saw it), known (he knows it) }
+  crime(kind, e, victim, how) {
     const R = e.room ? ROOMS.find((r) => r.type === e.room && !r.parent) : roomAt(e.x, e.z, 0.05, (e.y || 0) + 0.1);
     let C = this.CRIMES.find((c) => c.kind === kind && c.who === (victim || null) && TIME.min - c.t < 20);
     if (!C) { C = { t: TIME.min, kind, who: victim || null, x: e.x, z: e.z, room: R ? R.type : null, seen: false, known: false }; this.CRIMES.push(C); if (this.CRIMES.length > 12) this.CRIMES.shift(); }
+    if (how && (!C.how || C.how === 'umgebracht')) C.how = how;   // (how it was done: the words the AI gets, so it does not make it up)
     // witnesses: anyone awake in that room (or near, outside); the sheriff himself if he sees it
     const N = this.npc;
     // (the one who was shot and lives knows best who did it)
@@ -13359,11 +13418,10 @@ const SHERIFF = {
     const ray = GUN.ray; ray.set(o, d.divideScalar(L)); ray.near = 0.3; ray.far = L - 0.3;
     return ray.intersectObjects(W.worldMeshes.concat(R && R.mesh ? [R.mesh] : []), false).length === 0;
   },
-  WHAT: { shots: 'herumgeschossen', wound: 'auf jemanden geschossen', kill: 'jemanden umgebracht' },
   learn(C, how) {
     if (C.known) return;
     C.known = true;
-    const what = C.kind === 'kill' ? (C.who || 'jemanden') + ' umgebracht' : C.kind === 'wound' ? 'auf ' + (C.who || 'jemanden') + ' geschossen' : 'herumgeschossen';
+    const what = C.kind === 'kill' ? (C.who || 'jemanden') + ' ' + (C.how || 'umgebracht') : C.kind === 'wound' ? 'auf ' + (C.who || 'jemanden') + ' geschossen' : 'herumgeschossen';
     this.remember('Der Fremde hat ' + (C.room ? PLACEMAP.words('in ' + (PLACEMAP.ROOMS.find((r) => r[0] === C.room) || [0, 0, 'der Stadt'])[2]) : 'auf der Straße') + ' ' + what + ' (' + TIME.stamp(C.t) + '). ' + how + '.');
     if (C.kind !== 'shots') this.wanted = Math.max(this.wanted, C.kind === 'kill' ? 1 : 0.8);
     this.att = Math.max(-1, this.att - (C.kind === 'kill' ? 0.8 : C.kind === 'wound' ? 0.5 : 0.15));
@@ -13380,6 +13438,11 @@ const SHERIFF = {
     N.onHarm = (info) => this.onHarm(info);
     N.gossip = { facts: () => this.mem.filter((m) => /Fremde/.test(m) && !/hat dir erzählt/.test(m)), hear: (from, f) => { this.remember(GOSSIP.told(from, f)); if (/Fremde.*(umgebracht|erschossen)/.test(f)) this.wanted = Math.max(this.wanted, 0.9); } };
     N.persona = this.persona();
+    // giving yourself up while he arrests you (he moves about: checked like the bar counters)
+    const it = { x: p.x, y: R.floorY, z: p.z, room: null, occ: null, verb: 'surrender', kind: 'surrender', id: 'sheriff', fx: 0, fz: 1, sx: p.x, sz: p.z };
+    it.score = (q) => { if (this.st !== 'arrest' || N.hp.dead || N.hp.busy() || PHP.out) return 1e9; const d = Math.hypot(N.pos.x - q.x, N.pos.z - q.z); if (d > 8 || !this.inSight()) return 1e9; it.room = N.room || null; it.x = it.sx = N.pos.x; it.z = it.sz = N.pos.z; it.y = N.pos.y; return d * 0.2; };
+    it.actions = () => [{ label: 'Ergeben', run: () => this.surrender() }];
+    INTERACT.wide.push(it);
     onWorldEvent((e) => this.event(e));
     WORLDSIM.before((m, soft) => this.beforeSkip(m, soft));
   },
@@ -13390,8 +13453,8 @@ const SHERIFF = {
     const N = this.npc; if (!N) return;
     if (e.by === 'player') {
       if (e.type === 'shot') this.crime('shots', e);
-      else if (e.type === 'npcShot') { const V = NPCS.list.find((n) => n.id === e.npc); if (V && V !== N) this.crime(e.dead ? 'kill' : 'wound', e, V.name); }
-      else if (e.type === 'npcDead') { const V = NPCS.list.find((n) => n.id === e.npc); if (V && V !== N) this.crime('kill', e, V.name); }
+      else if (e.type === 'npcShot') { const V = NPCS.list.find((n) => n.id === e.npc); if (V && V !== N) this.crime(e.dead ? 'kill' : 'wound', e, V.name, 'erschossen'); }
+      else if (e.type === 'npcDead') { const V = NPCS.list.find((n) => n.id === e.npc); if (V && V !== N) this.crime('kill', e, V.name, e.how); }
     }
     if ((e.type === 'shot' || e.type === 'npcShot2') && e.by !== 'sheriff' && !N.hp.dead && !N.hp.busy()) {
       if (this.st === 'office' || this.st === 'back') this.alarm = { x: e.x, z: e.z, room: e.room || null, t: G.time + 2 + Math.random() * 2 };
@@ -13440,7 +13503,7 @@ const SHERIFF = {
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (this.st === 'fight') { const r = N.fight.update(dt); if (r) { this.st = this.wanted >= 0.6 ? 'arrest' : 'back'; this.t = 0; } return; }
     // wanted and he sees you, anywhere in town: he comes for you
-    if (this.wanted >= 0.6 && (this.st === 'office' || this.st === 'back' || this.st === 'scene') && this.inSight() && dP < 25) { this.st = 'arrest'; this.t = 0; N.gun.draw(); this.react('arrest', 'Du hast den Fremden gefunden, den du verhaften willst: ' + (this.mem.slice(-1)[0] || '') + ' Du richtest den Revolver auf ihn.'); }
+    if (this.wanted >= 0.6 && (this.st === 'office' || this.st === 'back' || this.st === 'scene' || this.st === 'respond') && this.inSight() && dP < 25) { this.st = 'arrest'; this.t = 0; this.arrT = 0; this.reacted = true; N.gun.draw(); this.react('arrest', 'Du hast den Fremden gefunden, den du verhaften willst: ' + (this.mem.slice(-1)[0] || '') + ' Du richtest den Revolver auf ihn.'); }
     if (this.alarm && G.time > this.alarm.t) { const A = this.alarm; this.alarm = null; const R = A.room ? ROOMS.find((r) => r.type === A.room && !r.parent) : null; this.go(A.x, A.z, R, true); }
     if (this.st === 'office') return this.office(dt);
     if (this.st === 'respond') {
@@ -13461,7 +13524,9 @@ const SHERIFF = {
         for (const C of this.CRIMES) if (!C.known && TIME.min - C.t < 20 && Math.hypot(C.x - PLAY.pos.x, C.z - PLAY.pos.z) < 10 && this.inSight()) this.learn(C, 'Du hast ihn genau da angetroffen, wo eben geschossen wurde');
       }
       const here = this.inSight() && dP < 20;
-      if (here && this.wanted >= 0.6) { this.st = 'arrest'; this.t = 0; this.react('arrest', 'Du stehst vor dem Fremden. ' + (this.mem.slice(-1)[0] || '') + ' Du richtest den Revolver auf ihn und verhaftest ihn.'); return; }
+      // the witnesses told him, and you are gone: they show him which way, and he goes after you
+      if (!here && this.wanted >= 0.6 && this.asked && this.t > 4 && this.huntFor !== this.wanted + ':' + this.mem.length) { this.huntFor = this.wanted + ':' + this.mem.length; this.st = 'arrest'; this.t = 0; this.arrT = 0; this.seenAt = null; this.say('hunt'); return; }
+      if (here && this.wanted >= 0.6) { this.st = 'arrest'; this.t = 0; this.arrT = 0; this.reacted = true; this.react('arrest', 'Du stehst vor dem Fremden. ' + (this.mem.slice(-1)[0] || '') + ' Du richtest den Revolver auf ihn und verhaftest ihn.'); return; }
       // only shooting: a word (the first time), a fine (after that)
       if (here && this.t > 2.5 && !this.spoke) {
         this.spoke = true;
@@ -13480,26 +13545,65 @@ const SHERIFF = {
       if (N.gun.on) N.gun.update(dt);
     }
   },
-  goBack() { const N = this.npc, s = this.spot('desk'); this.st = 'back'; this.t = 0; this.checked = this.asked = this.spoke = false; N.hurry = 1; N.walkTo(s.x, s.z, s.yaw); },
-  // gun on you: put yours away and stay, and you are his; draw or shoot, and he fires (Gunman); run, and he lets you go for now
+  goBack() { const N = this.npc, s = this.spot('desk'); N.gun.cover = false; this.st = 'back'; this.t = 0; this.checked = this.asked = this.spoke = false; N.hurry = 1; N.walkTo(s.x, s.z, s.yaw); },
+  /* gun on you: put yours away and stay (or give up: E "Ergeben", or say it), and you are his; draw or shoot, and
+     he fires (Gunman). He walks up to you with the gun on you; run, and he runs after you: "stop!", and a killer who
+     keeps running is shot at. Out of sight he goes to where he saw you last, then follows your trail (the noise,
+     people pointing); after long enough without you he gives up for now (but does not forget: wanted) */
   arrest(dt, dP) {
-    const N = this.npc;
-    N.gun.draw(); N.gun.update(dt);
-    if (!this.arrT) { this.arrT = 0; this.giveT = 0; }
+    const N = this.npc, see = this.inSight(), P = PLAY.pos, run = Math.hypot(PLAY.vx, PLAY.vz);
+    if (!this.arrT) { this.arrT = 0; this.giveT = 0; this.lostT = 0; this.fleeT = 0; this.haltN = 0; this.chaseT = 0; this.huntT = 0; this.saidA = this.reacted; this.reacted = false; }
     this.arrT += dt;
-    if (this.arrT < 0.2 && N.canBeHeard()) this.say('arrest');
-    const calm = GUN.state === 'holster' && !GUN.reloadThenHolster && Math.hypot(PLAY.vx, PLAY.vz) < 1.2 && dP < 9;
-    this.giveT = calm ? this.giveT + dt : Math.max(0, this.giveT - dt * 0.5);
-    if (dP > 3 && dP < 30 && this.inSight()) { if (!N.walking() || (this.chaseT = (this.chaseT || 0) - dt) <= 0) { this.chaseT = 1; N.hurry = calm ? 1.2 : 2.1; N.walkTo(PLAY.pos.x, PLAY.pos.z); } }
-    if (this.giveT > 3.5 && !PHP.out) { this.say('come'); this.lockUp(); return; }
-    if (PHP.out && PHP.out.by === N) { this.remember('Du hast den Fremden niedergeschossen (' + TIME.stamp() + ').'); this.wanted = 0.3; this.arrT = 0; this.goBack(); return; }
-    if (!this.inSight()) { this.lostT = (this.lostT || 0) + dt; if (this.lostT > 20) { this.remember('Der Fremde ist dir entkommen (' + TIME.stamp() + ').'); this.say('escaped'); this.arrT = 0; this.lostT = 0; this.goBack(); } }
-    else this.lostT = 0;
+    if (see) { this.seenAt = { x: P.x, z: P.z, t: G.time }; this.lostT = 0; } else this.lostT += dt;
+    const calm = see && GUN.state === 'holster' && !GUN.reloadThenHolster && run < 1.2;
+    // his legs: up to you (to 3 m), or after you
+    let moving = false;
+    this.chaseT -= dt;
+    if (see) {
+      if (dP > 3.2) { moving = true; if (!N.walking() || this.chaseT <= 0) { this.chaseT = 0.5; N.hurry = calm && dP < 10 ? 1.3 : 2.2; N.walkTo(P.x, P.z); } }
+      else if (N.walking()) N.stop();
+    } else {
+      moving = true;
+      if (!N.walking() || this.chaseT <= 0) {
+        this.chaseT = 2; N.hurry = 2.1;
+        const S = this.seenAt;
+        if (S && Math.hypot(S.x - N.pos.x, S.z - N.pos.z) > 1.5 && G.time - S.t < 12) N.walkTo(S.x, S.z);
+        else if (dP < 60) N.walkTo(P.x, P.z);   // (your trail)
+      }
+      if ((this.huntT -= dt) <= 0) { this.huntT = 14 + Math.random() * 8; if (this.lostT > 3) this.say('hunt'); }
+    }
+    N.gun.draw(); N.gun.cover = true; N.gun.update(dt, moving);
+    if (see && !this.saidA) { this.saidA = true; if (!TALK.remarking) this.say('arrest'); }
+    if (see && dP < 14 && !this.told) { this.told = true; TOAST.show('Der Sheriff verhaftet dich: Waffe weg und stehen bleiben, oder E „Ergeben“.', 'long'); }
+    // giving up: gun away, standing, near him (or you said so: giveT set)
+    this.giveT = calm && dP < 4.5 ? this.giveT + dt : this.giveT >= 50 ? this.giveT : Math.max(0, this.giveT - dt * 0.5);
+    if (this.giveT > 3 && !PHP.out) { this.say('come'); this.lockUp(); return; }
+    // running from him: "stop!" twice; a killer who keeps running is shot at
+    this.fleeT = see && run > 2.6 && dP > 3.5 ? this.fleeT + dt : Math.max(0, this.fleeT - dt);
+    if (this.fleeT > 0.6 && G.time - (this.haltT || -99) > 3.5 && this.haltN < 2) { this.haltT = G.time; this.haltN++; this.say(this.haltN === 1 ? 'halt' : 'halt2'); }
+    if (this.haltN >= 2 && G.time - this.haltT > 1.5 && this.fleeT > 0.6 && this.wanted >= 1 && see) N.gun.provoked = G.time;
+    // you are down by his bullet: he takes you in all the same (the doc patches you up in the cell)
+    if (PHP.out && PHP.out.by === N) {
+      const crime = this.CRIMES.filter((c) => c.known && c.kind !== 'shots').slice(-1)[0];
+      if (this.wanted >= 0.6) { PHP.out.jail = true; PHP.out.why = crime ? crime.kind : 'wound'; this.jailed = (this.jailed || 0) + 1; this.remember('Du hast den Fremden niedergeschossen und eingesperrt (' + TIME.stamp() + ').'); this.wanted = crime && crime.kind === 'kill' ? 0.4 : 0; }
+      else { this.remember('Du hast den Fremden niedergeschossen (' + TIME.stamp() + ').'); this.wanted = 0.3; }
+      this.arrT = 0; this.told = false; this.goBack(); return;
+    }
+    // you stopped and put the gun away: no shooting at a man who gives up
+    if (calm && this.fleeT <= 0 && G.time - GUNMAN.lastShot > 3) N.gun.provoked = null;
+    if (this.lostT > 45 || dP > 90) { this.remember('Der Fremde ist dir entkommen (' + TIME.stamp() + ').'); if (N.canBeHeard()) this.say('escaped'); this.arrT = 0; this.lostT = 0; this.told = false; this.goBack(); }
   },
+  // you give up (E "Ergeben", or you said so): your gun goes away, he takes you
+  surrender() {
+    if (this.st !== 'arrest' || PHP.out) return false;
+    if (GUN.state !== 'holster') { GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; }
+    this.giveT = 50; return true;
+  },
+  giveUp(t) { return /ergeb|ich komm(e)? mit|nicht schießen|schieß nicht|hände hoch|ich geb(e)? auf|verhafte mich|bin unbewaffnet/i.test(t); },
   // the cell: dark, and you wake up there in the morning, the fine taken
   lockUp() {
     const N = this.npc;
-    this.arrT = 0; this.goBack();
+    this.arrT = 0; this.told = false; this.goBack();
     if (GUN.state !== 'holster') { GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; }
     const crime = this.CRIMES.filter((c) => c.known && c.kind !== 'shots').slice(-1)[0];
     this.jailed = (this.jailed || 0) + 1;
@@ -13528,15 +13632,16 @@ const SHERIFF = {
   beforeSkip(m, soft) {
     if (soft || m < 20 || !this.npc || this.npc.hp.dead) return;
     if (this.npc.fight.on) this.npc.fight.stop();
-    if (this.st !== 'office') { this.npc.gun.drop(); this.arrT = 0; const s = this.spot('desk'); this.npc.stop(); this.npc.pos.set(s.x, this.R.floorY, s.z); this.npc.room = this.R; this.st = 'office'; }
+    if (this.st !== 'office') { this.npc.gun.drop(); this.npc.gun.cover = false; this.arrT = 0; this.told = false; const s = this.spot('desk'); this.npc.stop(); this.npc.pos.set(s.x, this.R.floorY, s.z); this.npc.room = this.R; this.st = 'office'; }
   },
   settled() { return !this.npc || this.npc.hp.dead || this.st === 'office'; },
   persona() {
     const S = this;
     return {
-      actions: ['none', 'nod', 'shake_head', 'point_door', 'point_you', 'fist_shake', 'calm_down', 'cross_arms', 'shrug'],
+      actions: ['none', 'take_in', 'nod', 'shake_head', 'point_door', 'point_you', 'fist_shake', 'calm_down', 'cross_arms', 'shrug'],
       rules: ['Du bist Sheriff ' + S.LOOKS.name + ', der Sheriff von Dust Creek (Arizona-Territorium, 1885): ' + S.LOOKS.age + '. Ruhig, gerecht, unbestechlich, hart, wenn es sein muss. Du duzt jeden.',
         'In deiner Stadt wird nicht geschossen. Wer jemanden anschießt oder umbringt, kommt in deine Zelle oder vor den Richter. Du kennst Hank, Walt und Jeb vom Saloon und Doc Whitfield gut.',
+        'Ergibt sich der Fremde, während du ihn verhaftest (er sagt es oder kommt mit), wähle die Aktion take_in.',
         'Kerniges, einfaches Deutsch, höchstens zwei kurze Sätze unter 25 Wörtern, es wird laut vorgelesen. Kein Markdown, keine Sternchen. Von der modernen Welt weißt du nichts.'].join('\n'),
       context() {
         const out = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.'];
@@ -13546,8 +13651,9 @@ const SHERIFF = {
         const body = S.npc.hp.describe(); if (body) out.push('Dein Körper: ' + body + '.');
         return out.join('\n');
       },
-      offline(text) { const t = text.toLowerCase(); return /ergeb|verhaft|ok|gut|ja/.test(t) && S.st === 'arrest' ? { say: 'Vernünftig. Waffe weg und mitkommen.', action: 'nod' } : /hilfe|mord|tot|geschossen/.test(t) ? { say: 'Wo? Zeig’s mir.', action: 'nod' } : { say: ['Hm.', 'Ich hör zu.', 'Mach keinen Ärger.'][Math.floor(Math.random() * 3)], action: 'none' }; },
-      act(action) { if (GESTURE.AI.includes(action)) S.npc.gesture(action, action === 'point_door' ? null : null); },
+      quick(text) { return S.st === 'arrest' && S.giveUp(text) ? { say: 'Vernünftig. Hände hoch und mitkommen.', action: 'take_in', mood: 'neutral' } : null; },
+      offline(text) { const t = text.toLowerCase(); return S.st === 'arrest' && (S.giveUp(t) || /ok|gut|ja/.test(t)) ? { say: 'Vernünftig. Waffe weg und mitkommen.', action: 'take_in' } : /hilfe|mord|tot|geschossen/.test(t) ? { say: 'Wo? Zeig’s mir.', action: 'nod' } : { say: ['Hm.', 'Ich hör zu.', 'Mach keinen Ärger.'][Math.floor(Math.random() * 3)], action: 'none' }; },
+      act(action) { if (action === 'take_in') { S.surrender(); return; } if (GESTURE.AI.includes(action)) S.npc.gesture(action, action === 'point_door' ? null : null); },
       forget() { S.mem = []; S.att = 0; S.wanted = 0; S.warned = 0; },
       memory() { return { events: S.mem.slice(), inPrompt: 5, facts: [['Gesucht', S.wanted.toFixed(2)], ['Haltung zu dir', S.att.toFixed(2)]] }; },
       forgetEvent(i) { S.mem.splice(i, 1); }
@@ -14622,7 +14728,8 @@ const TALK = {
     if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err' && !this.dictT) this.setState((this.micOff ? '' : 'V: reden \u00b7 ') + VOICE.label(), 'idle');
     // face to face: the camera comes round over his shoulder, he turns to the one he talks to
     const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
-    if (this.listening || this.busy || n.talkT > 0 || this.dictT > 0) {
+    // (never while you aim or turn the view yourself: it pulled the crosshair off a head shot)
+    if ((this.listening || this.busy || n.talkT > 0 || this.dictT > 0) && GUN.camW < 0.05 && !GUN.wantAim && !INPUT.look && G.time - (PLAY.userLookT || -99) > 2.5) {
       PLAY.camYaw += wrapA(Math.atan2(-dx, -dz) + 0.32 - PLAY.camYaw) * (1 - Math.exp(-dt * 2.2));
       PLAY.camPitch += (0.16 - PLAY.camPitch) * (1 - Math.exp(-dt * 2));
       if (!SIT.busy() && !FALL.busy() && PLAY.speed < 0.3) PLAY.yaw += wrapA(face - PLAY.yaw) * (1 - Math.exp(-dt * 4));
@@ -14928,7 +15035,7 @@ const TALK = {
   /* the person's unchanging part (who he is, how he talks) goes apart from what changes: with an own key it is sent
      as the system part (Claude keeps it ready between calls, cheaper and faster); through claude.ai as one text */
   // how everybody speaks (at the end of every prompt that makes someone talk)
-  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich.',
+  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich. Halte dich genau an die Tatsachen oben: erfinde keine Waffen, Wunden, Namen oder Taten, die dort nicht stehen (wer erschossen wurde, wurde nicht erstochen).',
   callAI(sys, prompt, opt) {
     prompt += this.LANG;
     if (this.via === 'key') return this.ai(prompt, Object.assign({ system: sys }, opt));

@@ -199,7 +199,8 @@ class NPC {
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
-  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  // (loud: a shout carries further outside, "Stehen bleiben!")
+  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < (this.loud ? 45 : 20); }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()

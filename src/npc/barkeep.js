@@ -140,7 +140,7 @@ const BARKEEP = {
     if (P.glass.visible && !(this.cur && this.cur.glassOut)) out.push(this._hg || (this._hg = mk('glass', 0, 0.065, 0.05)));
     if (P.bottle.visible) out.push(this._hb || (this._hb = mk('bottle', 1, 0.075, 0.12)));
     if (P.rag.visible) out.push(this._hr || (this._hr = mk('rag', 1, 0.07, 0)));
-    if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = mk('shotgun', 1, 0.11, 0)));
+    if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = Object.assign(mk('shotgun', 1, 0.04, 0), { seg: [-0.47, 0.67, -0.01] })));
     if (this.gunman && this.gunman.on) for (const g of this.gunman.held()) out.push(g);
     return out;
   },
@@ -155,7 +155,7 @@ const BARKEEP = {
     const N = this.npc;
     if (this.gunman && this.gunman.on && (info.type === 'blow' || info.type === 'shot' || info.type === 'dead')) { this.gunman.drop(); if (this.st === 'wary') this.st = 'idle'; }
     this.pending = null; this.attending = false; this.standoff = null;
-    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; CREW.died(this.whoI, { cause: info.cause, by: 'player' }, CREW.seenBy(N)); return; }
+    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = HARM.howDied(info.how); CREW.died(this.whoI, { cause: info.cause, how: info.how, by: 'player' }, CREW.seenBy(N)); return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
     // the doctor came to him and patched him up where he was: back to work (no more need to go to him)
     if (info.type === 'treated') {

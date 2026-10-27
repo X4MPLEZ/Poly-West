@@ -101,7 +101,8 @@ const TALK = {
     if (VOICE.st === 'loading' && !this.busy && !this.listening && this.el.dataset.st !== 'err' && !this.dictT) this.setState((this.micOff ? '' : 'V: reden \u00b7 ') + VOICE.label(), 'idle');
     // face to face: the camera comes round over his shoulder, he turns to the one he talks to
     const dx = n.pos.x - PLAY.pos.x, dz = n.pos.z - PLAY.pos.z, face = Math.atan2(dx, dz);
-    if (this.listening || this.busy || n.talkT > 0 || this.dictT > 0) {
+    // (never while you aim or turn the view yourself: it pulled the crosshair off a head shot)
+    if ((this.listening || this.busy || n.talkT > 0 || this.dictT > 0) && GUN.camW < 0.05 && !GUN.wantAim && !INPUT.look && G.time - (PLAY.userLookT || -99) > 2.5) {
       PLAY.camYaw += wrapA(Math.atan2(-dx, -dz) + 0.32 - PLAY.camYaw) * (1 - Math.exp(-dt * 2.2));
       PLAY.camPitch += (0.16 - PLAY.camPitch) * (1 - Math.exp(-dt * 2));
       if (!SIT.busy() && !FALL.busy() && PLAY.speed < 0.3) PLAY.yaw += wrapA(face - PLAY.yaw) * (1 - Math.exp(-dt * 4));
@@ -407,7 +408,7 @@ const TALK = {
   /* the person's unchanging part (who he is, how he talks) goes apart from what changes: with an own key it is sent
      as the system part (Claude keeps it ready between calls, cheaper and faster); through claude.ai as one text */
   // how everybody speaks (at the end of every prompt that makes someone talk)
-  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich.',
+  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich. Halte dich genau an die Tatsachen oben: erfinde keine Waffen, Wunden, Namen oder Taten, die dort nicht stehen (wer erschossen wurde, wurde nicht erstochen).',
   callAI(sys, prompt, opt) {
     prompt += this.LANG;
     if (this.via === 'key') return this.ai(prompt, Object.assign({ system: sys }, opt));

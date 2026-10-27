@@ -34,7 +34,8 @@ class Gunman {
   drop() { if (this.m) this.m.visible = false; this.st = 'off'; this.npc.free(0); this.npc.free(1); this.lost = G.time; }
   dispose() { if (this.m && this.m.parent) this.m.parent.remove(this.m); this.m = null; this.st = 'off'; }
   // for HARM.trace: the gun is a thing in his hands a bullet can take
-  held() { return this.m && this.m.visible ? [this._held || (this._held = { mesh: this.m, kind: this.kind, hand: 1, r: this.kind === 'shotgun' ? 0.09 : 0.06, dy: 0, lose: () => this.drop() })] : []; }
+  // (a thin capsule along the barrel, npc/harm.js capsule: a head shot past it is a head shot)
+  held() { return this.m && this.m.visible ? [this._held || (this._held = { mesh: this.m, kind: this.kind, hand: 1, seg: this.kind === 'shotgun' ? [-0.47, 0.67, -0.01] : [-0.05, 0.3, -0.02], r: this.kind === 'shotgun' ? 0.04 : 0.045, dy: 0, lose: () => this.drop() })] : []; }
   // can he see you (eyes to your chest, nothing solid between)
   sees() {
     const N = this.npc, R = N.room || null;
@@ -49,8 +50,9 @@ class Gunman {
     const N = this.npc, cam = G.cam, d = this._v.set(N.pos.x, N.pos.y + 1.4, N.pos.z).sub(cam.position), L = d.length(); if (L > 25) return false;
     d.divideScalar(L); return cam.getWorldDirection(this._w).dot(d) > Math.cos(0.12 + 0.5 / L);
   }
-  /* every frame while out. Returns true while he is busy with it (the behaviour leaves the body to him) */
-  update(dt) {
+  /* every frame while out. Returns true while he is busy with it (the behaviour leaves the body to him, except the
+     legs when moving: then he does not stop to face you) */
+  update(dt, moving) {
     const N = this.npc;
     if (this.st === 'off') return false;
     if (N.hp.dead || N.hp.busy()) { if (this.m) this.m.visible = false; this.st = N.hp.dead ? 'off' : this.st; return false; }
@@ -66,13 +68,14 @@ class Gunman {
     const drawn = GUN.state !== 'holster' && !GUN.reloadThenHolster;
     const hostile = fired || killed || shotMe || (this.aimedT > 1.6 && this.warnN > 0) || (this.provoked && G.time - this.provoked < 8);
     if (fired || killed || shotMe) this.provoked = G.time;
-    const aimAt = see && (drawn || hostile || dP < 2.5);
+    const aimAt = see && (drawn || hostile || dP < 2.5 || this.cover);   // (cover: an arrest, the gun on you all the time)
     this.aimK += ((aimAt ? 1 : 0) - this.aimK) * (1 - Math.exp(-dt * 7));
-    if (see) N.stop(Math.atan2(P.x - N.pos.x, P.z - N.pos.z));
+    // (moving: his behaviour walks him, after you or to you; the gun stays on you on the way)
+    if (see && !moving) N.stop(Math.atan2(P.x - N.pos.x, P.z - N.pos.z));
     if (see) N.lookAt(this._w.set(P.x, P.y + 1.5, P.z), 1);
     this.pose(1);
     // a word first: put it down, get out (not when he is already shooting)
-    if (aimAt && !hostile && this.warnN < 2 && G.time - (this.warnT || -99) > 5) { this.warnT = G.time; this.warnN++; if (this.onWord) this.onWord(this.warnN === 1 ? 'warn' : 'warn2'); }
+    if (aimAt && drawn && !hostile && this.warnN < 2 && G.time - (this.warnT || -99) > 5) { this.warnT = G.time; this.warnN++; if (this.onWord) this.onWord(this.warnN === 1 ? 'warn' : 'warn2'); }
     if (hostile && see && this.aimK > 0.85 && this.cool <= 0 && !PHP.out && this.courage > 0.25) this.fire(dP);
     if (!see && G.time - (this.provoked || -99) > 12) this.aimedT = 0;
     this.place();

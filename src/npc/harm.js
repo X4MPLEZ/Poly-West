@@ -389,8 +389,9 @@ class Vitals {
     N.body.r = 0;
     if (N.sayEl) SAY.hide(N);
     HARM.dropAll(N);
-    worldEvent('npcDead', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, cause });
-    if (N.onHarm) N.onHarm({ type: 'dead', cause });
+    const kill = HARM.how(N);
+    worldEvent('npcDead', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, cause, how: kill });
+    if (N.onHarm) N.onHarm({ type: 'dead', cause, how: kill });
   }
   /* ---- per frame (real game seconds) ---- */
   update(dt) {
@@ -901,7 +902,33 @@ class Vitals {
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
   THIN: /^(uArm|fArm|hand|thigh|shin|foot|hat)/, SLACK: 0.06,
+  /* how he was killed, as a word for memories and the AI ("der Fremde hat ihn erschossen"): never left for the AI to
+     guess (it made up "erstochen"). A bullet anywhere counts (bled to death after it: still shot) */
+  how(N) {
+    const H = N.hp, c = H.cause || '';
+    if (/schuss/i.test(c) || H.wounds.some((w) => w.kind === 'shot')) return 'erschossen';
+    if (/schlag/.test(c) || H.trauma > 0.4) return 'totgeschlagen';
+    return 'umgebracht';
+  },
+  // the same as it happened to him ("ist erschossen worden"), for "X ist tot (…)"
+  howDied(how) { return how === 'erschossen' ? 'erschossen worden' : how === 'totgeschlagen' ? 'totgeschlagen worden' : 'gestorben'; },
+  // an old memory without the word (saves before it was kept): from the cause
+  howOf(cause) { return /erschossen|verblutet|schuss/i.test(cause || '') ? 'erschossen' : /schlag/.test(cause || '') ? 'totgeschlagen' : 'umgebracht'; },
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
+  // a ray against a capsule along the local z axis of a matrix (seg: [z0, z1, y]): the ray distance, or null
+  capsule(o, d, M, seg, r) {
+    const e = M.elements, ax = e[8], ay = e[9], az = e[10], y = seg[2] || 0;
+    const L = Math.hypot(ax, ay, az) || 1, ux = ax / L, uy = ay / L, uz = az / L;
+    const bx = e[12] + e[4] * y + ux * seg[0], by = e[13] + e[5] * y + uy * seg[0], bz = e[14] + e[6] * y + uz * seg[0], len = seg[1] - seg[0];
+    // closest points of the line o + t d and the segment b + s u (0 ≤ s ≤ len)
+    const wx = o.x - bx, wy = o.y - by, wz = o.z - bz, b = d.x * ux + d.y * uy + d.z * uz, dd = d.x * wx + d.y * wy + d.z * wz, ee = ux * wx + uy * wy + uz * wz;
+    const den = 1 - b * b; let t, sg;
+    if (den < 1e-6) { t = -dd; sg = 0; } else { t = (b * ee - dd) / den; sg = (ee - b * dd) / den; }
+    sg = clamp(sg, 0, len); t = sg * b - dd;   // (t again for the clamped point)
+    const px = o.x + d.x * t - (bx + ux * sg), py = o.y + d.y * t - (by + uy * sg), pz = o.z + d.z * t - (bz + uz * sg), q2 = px * px + py * py + pz * pz;
+    if (q2 >= r * r || t < 0) return null;
+    return t - Math.sqrt(r * r - q2);
+  },
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
     let best = null, bestItem = null;
@@ -912,6 +939,8 @@ const HARM = {
       if (tc < near - 1.5 || tc > far + 1.5 || cx * cx + cy * cy + cz * cz - tc * tc > 1.6 * 1.6) continue;
       // what he holds: small balls round each visible prop (the hand is inside the glass: a bullet takes the glass first)
       for (const it of (N.held ? N.held() : [])) {
+        // a long thing (a gun): a thin capsule along it, so only a bullet that really meets the barrel takes it
+        if (it.seg) { const t = this.capsule(o, d, it.mesh.matrixWorld, it.seg, it.r); if (t !== null && t >= near && t <= far && (!bestItem || t < bestItem.t)) bestItem = { t, npc: N, item: it, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t) }; continue; }
         const p = it.mesh.matrixWorld.elements, px = p[12], py = p[13] + (it.dy || 0), pz = p[14];
         const ex = px - o.x, ey = py - o.y, ez = pz - o.z, tc2 = ex * d.x + ey * d.y + ez * d.z, r = it.r || 0.06;
         const d2 = ex * ex + ey * ey + ez * ez - tc2 * tc2;

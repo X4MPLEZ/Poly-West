@@ -101,12 +101,12 @@ const PHP = {
   // a night in the sheriff's cell: the morning, a fine, the door open
   wakeJail(O) {
     const m = TIME.until(8); TIME.skip(Math.max(60, m < 180 ? m + 1440 : m)); DAYNIGHT.update(0, true);
-    this.hp = Math.max(this.hp, 0.6); this.daze = 0;
+    this.hp = Math.max(this.hp, O.shot ? 0.5 : 0.6); this.daze = 0;
     const J = SHERIFF.jailSpot(), fine = Math.min(INV.money, O.why === 'kill' ? 1000 : O.why === 'wound' ? 500 : 200);
     INV.money -= fine;
     PLAY.pos.copy(J.p); PLAY.yaw = J.yaw; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; PLAY.camYaw = PLAY.yaw + Math.PI;
     FALL.startLying();
-    setTimeout(() => TOAST.show('Du wachst in der Zelle des Sheriffs auf. ' + (fine ? 'Er hat dir ' + money(fine) + ' Strafe abgenommen. ' : '') + 'Die Tür steht offen. Es ist ' + TIME.str() + ' Uhr.', 'long'), 600);
+    setTimeout(() => TOAST.show('Du wachst in der Zelle des Sheriffs auf. ' + (O.shot ? 'Der Doc hat dich hier verbunden. ' : '') + (fine ? 'Er hat dir ' + money(fine) + ' Strafe abgenommen. ' : '') + 'Die Tür steht offen. Es ist ' + TIME.str() + ' Uhr.', 'long'), 600);
   },
   // where you come to: thrown out of the saloon onto the street, or (shot) at the doctor's
   wake() {
