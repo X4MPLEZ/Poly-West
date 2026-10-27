@@ -54,12 +54,20 @@ const AID = {
     // where to kneel: a spot by the wound that is clear of his body (all his parts) and of walls, the nearest to you
     const p = N.hp.woundPoint(w, this._v) || this._v.copy(N.pos), body = [];
     for (const k of ['torso', 'head', 'pelvis', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']) if (N.ch.p[k]) body.push(N.ch.p[k].getWorldPosition(new THREE.Vector3()));
+    /* each spot is tried with your body as it will be there: kneeling, leaning in towards the wound, your chest and
+       head come forward (more over a man on the floor); they must stay clear of his body, his head and chest most */
     let best = null, bs = -1e9;
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * TAU, x = p.x + Math.sin(a) * 0.72, z = p.z + Math.cos(a) * 0.72;
+    const lean = N.hp.anim ? 0.42 : 0.3;
+    for (const rr of [0.72, 0.88]) for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU, x = p.x + Math.sin(a) * rr, z = p.z + Math.cos(a) * rr;
       if (HARM.blockedAt(x, z, N.pos.y, 0.2)) continue;
-      let clear = 9; body.forEach((b, j) => { clear = Math.min(clear, Math.hypot(x - b.x, z - b.z) - (j === 1 ? 0.25 : 0)); });   // (his head most of all)
-      const sc = Math.min(clear, 0.6) * 4 - Math.hypot(x - PLAY.pos.x, z - PLAY.pos.z) * 0.3;
+      const fx = -Math.sin(a), fz = -Math.cos(a);
+      let clear = 9;
+      for (const [k, r] of [[0, 0.25], [lean * 0.55, 0.22], [lean, 0.16]]) {   // your knees/hips, chest, head
+        const px = x + fx * k, pz = z + fz * k;
+        body.forEach((b, j) => { clear = Math.min(clear, Math.hypot(px - b.x, pz - b.z) - r - (j === 1 ? 0.14 : j === 0 ? 0.1 : 0.05)); });
+      }
+      const sc = Math.min(clear, 0.15) * 12 + (rr < 0.8 ? 0.15 : 0) - Math.hypot(x - PLAY.pos.x, z - PLAY.pos.z) * 0.2;
       if (sc > bs) { bs = sc; best = [x, z]; }
     }
     this.spot.set(best ? best[0] : PLAY.pos.x, PLAY.pos.y, best ? best[1] : PLAY.pos.z);

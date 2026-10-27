@@ -299,7 +299,8 @@ const FIST = {
     const side = this.side * (this.clipName === 'hook' || this.heavy ? 1.6 : 0.8);
     DRUNK.push((side * 0.25 - Math.sin(rel) * 0.15) * L, 0.3 * L);
     if (!this.landed && Math.random() < L * 0.7) this.spin = this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
-    if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
+    // (he staggers after the swing, back and forth, a few steps; to the floor only rarely, very drunk)
+    if (Math.random() < L * 0.9) DRUNK.stagger(yaw + (Math.random() - 0.5) * 1.2, this.heavy, L > 0.8 ? (L - 0.8) * (this.heavy ? 0.35 : 0.15) : 0);
   },
   connect() {
     const kind = this.clipName, GM = GROUND_MOVE[kind], ground = !!GM, foot = kind === 'kick' || kind === 'stomp' || kind === 'knee';

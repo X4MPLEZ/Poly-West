@@ -107,10 +107,11 @@ class KeyAnim {
   update(dt, onThud) {
     if (this.done) return;
     const s = this.seq[this.i];
-    this.t += dt;
+    this.t += dt; if (this.settle) this.settle.t += dt;
     if (this.t >= s.d) {
       if (s.hold) { this.t = s.d; return; }
       this.t -= s.d;
+      if (s.thud || s.slam) this.settle = { t: 0, k: Math.min(1, s.thud || 0.8) };
       if ((s.thud || s.slam) && onThud) onThud(s.thud || 0, s);
       this.from = KeyAnim.copy(this.snap);
       this.i++;
@@ -140,6 +141,7 @@ class KeyAnim {
       const o = P.armOv[i] && P.armOv[i].key ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, key: true });
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0]; o.out = S.arm[i][1]; o.el = S.arm[i][2];
     }
+    settlePose(P, this.settle, 'key');
     P.gunInHand = false;
     return clamp((0.925 - P.pel.y) / 0.75, 0, 1);   // how far down
   }
@@ -210,7 +212,9 @@ class Vitals {
     const N = this.npc;
     this.lastHit = G.time;
     const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
-    if (o.ground) this.trauma += 0.11 * p / tough; else this.trauma += (head ? 0.035 : 0.02) * p / tough;
+    /* a beating knocks a man out long before it kills him: blows daze him, enough of them put him out cold (ko,
+       lying there with his eyes shut); only a long, long beating of a man who is already out kills (trauma) */
+    if (o.ground) this.trauma += (this.ko > 0 ? 0.05 : 0.03) * p / tough; else this.trauma += (head ? 0.022 : 0.012) * p / tough;
     this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1) / tough;
     this.pain = Math.min(1.5, this.pain + (head ? 0.25 : 0.18) * p);
     // bruises: one per zone, growing
@@ -222,17 +226,23 @@ class Vitals {
     if (this.anim) {
       if (this.lowness > 0.5) {
         this.downFor += 1.2 * p; this.anim.jit = {};
+        // still awake down there: enough and he is out cold
+        if (!this.ko && this.daze >= 1.5) this.knockOut();
+        else if (this.ko > 0) this.ko = Math.max(this.ko, 15);
         // the body on the ground jolts with it and is shoved a little
         const c = Math.cos(N.yaw), sn = Math.sin(N.yaw);
         this.jolt = { x: o.dir.x * c - o.dir.z * sn, z: o.dir.x * sn + o.dir.z * c, k: Math.min(1.5, p), head: head };
-        if (!this.pinned) { N.vx += o.dir.x * 0.9 * p; N.vz += o.dir.z * 0.9 * p; }
+        if (!this.pinned) { N.vx += o.dir.x * 0.5 * p; N.vz += o.dir.z * 0.5 * p; }
         this.pain = Math.min(1.5, this.pain + 0.2);
       }
       return 'ground';
     }
     if (this.daze >= 1 || (o.heavy && head && this.daze > 0.6)) {
       this.knocked = true;
+      // the second time down in a short while, or a hard one on a dazed head: out cold
+      this.kdN = G.time - (this.kdT || -99) < 90 ? (this.kdN || 0) + 1 : 1; this.kdT = G.time;
       this.fall(o.heavy || Math.random() < 0.5 ? 'back' : 'side', dir, Math.random() < 0.5 ? 'L' : 'R', 2.5 + this.daze * 2.2);
+      if (this.kdN >= 2 || this.daze >= 1.6) this.knockOut();
       return 'down';
     }
     this.flinchBy(dir, (o.heavy ? 1.8 : 1.05) * (head ? 1 : 0.75) * Math.min(1.3, p), head ? 'head' : 'chest', '', true);
@@ -241,6 +251,12 @@ class Vitals {
     N.vx += o.dir.x * kb; N.vz += o.dir.z * kb;
     this.stunT = o.heavy ? 0.8 : head ? 0.3 : 0.2;
     return 'hit';
+  }
+  // out cold: lies there, eyes shut, does not hear or speak, for half a minute or more
+  knockOut() {
+    this.ko = 25 + Math.random() * 25; this.knocked = true; this.downFor = Math.max(this.downFor, this.downT + this.ko + 4);
+    if (this.npc.onHarm) this.npc.onHarm({ type: 'ko' });
+    worldEvent('npcKo', this.npc.pos.x, this.npc.pos.y, this.npc.pos.z, { by: 'player', npc: this.npc.id });
   }
   forwardDot(dir) { const N = this.npc; return dir.x * Math.sin(N.yaw) + dir.z * Math.cos(N.yaw); }
   // an impulse that the pose turns into a jerk of the body away from the hit
@@ -393,7 +409,8 @@ class Vitals {
     if (this.dead) return;
     // too little blood: the knees go; less still and he is out (eyes shut, no word); then dead
     if (this.blood < BLOOD_FAINT && !this.anim) { this.fainted = true; this.fall('faint', this._w.set(-Math.sin(N.yaw) * 0.2, 0, -Math.cos(N.yaw) * 0.2)); }
-    this.out = this.blood < BLOOD_OUT;
+    if (this.ko > 0) { this.ko -= dt; if (this.ko <= 0) { this.ko = 0; this.daze = Math.min(this.daze, 0.9); } }
+    this.out = this.blood < BLOOD_OUT || this.ko > 0;
     // gut-shot: it does not let go of him (the pain keeps coming back, he moans and writhes)
     const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
     if (gut) this.pain = Math.max(this.pain, 0.75 + 0.25 * Math.sin(G.time * 0.7 + Math.sin(G.time * 0.23) * 3));

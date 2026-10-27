@@ -23,7 +23,8 @@ const FACE = {
     drunk: { lid: 0.48, smile: 0.45, cheek: 0.3, browUp: 0.25, mouthOpen: 0.1 },
     sad: { browSad: 1, frown: 0.85, lid: 0.3 },
     fear: { browSad: 0.75, browUp: 0.85, eyeWide: 0.9, mouthOpen: 0.25, teeth: 0.35, frown: 0.35 },
-    pain: { browSad: 0.55, browAngry: 0.65, lid: 0.35, squint: 1, teeth: 0.85, mouthOpen: 0.15, frown: 0.5, cheek: 0.4 },
+    // (agony, not a grin: eyes squeezed shut, the brows knit up in the middle, the mouth open and pulled down)
+    pain: { browSad: 1, browAngry: 0.45, lid: 0.65, squint: 1, teeth: 0.35, mouthOpen: 0.45, frown: 1, sneer: 0.35, mouthO: 0.15 },
     scream: { browSad: 0.8, eyeWide: 0.6, mouthO: 0.5, mouthOpen: 1, browUp: 0.4 },
     dazed: { lid: 0.55, mouthOpen: 0.25, browSad: 0.35 },
     focus: { browAngry: 0.45, squint: 0.6 },
@@ -41,7 +42,7 @@ const FACE = {
     if (want.mood2) add(want.mood2, want.k2 === undefined ? 1 : want.k2);
     const asleep = want.dead || want.sleep, t = G.time;
     // pain comes in waves with the breath
-    if (T.squint > 0.6 && T.teeth > 0.5) { const w = 0.5 + 0.5 * Math.sin(t * 2.3); T.squint *= 0.8 + w * 0.2; T.teeth *= 0.7 + w * 0.3; }
+    if (T.squint > 0.6 && T.browSad > 0.5) { const w = 0.5 + 0.5 * Math.sin(t * 2.3); T.squint *= 0.8 + w * 0.2; T.mouthOpen *= 0.65 + w * 0.35; T.teeth *= 0.6 + w * 0.4; }
     // the voice: the mouth opens with the loudness, rounds a little on the vowels, the brows lift on the loud bits;
     // a smile or a frown eases off while the mouth is busy
     const talk = clamp(want.talk || 0, 0, 1);

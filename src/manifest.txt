@@ -51,9 +51,11 @@ play/aid.js
 npc/npc.js
 npc/harm.js
 npc/nav.js
+npc/places.js
 npc/brawl.js
 npc/barkeep.js
 npc/barkeep_fate.js
+npc/crew.js
 npc/doctor.js
 npc/direct.js
 npc/hear.js

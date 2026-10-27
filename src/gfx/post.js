@@ -78,6 +78,16 @@ const POST = {
     for (const S of [SLEEP.fx, PHP.fx]) if (S) { dark = Math.max(dark, S.dark); lid = Math.max(lid, S.lid); }
     this.dark = dark; this.lid = lid;
   },
+  /* once at the start, while the loading screen is still up: the target made and the shader compiled, so the first
+     time the picture swims or goes dark (a blow, a drink) does not stall the game for a moment (on phones up to ¾ s) */
+  warm(r, scene, cam) {
+    if (!this.mat) return;
+    r.getDrawingBufferSize(this.size);
+    this.rt = new THREE.WebGLRenderTarget(this.size.x, this.size.y, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true, stencilBuffer: false });
+    r.setRenderTarget(this.rt); r.render(scene, cam);
+    this.mat.uniforms.tScene.value = this.rt.texture; r.render(this.scene, this.cam);
+    r.setRenderTarget(null);
+  },
   render(r, scene, cam) {
     if ((this.amt < 0.01 && this.lid < 0.01 && this.dark < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
     r.getDrawingBufferSize(this.size);

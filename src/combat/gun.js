@@ -221,13 +221,14 @@ const GUN = {
     this.kickV += (-170 * this.kickP - 17 * this.kickV) * dt;
     this.kickP += this.kickV * dt;
     this.fovPunch = Math.max(0, this.fovPunch - dt * 7);
-    // touch: aim assist pulls the crosshair gently onto a bottle
+    // touch: aim assist pulls the crosshair gently onto what is right next to it (a person first, then glass);
+    // only what can be seen from here, and only when it is already almost on it
     if (this.touch && this.camW > 0.6) {
-      const b = this.bestBottle(0.1, 35);
+      const b = this.assist(0.055, 35);
       if (b) {
         const u = b.dir;
         const ty = Math.atan2(-u.x, -u.z), tp = -Math.asin(clamp(u.y, -1, 1));
-        const k = 1 - Math.exp(-dt * 3.5 * (1 - b.ang / 0.1));
+        const k = 1 - Math.exp(-dt * 2.2 * (1 - b.ang / 0.055));
         PLAY.camYaw += wrapA(ty - PLAY.camYaw) * k; PLAY.aimPitch += (tp - PLAY.aimPitch) * k;
       }
     }
@@ -251,6 +252,34 @@ const GUN = {
     out.copy(GUNM.muzzle).applyMatrix4(m);
     return m;
   },
+  /* what the aim assist may take: a person (the chest or the head, whichever is nearer the crosshair) before any
+     glass, inside maxAng of where the camera looks, and only if nothing stands between (a wall, the bar, the
+     corner you stand in) */
+  assist(maxAng, maxDist) {
+    const cam = G.cam, fwd = this._af || (this._af = new THREE.Vector3()), u = this._au || (this._au = new THREE.Vector3()), p = this._ap || (this._ap = new THREE.Vector3());
+    cam.getWorldDirection(fwd);
+    let best = null;
+    for (const N of NPCS.list) {
+      if (N.hp.dead || !N.ch.root.visible) continue;
+      for (const part of ['torso', 'head']) {
+        N.ch.p[part].getWorldPosition(p); if (part === 'torso') p.y += 0.15;
+        u.subVectors(p, cam.position); const d = u.length(); if (d > maxDist || d < 0.8) continue;
+        u.multiplyScalar(1 / d);
+        const ang = Math.acos(clamp(u.dot(fwd), -1, 1));
+        if (ang < maxAng && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, ang, dist: d, dir: u.clone() };
+      }
+    }
+    if (best) return best;
+    const b = this.bestBottle(maxAng, maxDist);
+    return b && this.seen(cam.position, b.dir, b.dist) ? b : null;
+  },
+  // nothing solid between the camera and a point d away along u (glass at the end of it is part of the room)
+  seen(o, u, d) {
+    const ray = this.ray; ray.set(o, u); ray.near = 0.05; ray.far = Math.max(0.1, d - 0.3);
+    const objs = this._seenObjs || (this._seenObjs = []); objs.length = 0;
+    for (const m of W.worldMeshes) objs.push(m); if (G.room && G.room.mesh) objs.push(G.room.mesh);
+    return ray.intersectObjects(objs, false).length === 0;
+  },
   bestBottle(maxAng, maxDist) {
     const cam = G.cam, fwd = this._bf || (this._bf = new THREE.Vector3()), u = this._bu || (this._bu = new THREE.Vector3());
     cam.getWorldDirection(fwd);
@@ -271,7 +300,7 @@ const GUN = {
     this.ammo--; this.cool = 0.42;
     const cam = G.cam, dir = new THREE.Vector3();
     cam.getWorldDirection(dir);
-    if (this.touch) { const b = this.bestBottle(this.camW > 0.9 ? 0.07 : 0.3, 35); if (b) dir.copy(b.dir); }
+    if (this.touch) { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35); if (b) dir.copy(b.dir); }
     const sp = this.spread * Math.sqrt(Math.random()), a = Math.random() * TAU;
     const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize(), up = new THREE.Vector3().crossVectors(side, dir);
     dir.addScaledVector(side, Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp).normalize();

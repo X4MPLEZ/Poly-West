@@ -110,8 +110,19 @@ const DRUNK = {
     this.flail = 0.6; this.flailX = Math.sin(rel); this.flailK = 0.7 + Math.random() * 0.6;
     FSFX.cloth(); this.scuff();
     // very drunk: sometimes it ends on the floor, the way the body was going
-    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.6) * 0.5 : 0);
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.65) * 0.35 : 0);
     if (Math.random() < p) this.fallLater(kind || 'auto', 200);
+  },
+  /* staggering in a fight: two or three lurches one after the other, each a bit off the last (back and forth,
+     side to side), the feet hurrying after them; fallChance is for the last one only */
+  stagger(dir, big, fallChance) {
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    this.stumble(dir, big, 0);
+    for (let k = 1; k < n; k++) setTimeout(() => {
+      if (FALL.busy() || SIT.busy()) return;
+      const back = Math.random() < 0.45 ? Math.PI : 0, d = dir + back + (Math.random() - 0.5) * 1.6;
+      this.stumble(d, false, k === n - 1 ? fallChance : 0, Math.random() < 0.5 ? 'side' : 'auto');
+    }, 260 * k + Math.random() * 140);
   },
   fallLater(kind, ms) {
     setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, this.fallDir()); }, ms);
@@ -129,6 +140,8 @@ const DRUNK = {
     this.push(-Math.sin(rel) * 0.12 * L, Math.cos(rel) * 0.15 * L);
     this.headV.y -= 1.2 * L;
     PLAY.camShake = Math.max(PLAY.camShake, 0.04);
+    // reeling into the wall hard (in a fight, very drunk): now and then it puts him down, along the wall
+    if (L > 0.45 && vn < -1.6 && Math.random() < (L - 0.35) * 0.6) this.fallLater(Math.random() < 0.6 ? 'side' : 'auto', 120);
     GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.thump(t, g, 120, 60, 0.4, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.2, attack: 0.002, decay: 0.08 }); });
   },
   /* had enough indoors: stand up and stagger out of the door, to just in front of it; then he is yours again */

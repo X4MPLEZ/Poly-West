@@ -9,6 +9,14 @@
    Every fall is a little different: the whole body turns into the fall, keeps some of its momentum, and every key
    is shaken a little. Keys are poses in character space (+x = his left); side keys are written for a fall to his
    right and mirrored. The feet start where the gait left them and are handed back to the gait at the end. */
+/* a body settling after it hits the ground: it gives a little (the flesh), rebounds and comes to rest; the loose
+   parts (head, arms) lag behind and swing out. st = { t, k }: seconds since the thud, how hard */
+function settleW(st) { return st && st.t < 1.2 ? -st.k * Math.exp(-st.t * 5.5) * Math.sin(st.t * 15) : 0; }
+function settlePose(P, st, armKey) {
+  const w = settleW(st); if (!w) return;
+  P.pel.y += 0.035 * w; P.spPitch += 0.08 * w; P.hdPitch += 0.32 * w; P.hdRoll += 0.12 * w;
+  for (let i = 0; i < 2; i++) { const o = P.armOv[i]; if (o && o[armKey]) { o.el += 0.35 * w; o.out += 0.15 * Math.abs(w); } }
+}
 const FALL_KEYS = {
   //        pelvis [x,y,z]      pelvis pitch/roll, spine pitch/roll, head pitch/roll, ankles (L, R), foot pitch      arms: [sw, out, el] L, R
   stand:    { pel: [0, 0.925, 0],      pp: 0,     sp: 0.02,  hd: 0,     ank: [[0.12, 0.085, 0], [-0.12, 0.085, 0]],      arm: [[0, 0.1, 0.15], [0, 0.1, 0.15]] },
@@ -42,9 +50,16 @@ const FALL = {
   /* the steps: { k: key, d: seconds, e: easing ('in' = accelerating like falling), thud, lie: hold the pose, crawl } */
   makeSeq(kind, stay) {
     const R = Math.random, S = (k, d, e, thud) => ({ k, d, e, thud });
-    if (kind === 'back') return stay
-      ? [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 1 }]
-      : [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.5 }, S('sitUp', 0.4, 'inout'), S('squat', 0.35, 'inout'), S('stand', 0.35, 'inout')];
+    // backwards: never quite the same — flat on the back, or down hard on the backside and straight up again,
+    // or caught low and sat down, or twisted round onto a hip on the way down
+    if (kind === 'back') {
+      if (stay) return [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 1 }];
+      const v = R(), up = [S('squat', 0.32 + R() * 0.1, 'inout'), S('stand', 0.32 + R() * 0.1, 'inout')];
+      if (v < 0.3) return [S('reel', 0.32 + R() * 0.15, 'out'), S('seat', 0.24, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.3 + R() * 0.4 }, S('sitUp', 0.4, 'inout')].concat(up);
+      if (v < 0.55) return [S('reel', 0.45 + R() * 0.2, 'out'), S('seat', 0.22 + R() * 0.06, 'in', 0.8), { lie: 1, d: 0.2 + R() * 0.3 }].concat(up);
+      if (v < 0.8) return [S('reel', 0.3, 'out'), S('squat', 0.25 + R() * 0.1, 'in', 0.3), S('seat', 0.3, 'in', 0.6), S('sitUp', 0.35, 'inout'), { lie: 1, d: 0.25 + R() * 0.3 }].concat(up);
+      return [S('reel', 0.3, 'out'), S('lean', 0.22, 'inout'), S('hip', 0.26, 'in', 0.9), { lie: 1, d: 0.3 + R() * 0.3 }, S('sitUp', 0.4, 'inout')].concat(up);
+    }
     if (kind === 'side') return stay
       ? [S('lean', 0.32, 'out'), S('hip', 0.26, 'in', 0.9), S('sideFlat', 0.6, 'inout', 0.35), { lie: 1, d: 1 }]
       : [S('lean', 0.28 + R() * 0.12, 'out'), S('hip', 0.26, 'in', 0.9), { lie: 1, d: 0.25 + R() * 0.3 }, S('sitUp', 0.38, 'inout'), S('squat', 0.32, 'inout'), S('stand', 0.35, 'inout')];
@@ -69,6 +84,8 @@ const FALL = {
     this.yawTo = kind === 'side' ? PLAY.yaw + clamp(rel + this.sd * Math.PI / 2, -0.9, 0.9) + tw : kind === 'back' ? null : dir + tw * 0.5;
     this.seq = this.makeSeq(kind, this.keep); this.jit = {};
     if (kind === 'fwd' || kind === 'edge') { PLAY.vx += Math.sin(dir) * 0.8; PLAY.vz += Math.cos(dir) * 0.8; }
+    // backwards: a step or two back first, the feet trying to catch up with the body
+    if (kind === 'back' && !stay) { const b = PLAY.yaw + Math.PI + (Math.random() - 0.5) * 0.7, f = 0.8 + Math.random() * 0.9; PLAY.vx += Math.sin(b) * f; PLAY.vz += Math.cos(b) * f; }
     // the start pose: as the body stands now, with the feet where they are
     const k0 = this.copyKey(FALL_KEYS.stand);
     for (let i = 0; i < 2; i++) { SIT.toChar(GAIT.feet[i].cur, this._v); k0.ank[i] = [this._v.x, this._v.y, this._v.z]; }
@@ -115,11 +132,11 @@ const FALL = {
     if (!crawl) { const k = this.i < 2 ? 2.2 : 8; PLAY.vx *= Math.exp(-dt * k); PLAY.vz *= Math.exp(-dt * k); }
     else this.crawlPh += PLAY.speed * dt * 9;
     if (this.yawTo !== null && this.i < 2) PLAY.yaw += wrapA(this.yawTo - PLAY.yaw) * (1 - Math.exp(-dt * 7));
-    this.t += dt;
+    this.t += dt; if (this.settleSt) this.settleSt.t += dt;
     if (this.t >= s.d) {
       if (s.lie && this.keep && this.i === this.seq.length - 1) { this.t = s.d; return; }
       this.t -= s.d;
-      if (s.thud) { this.thud(s.thud); if (s.thud >= 0.9) PLAY.camShake = Math.max(PLAY.camShake, 0.1 * s.thud); }
+      if (s.thud) { this.thud(s.thud); this.settleSt = { t: 0, k: Math.min(1, s.thud) }; if (s.thud >= 0.9) PLAY.camShake = Math.max(PLAY.camShake, 0.1 * s.thud); }
       this.from = this.copyKey(this.snap);
       this.i++; if (this.i < this.seq.length && this.seq[this.i].crawl) this.crawlPh = 0;
       if (this.i >= this.seq.length) this.finish();
@@ -188,6 +205,7 @@ const FALL = {
       const o = P.armOv[i] && P.armOv[i].fall ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, fall: true });
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0] + wob * 0.5 * (i ? -1 : 1); o.out = S.arm[i][1] + Math.abs(wob) * 0.2; o.el = S.arm[i][2];
     }
+    settlePose(P, this.settleSt, 'fall');
     P.gunInHand = false;
     if (P.hand) for (const h of P.hand) h.open = 0.55;
     this.down = clamp((0.925 - P.pel.y) / 0.75, 0, 1);

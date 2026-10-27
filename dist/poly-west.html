@@ -3538,7 +3538,8 @@ const FACE = {
     drunk: { lid: 0.48, smile: 0.45, cheek: 0.3, browUp: 0.25, mouthOpen: 0.1 },
     sad: { browSad: 1, frown: 0.85, lid: 0.3 },
     fear: { browSad: 0.75, browUp: 0.85, eyeWide: 0.9, mouthOpen: 0.25, teeth: 0.35, frown: 0.35 },
-    pain: { browSad: 0.55, browAngry: 0.65, lid: 0.35, squint: 1, teeth: 0.85, mouthOpen: 0.15, frown: 0.5, cheek: 0.4 },
+    // (agony, not a grin: eyes squeezed shut, the brows knit up in the middle, the mouth open and pulled down)
+    pain: { browSad: 1, browAngry: 0.45, lid: 0.65, squint: 1, teeth: 0.35, mouthOpen: 0.45, frown: 1, sneer: 0.35, mouthO: 0.15 },
     scream: { browSad: 0.8, eyeWide: 0.6, mouthO: 0.5, mouthOpen: 1, browUp: 0.4 },
     dazed: { lid: 0.55, mouthOpen: 0.25, browSad: 0.35 },
     focus: { browAngry: 0.45, squint: 0.6 },
@@ -3556,7 +3557,7 @@ const FACE = {
     if (want.mood2) add(want.mood2, want.k2 === undefined ? 1 : want.k2);
     const asleep = want.dead || want.sleep, t = G.time;
     // pain comes in waves with the breath
-    if (T.squint > 0.6 && T.teeth > 0.5) { const w = 0.5 + 0.5 * Math.sin(t * 2.3); T.squint *= 0.8 + w * 0.2; T.teeth *= 0.7 + w * 0.3; }
+    if (T.squint > 0.6 && T.browSad > 0.5) { const w = 0.5 + 0.5 * Math.sin(t * 2.3); T.squint *= 0.8 + w * 0.2; T.mouthOpen *= 0.65 + w * 0.35; T.teeth *= 0.6 + w * 0.4; }
     // the voice: the mouth opens with the loudness, rounds a little on the vowels, the brows lift on the loud bits;
     // a smile or a frown eases off while the mouth is busy
     const talk = clamp(want.talk || 0, 0, 1);
@@ -4679,6 +4680,16 @@ const POST = {
     for (const S of [SLEEP.fx, PHP.fx]) if (S) { dark = Math.max(dark, S.dark); lid = Math.max(lid, S.lid); }
     this.dark = dark; this.lid = lid;
   },
+  /* once at the start, while the loading screen is still up: the target made and the shader compiled, so the first
+     time the picture swims or goes dark (a blow, a drink) does not stall the game for a moment (on phones up to ¾ s) */
+  warm(r, scene, cam) {
+    if (!this.mat) return;
+    r.getDrawingBufferSize(this.size);
+    this.rt = new THREE.WebGLRenderTarget(this.size.x, this.size.y, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true, stencilBuffer: false });
+    r.setRenderTarget(this.rt); r.render(scene, cam);
+    this.mat.uniforms.tScene.value = this.rt.texture; r.render(this.scene, this.cam);
+    r.setRenderTarget(null);
+  },
   render(r, scene, cam) {
     if ((this.amt < 0.01 && this.lid < 0.01 && this.dark < 0.01) || !this.mat) { r.setRenderTarget(null); r.render(scene, cam); return; }
     r.getDrawingBufferSize(this.size);
@@ -5277,8 +5288,19 @@ const DRUNK = {
     this.flail = 0.6; this.flailX = Math.sin(rel); this.flailK = 0.7 + Math.random() * 0.6;
     FSFX.cloth(); this.scuff();
     // very drunk: sometimes it ends on the floor, the way the body was going
-    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.6 ? (L - 0.6) * 0.5 : 0);
+    const p = this.leave ? 0 : fallChance !== undefined ? fallChance : (L > 0.65 ? (L - 0.65) * 0.35 : 0);
     if (Math.random() < p) this.fallLater(kind || 'auto', 200);
+  },
+  /* staggering in a fight: two or three lurches one after the other, each a bit off the last (back and forth,
+     side to side), the feet hurrying after them; fallChance is for the last one only */
+  stagger(dir, big, fallChance) {
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    this.stumble(dir, big, 0);
+    for (let k = 1; k < n; k++) setTimeout(() => {
+      if (FALL.busy() || SIT.busy()) return;
+      const back = Math.random() < 0.45 ? Math.PI : 0, d = dir + back + (Math.random() - 0.5) * 1.6;
+      this.stumble(d, false, k === n - 1 ? fallChance : 0, Math.random() < 0.5 ? 'side' : 'auto');
+    }, 260 * k + Math.random() * 140);
   },
   fallLater(kind, ms) {
     setTimeout(() => { if (!FALL.busy() && !SIT.busy() && !this.out) FALL.start(false, kind, this.fallDir()); }, ms);
@@ -5296,6 +5318,8 @@ const DRUNK = {
     this.push(-Math.sin(rel) * 0.12 * L, Math.cos(rel) * 0.15 * L);
     this.headV.y -= 1.2 * L;
     PLAY.camShake = Math.max(PLAY.camShake, 0.04);
+    // reeling into the wall hard (in a fight, very drunk): now and then it puts him down, along the wall
+    if (L > 0.45 && vn < -1.6 && Math.random() < (L - 0.35) * 0.6) this.fallLater(Math.random() < 0.6 ? 'side' : 'auto', 120);
     GSFX.run(() => { const { g, t } = GSFX.out(0.4, PLAY.pos); SFX.thump(t, g, 120, 60, 0.4, 0.1); SFX.noiseHit(t, g, { type: 'lowpass', freq: 700, q: 0.7, gain: 0.2, attack: 0.002, decay: 0.08 }); });
   },
   /* had enough indoors: stand up and stagger out of the door, to just in front of it; then he is yours again */
@@ -5477,6 +5501,14 @@ SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stom
    Every fall is a little different: the whole body turns into the fall, keeps some of its momentum, and every key
    is shaken a little. Keys are poses in character space (+x = his left); side keys are written for a fall to his
    right and mirrored. The feet start where the gait left them and are handed back to the gait at the end. */
+/* a body settling after it hits the ground: it gives a little (the flesh), rebounds and comes to rest; the loose
+   parts (head, arms) lag behind and swing out. st = { t, k }: seconds since the thud, how hard */
+function settleW(st) { return st && st.t < 1.2 ? -st.k * Math.exp(-st.t * 5.5) * Math.sin(st.t * 15) : 0; }
+function settlePose(P, st, armKey) {
+  const w = settleW(st); if (!w) return;
+  P.pel.y += 0.035 * w; P.spPitch += 0.08 * w; P.hdPitch += 0.32 * w; P.hdRoll += 0.12 * w;
+  for (let i = 0; i < 2; i++) { const o = P.armOv[i]; if (o && o[armKey]) { o.el += 0.35 * w; o.out += 0.15 * Math.abs(w); } }
+}
 const FALL_KEYS = {
   //        pelvis [x,y,z]      pelvis pitch/roll, spine pitch/roll, head pitch/roll, ankles (L, R), foot pitch      arms: [sw, out, el] L, R
   stand:    { pel: [0, 0.925, 0],      pp: 0,     sp: 0.02,  hd: 0,     ank: [[0.12, 0.085, 0], [-0.12, 0.085, 0]],      arm: [[0, 0.1, 0.15], [0, 0.1, 0.15]] },
@@ -5510,9 +5542,16 @@ const FALL = {
   /* the steps: { k: key, d: seconds, e: easing ('in' = accelerating like falling), thud, lie: hold the pose, crawl } */
   makeSeq(kind, stay) {
     const R = Math.random, S = (k, d, e, thud) => ({ k, d, e, thud });
-    if (kind === 'back') return stay
-      ? [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 1 }]
-      : [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.5 }, S('sitUp', 0.4, 'inout'), S('squat', 0.35, 'inout'), S('stand', 0.35, 'inout')];
+    // backwards: never quite the same — flat on the back, or down hard on the backside and straight up again,
+    // or caught low and sat down, or twisted round onto a hip on the way down
+    if (kind === 'back') {
+      if (stay) return [S('reel', 0.4, 'out'), S('seat', 0.26, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 1 }];
+      const v = R(), up = [S('squat', 0.32 + R() * 0.1, 'inout'), S('stand', 0.32 + R() * 0.1, 'inout')];
+      if (v < 0.3) return [S('reel', 0.32 + R() * 0.15, 'out'), S('seat', 0.24, 'in', 0.7), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.3 + R() * 0.4 }, S('sitUp', 0.4, 'inout')].concat(up);
+      if (v < 0.55) return [S('reel', 0.45 + R() * 0.2, 'out'), S('seat', 0.22 + R() * 0.06, 'in', 0.8), { lie: 1, d: 0.2 + R() * 0.3 }].concat(up);
+      if (v < 0.8) return [S('reel', 0.3, 'out'), S('squat', 0.25 + R() * 0.1, 'in', 0.3), S('seat', 0.3, 'in', 0.6), S('sitUp', 0.35, 'inout'), { lie: 1, d: 0.25 + R() * 0.3 }].concat(up);
+      return [S('reel', 0.3, 'out'), S('lean', 0.22, 'inout'), S('hip', 0.26, 'in', 0.9), { lie: 1, d: 0.3 + R() * 0.3 }, S('sitUp', 0.4, 'inout')].concat(up);
+    }
     if (kind === 'side') return stay
       ? [S('lean', 0.32, 'out'), S('hip', 0.26, 'in', 0.9), S('sideFlat', 0.6, 'inout', 0.35), { lie: 1, d: 1 }]
       : [S('lean', 0.28 + R() * 0.12, 'out'), S('hip', 0.26, 'in', 0.9), { lie: 1, d: 0.25 + R() * 0.3 }, S('sitUp', 0.38, 'inout'), S('squat', 0.32, 'inout'), S('stand', 0.35, 'inout')];
@@ -5537,6 +5576,8 @@ const FALL = {
     this.yawTo = kind === 'side' ? PLAY.yaw + clamp(rel + this.sd * Math.PI / 2, -0.9, 0.9) + tw : kind === 'back' ? null : dir + tw * 0.5;
     this.seq = this.makeSeq(kind, this.keep); this.jit = {};
     if (kind === 'fwd' || kind === 'edge') { PLAY.vx += Math.sin(dir) * 0.8; PLAY.vz += Math.cos(dir) * 0.8; }
+    // backwards: a step or two back first, the feet trying to catch up with the body
+    if (kind === 'back' && !stay) { const b = PLAY.yaw + Math.PI + (Math.random() - 0.5) * 0.7, f = 0.8 + Math.random() * 0.9; PLAY.vx += Math.sin(b) * f; PLAY.vz += Math.cos(b) * f; }
     // the start pose: as the body stands now, with the feet where they are
     const k0 = this.copyKey(FALL_KEYS.stand);
     for (let i = 0; i < 2; i++) { SIT.toChar(GAIT.feet[i].cur, this._v); k0.ank[i] = [this._v.x, this._v.y, this._v.z]; }
@@ -5583,11 +5624,11 @@ const FALL = {
     if (!crawl) { const k = this.i < 2 ? 2.2 : 8; PLAY.vx *= Math.exp(-dt * k); PLAY.vz *= Math.exp(-dt * k); }
     else this.crawlPh += PLAY.speed * dt * 9;
     if (this.yawTo !== null && this.i < 2) PLAY.yaw += wrapA(this.yawTo - PLAY.yaw) * (1 - Math.exp(-dt * 7));
-    this.t += dt;
+    this.t += dt; if (this.settleSt) this.settleSt.t += dt;
     if (this.t >= s.d) {
       if (s.lie && this.keep && this.i === this.seq.length - 1) { this.t = s.d; return; }
       this.t -= s.d;
-      if (s.thud) { this.thud(s.thud); if (s.thud >= 0.9) PLAY.camShake = Math.max(PLAY.camShake, 0.1 * s.thud); }
+      if (s.thud) { this.thud(s.thud); this.settleSt = { t: 0, k: Math.min(1, s.thud) }; if (s.thud >= 0.9) PLAY.camShake = Math.max(PLAY.camShake, 0.1 * s.thud); }
       this.from = this.copyKey(this.snap);
       this.i++; if (this.i < this.seq.length && this.seq[this.i].crawl) this.crawlPh = 0;
       if (this.i >= this.seq.length) this.finish();
@@ -5656,6 +5697,7 @@ const FALL = {
       const o = P.armOv[i] && P.armOv[i].fall ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, fall: true });
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0] + wob * 0.5 * (i ? -1 : 1); o.out = S.arm[i][1] + Math.abs(wob) * 0.2; o.el = S.arm[i][2];
     }
+    settlePose(P, this.settleSt, 'fall');
     P.gunInHand = false;
     if (P.hand) for (const h of P.hand) h.open = 0.55;
     this.down = clamp((0.925 - P.pel.y) / 0.75, 0, 1);
@@ -5734,10 +5776,14 @@ const PHP = {
     DRINK.cancel();
     if (this.hp <= 0) { this.knockout(o); return 'out'; }
     if ((this.daze >= 1 || (o.heavy && this.daze > 0.6)) && !FALL.busy() && !SIT.busy()) {
-      FALL.start(false, 'back', Math.atan2(o.dir.x, o.dir.z));
+      // down: not always onto the backside; the way the blow went decides, and it is never the same twice
+      const d = Math.atan2(o.dir.x, o.dir.z), r = Math.random(), kind = r < 0.4 ? 'back' : r < 0.75 ? 'side' : 'fwd';
+      FALL.start(false, kind, kind === 'fwd' ? d + (Math.random() - 0.5) * 1.2 : d + (Math.random() - 0.5) * 0.8);
       this.daze = 0.4;
       return 'down';
     }
+    // drunk and hit: he reels from it, a step or two the way it sent him, instead of standing like a post
+    if (DRUNK.level > 0.3 && !FALL.busy() && !SIT.busy()) DRUNK.stagger(Math.atan2(o.dir.x, o.dir.z), !!o.heavy, 0);
     return 'hit';
   },
   knockout(o) {
@@ -6760,9 +6806,14 @@ const BLOOD = {
     E[kind] = S; this.all.push(S);
     return S;
   },
+  /* what was drawn is kept as a recipe per slot (what kind of mark, where, the random seed it was drawn with), so a
+     saved game draws the same marks again (SAVE part 'blood') */
+  seeded(fn) { const seed = (Math.random() * 2147483647) | 0, r0 = Math.random; Math.random = mulberry32(seed); try { fn(); } finally { Math.random = r0; } return seed; },
+  rec(W, o) { const S = W.S; (S.rec || (S.rec = []))[W.i] = o; o.born = S.born[W.i]; },
   // a slot for a new mark (the oldest goes); returns a writer
   slot(R, kind) {
     const S = this.set(R, kind), i = S.next; S.next = (S.next + 1) % S.cap;
+    if (S.rec) S.rec[i] = null;
     this.runs = this.runs.filter((r) => !(r.S === S && r.i === i)); this.pools = this.pools.filter((p) => !(p.S === S && p.i === i));
     S.born[i] = TIME.min; S.age[i] = -1;
     return { S, i, v: 0 };
@@ -6816,9 +6867,16 @@ const BLOOD = {
   },
   /* ---- spatter: a bullet came out of someone (or went in), the blood flung onto a wall or the floor. dir: the way
      it flew; k: how much (a head: more). On a wall a few runs start to creep down. ---- */
-  splat(R, pt, n, dir, k) {
+  splat(R, pt, n, dir, k, seed) {
     const K = this.k(); if (!K) return;
-    k = (k || 1) * K;
+    const k0 = k || 1;
+    let W = null;
+    const run = () => { W = this.splat0(R, pt, n, dir, k0 * K); };
+    if (seed === undefined) seed = this.seeded(run); else { const r0 = Math.random; Math.random = mulberry32(seed); try { run(); } finally { Math.random = r0; } }
+    this.rec(W, { t: 's', R: this.rid(R), p: [pt.x, pt.y, pt.z], n: [n.x, n.y, n.z], d: dir ? [dir.x, dir.y, dir.z] : null, k: k0, seed });
+    return W;
+  },
+  splat0(R, pt, n, dir, k) {
     const W = this.slot(R, 'big'), F = this.frame(pt, n, dir), perp = dir ? Math.abs(dir.dot(n)) : 1;
     const r0 = (0.045 + Math.random() * 0.03) * Math.sqrt(k), along = 1 + (1 - perp) * 0.8;
     // the blob, a little ahead of where it hit (longer the flatter it came), and a few smaller ones beside it
@@ -6842,6 +6900,7 @@ const BLOOD = {
       }
     }
     this.close(W);
+    return W;
   },
   /* ---- a pool where a man lies bleeding: it spreads with what he loses (vol: blood fraction lost), tongues
      run out over the floor ---- */
@@ -6851,13 +6910,22 @@ const BLOOD = {
     const gy = groundAt(at.x, at.z, N.pos.y + 0.3);
     let P = H.poolMark;
     if (!P || P.R !== R || Math.hypot(P.x - at.x, P.z - at.z) > 0.45 || !this.pools.includes(P)) {
-      const W = this.slot(R, 'big'), F = this.frame(new THREE.Vector3(at.x, gy + 0.004, at.z), this._n.set(0, 1, 0), null);
-      P = H.poolMark = { S: W.S, i: W.i, F, x: at.x, z: at.z, vol: 0, r: 0.02, lobes: [0, 1, 2].map(() => ({ a: Math.random() * TAU, k: 0.4 + Math.random() * 0.9, w: 0.2 + Math.random() * 0.25 })), noise: Array.from({ length: 16 }, () => Math.random() - 0.5), R, t: 0 };
-      this.pools.push(P);
+      P = H.poolMark = this.newPool(R, at.x, gy, at.z);
     }
     P.vol += vol * K;
   },
+  newPool(R, x, gy, z, seed) {
+    let P = null;
+    const make = () => {
+      const W = this.slot(R, 'big'), F = this.frame(new THREE.Vector3(x, gy + 0.004, z), this._n.set(0, 1, 0), null);
+      P = { S: W.S, i: W.i, F, x, z, gy, vol: 0, r: 0.02, lobes: [0, 1, 2].map(() => ({ a: Math.random() * TAU, k: 0.4 + Math.random() * 0.9, w: 0.2 + Math.random() * 0.25 })), noise: Array.from({ length: 16 }, () => Math.random() - 0.5), R, t: 0 };
+    };
+    if (seed === undefined) seed = this.seeded(make); else { const r0 = Math.random; Math.random = mulberry32(seed); try { make(); } finally { Math.random = r0; } }
+    P.seed = seed; this.pools.push(P);
+    return P;
+  },
   writePool(P) {
+    this.rec({ S: P.S, i: P.i }, { t: 'p', R: this.rid(P.R), x: P.x, gy: P.gy, z: P.z, r: +P.r.toFixed(3), vol: +P.vol.toFixed(4), seed: P.seed });
     const S = P.S, W = { S, i: P.i, v: 0 }, F = P.F, k = 16, pts = [], rim = [];
     const lobeGrow = clamp((P.r - 0.12) / 0.5, 0, 1);
     for (let i = 0; i < k; i++) {
@@ -6882,7 +6950,13 @@ const BLOOD = {
     const dir = mv > 0.2 ? this._c.set(N.vx, 0, N.vz).normalize() : null;
     this.drop(R, x, gy, z, dir, (0.009 + Math.random() * 0.008) * Math.sqrt(K), h, mv);
   },
-  drop(R, x, gy, z, dir, s, h, mv) {
+  drop(R, x, gy, z, dir, s, h, mv, seed) {
+    let W = null;
+    const run = () => { W = this.drop0(R, x, gy, z, dir, s, h, mv); };
+    if (seed === undefined) seed = this.seeded(run); else { const r0 = Math.random; Math.random = mulberry32(seed); try { run(); } finally { Math.random = r0; } }
+    this.rec(W, { t: 'd', R: this.rid(R), x, gy, z, d: dir ? [dir.x, dir.z] : null, s, h, mv: mv || 0, seed });
+  },
+  drop0(R, x, gy, z, dir, s, h, mv) {
     const W = this.slot(R, 'small'), F = this.frame(new THREE.Vector3(x, gy + 0.003, z), this._n.set(0, 1, 0), dir);
     const e = 1 + Math.min(1.5, (mv || 0) * 0.6);
     this.blob(W, F, 0.003, 0, 0, s * e, s, 6, 0.35, 1, 0.85);
@@ -6890,6 +6964,7 @@ const BLOOD = {
     const ns = h > 0.5 ? 3 : 1;
     for (let j = 0; j < ns; j++) { const a = dir ? (Math.random() - 0.5) * 0.8 : Math.random() * TAU, d = s * (1.6 + Math.random() * 1.6) * e; this.droplet(W, F, 0.003, Math.cos(a) * d, Math.sin(a) * d, Math.cos(a), Math.sin(a), s * 0.28, 1.8, 0.85); }
     this.close(W);
+    return W;
   },
   /* ---- a torn artery pumps: a spurt with each beat, out of the wound, landing as drops ---- */
   spurt(p, n, k, N) {
@@ -6903,6 +6978,35 @@ const BLOOD = {
     // where it lands (the arc down to the floor)
     const gy = groundAt(p.x, p.z, p.y + 0.2), dy = p.y - gy, t = (vy + Math.sqrt(vy * vy + 2 * 9.8 * Math.max(0, dy))) / 9.8;
     for (let j = 0; j < 2; j++) { const f = 0.7 + Math.random() * 0.5; this.drop(N.room || null, p.x + vx * t * f, gy, p.z + vz * t * f, this._c.set(vx, 0, vz).normalize(), 0.01 + Math.random() * 0.008, 1, 1.5); }
+  },
+  rid(R) { return R ? ROOMS.indexOf(R) : -1; },
+  room(id) { return id >= 0 ? ROOMS[id] || null : null; },
+  // all the marks there are, oldest first (for the save)
+  save() {
+    const out = [];
+    for (const S of this.all) if (S.rec) S.rec.forEach((r, i) => { if (r && S.born[i] > -1e8) out.push(Object.assign({}, r, { born: S.born[i] })); });
+    out.sort((a, b) => a.born - b.born);
+    return out.slice(-400).map((r) => JSON.parse(JSON.stringify(r, (k, v) => (typeof v === 'number' ? +v.toFixed(4) : v))));
+  },
+  load(list) {
+    if (!Array.isArray(list) || !this.k()) return;
+    const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+    for (const r of list) {
+      if (!r || typeof r.seed !== 'number') continue;
+      const R = this.room(r.R | 0);
+      if (r.t === 's' && Array.isArray(r.p) && Array.isArray(r.n)) {
+        const W = this.splat(R, V(r.p), V(r.n), r.d ? V(r.d) : null, r.k || 1, r.seed); if (!W) continue;
+        for (const q of this.runs) if (q.S === W.S && q.i === W.i) q.t = q.tau * 3.9;
+        W.S.born[W.i] = r.born; W.S.rec[W.i].born = r.born;
+      } else if (r.t === 'd') {
+        this.drop(R, r.x, r.gy, r.z, r.d ? this._c.set(r.d[0], 0, r.d[1]).normalize() : null, r.s, r.h, r.mv, r.seed);
+        const S = this.set(R, 'small'), i = (S.next - 1 + S.cap) % S.cap; S.born[i] = r.born; S.rec[i].born = r.born;
+      } else if (r.t === 'p') {
+        const P = this.newPool(R, r.x, r.gy, r.z, r.seed); P.vol = r.vol; P.r = r.r; this.writePool(P); P.S.born[P.i] = r.born; P.S.rec[P.i].born = r.born;
+        const j = this.pools.indexOf(P); if (j >= 0) this.pools.splice(j, 1);   // (it does not grow any more)
+      }
+    }
+    for (const S of this.all) for (let i = 0; i < S.cap; i++) if (S.born[i] > -1e8) this.colour(S, i, clamp((TIME.min - S.born[i]) / 300, 0, 1));
   },
   /* ---- per frame: runs creep, pools spread, old marks darken ---- */
   update(dt) {
@@ -6937,6 +7041,8 @@ const BLOOD = {
     for (const S of this.all) S.mesh.visible = !S.R || !!S.R.mesh.visible;
   }
 };
+// the marks stay where they are (until newer ones take their place)
+SAVE.part('blood', () => BLOOD.save(), (d) => BLOOD.load(d));
 
 // ==== combat/gun.js ====
 /* ---------- the revolver: holster, draw, aim, fire, reload; bottles to shoot at ----------
@@ -7162,13 +7268,14 @@ const GUN = {
     this.kickV += (-170 * this.kickP - 17 * this.kickV) * dt;
     this.kickP += this.kickV * dt;
     this.fovPunch = Math.max(0, this.fovPunch - dt * 7);
-    // touch: aim assist pulls the crosshair gently onto a bottle
+    // touch: aim assist pulls the crosshair gently onto what is right next to it (a person first, then glass);
+    // only what can be seen from here, and only when it is already almost on it
     if (this.touch && this.camW > 0.6) {
-      const b = this.bestBottle(0.1, 35);
+      const b = this.assist(0.055, 35);
       if (b) {
         const u = b.dir;
         const ty = Math.atan2(-u.x, -u.z), tp = -Math.asin(clamp(u.y, -1, 1));
-        const k = 1 - Math.exp(-dt * 3.5 * (1 - b.ang / 0.1));
+        const k = 1 - Math.exp(-dt * 2.2 * (1 - b.ang / 0.055));
         PLAY.camYaw += wrapA(ty - PLAY.camYaw) * k; PLAY.aimPitch += (tp - PLAY.aimPitch) * k;
       }
     }
@@ -7192,6 +7299,34 @@ const GUN = {
     out.copy(GUNM.muzzle).applyMatrix4(m);
     return m;
   },
+  /* what the aim assist may take: a person (the chest or the head, whichever is nearer the crosshair) before any
+     glass, inside maxAng of where the camera looks, and only if nothing stands between (a wall, the bar, the
+     corner you stand in) */
+  assist(maxAng, maxDist) {
+    const cam = G.cam, fwd = this._af || (this._af = new THREE.Vector3()), u = this._au || (this._au = new THREE.Vector3()), p = this._ap || (this._ap = new THREE.Vector3());
+    cam.getWorldDirection(fwd);
+    let best = null;
+    for (const N of NPCS.list) {
+      if (N.hp.dead || !N.ch.root.visible) continue;
+      for (const part of ['torso', 'head']) {
+        N.ch.p[part].getWorldPosition(p); if (part === 'torso') p.y += 0.15;
+        u.subVectors(p, cam.position); const d = u.length(); if (d > maxDist || d < 0.8) continue;
+        u.multiplyScalar(1 / d);
+        const ang = Math.acos(clamp(u.dot(fwd), -1, 1));
+        if (ang < maxAng && (!best || ang < best.ang) && this.seen(cam.position, u, d)) best = { npc: N, ang, dist: d, dir: u.clone() };
+      }
+    }
+    if (best) return best;
+    const b = this.bestBottle(maxAng, maxDist);
+    return b && this.seen(cam.position, b.dir, b.dist) ? b : null;
+  },
+  // nothing solid between the camera and a point d away along u (glass at the end of it is part of the room)
+  seen(o, u, d) {
+    const ray = this.ray; ray.set(o, u); ray.near = 0.05; ray.far = Math.max(0.1, d - 0.3);
+    const objs = this._seenObjs || (this._seenObjs = []); objs.length = 0;
+    for (const m of W.worldMeshes) objs.push(m); if (G.room && G.room.mesh) objs.push(G.room.mesh);
+    return ray.intersectObjects(objs, false).length === 0;
+  },
   bestBottle(maxAng, maxDist) {
     const cam = G.cam, fwd = this._bf || (this._bf = new THREE.Vector3()), u = this._bu || (this._bu = new THREE.Vector3());
     cam.getWorldDirection(fwd);
@@ -7212,7 +7347,7 @@ const GUN = {
     this.ammo--; this.cool = 0.42;
     const cam = G.cam, dir = new THREE.Vector3();
     cam.getWorldDirection(dir);
-    if (this.touch) { const b = this.bestBottle(this.camW > 0.9 ? 0.07 : 0.3, 35); if (b) dir.copy(b.dir); }
+    if (this.touch) { const b = this.assist(this.camW > 0.9 ? 0.035 : 0.06, 35); if (b) dir.copy(b.dir); }
     const sp = this.spread * Math.sqrt(Math.random()), a = Math.random() * TAU;
     const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize(), up = new THREE.Vector3().crossVectors(side, dir);
     dir.addScaledVector(side, Math.cos(a) * sp).addScaledVector(up, Math.sin(a) * sp).normalize();
@@ -7938,7 +8073,8 @@ const FIST = {
     const side = this.side * (this.clipName === 'hook' || this.heavy ? 1.6 : 0.8);
     DRUNK.push((side * 0.25 - Math.sin(rel) * 0.15) * L, 0.3 * L);
     if (!this.landed && Math.random() < L * 0.7) this.spin = this.side * (0.4 + Math.random() * 0.6) * L;   // over-rotated into thin air
-    if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
+    // (he staggers after the swing, back and forth, a few steps; to the floor only rarely, very drunk)
+    if (Math.random() < L * 0.9) DRUNK.stagger(yaw + (Math.random() - 0.5) * 1.2, this.heavy, L > 0.8 ? (L - 0.8) * (this.heavy ? 0.35 : 0.15) : 0);
   },
   connect() {
     const kind = this.clipName, GM = GROUND_MOVE[kind], ground = !!GM, foot = kind === 'kick' || kind === 'stomp' || kind === 'knee';
@@ -9001,12 +9137,20 @@ const AID = {
     // where to kneel: a spot by the wound that is clear of his body (all his parts) and of walls, the nearest to you
     const p = N.hp.woundPoint(w, this._v) || this._v.copy(N.pos), body = [];
     for (const k of ['torso', 'head', 'pelvis', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']) if (N.ch.p[k]) body.push(N.ch.p[k].getWorldPosition(new THREE.Vector3()));
+    /* each spot is tried with your body as it will be there: kneeling, leaning in towards the wound, your chest and
+       head come forward (more over a man on the floor); they must stay clear of his body, his head and chest most */
     let best = null, bs = -1e9;
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * TAU, x = p.x + Math.sin(a) * 0.72, z = p.z + Math.cos(a) * 0.72;
+    const lean = N.hp.anim ? 0.42 : 0.3;
+    for (const rr of [0.72, 0.88]) for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU, x = p.x + Math.sin(a) * rr, z = p.z + Math.cos(a) * rr;
       if (HARM.blockedAt(x, z, N.pos.y, 0.2)) continue;
-      let clear = 9; body.forEach((b, j) => { clear = Math.min(clear, Math.hypot(x - b.x, z - b.z) - (j === 1 ? 0.25 : 0)); });   // (his head most of all)
-      const sc = Math.min(clear, 0.6) * 4 - Math.hypot(x - PLAY.pos.x, z - PLAY.pos.z) * 0.3;
+      const fx = -Math.sin(a), fz = -Math.cos(a);
+      let clear = 9;
+      for (const [k, r] of [[0, 0.25], [lean * 0.55, 0.22], [lean, 0.16]]) {   // your knees/hips, chest, head
+        const px = x + fx * k, pz = z + fz * k;
+        body.forEach((b, j) => { clear = Math.min(clear, Math.hypot(px - b.x, pz - b.z) - r - (j === 1 ? 0.14 : j === 0 ? 0.1 : 0.05)); });
+      }
+      const sc = Math.min(clear, 0.15) * 12 + (rr < 0.8 ? 0.15 : 0) - Math.hypot(x - PLAY.pos.x, z - PLAY.pos.z) * 0.2;
       if (sc > bs) { bs = sc; best = [x, z]; }
     }
     this.spot.set(best ? best[0] : PLAY.pos.x, PLAY.pos.y, best ? best[1] : PLAY.pos.z);
@@ -9254,6 +9398,31 @@ class NPC {
     if (H.blood < 0.8 || H.needsDoc()) return 1;
     return 0;
   }
+  // a way round what is in the way: a free point to one side, a little ahead; the way on is kept
+  detour() {
+    const g = this.goal; if (!g) return;
+    const dx = g.x - this.pos.x, dz = g.z - this.pos.z, d = Math.hypot(dx, dz) || 1, fx = dx / d, fz = dz / d, px = -fz, pz = fx;
+    const y = this.pos.y, clear = (x, z) => { for (let k = 1; k <= 4; k++) { const t = k / 4; if (HARM.blockedAt(this.pos.x + (x - this.pos.x) * t, this.pos.z + (z - this.pos.z) * t, y, 0.3)) return false; } return true; };
+    const side = (this.detourSide = -(this.detourSide || 1));
+    for (const dist of [1.2, 2, 3]) for (const s of [side, -side]) {
+      const cx = this.pos.x + px * s * dist + fx * 0.5, cz = this.pos.z + pz * s * dist + fz * 0.5;
+      if (!clear(cx, cz)) continue;
+      if (this.legPass) this.path = [[g.x, g.z]].concat(this.path || []); else this.dest = [g.x, g.z, this.faceYaw];
+      const fy = this.faceYaw; this.goTo(cx, cz, undefined, true); this.legPass = true; if (!this.dest) this.faceYaw = fy;
+      return;
+    }
+  }
+  // would the lying body (head, chest, hips) be clear of walls and furniture if moved by dx, dz?
+  bodyFits(dx, dz) {
+    const v = this._bf || (this._bf = new THREE.Vector3());
+    for (const k of ['head', 'torso', 'pelvis']) {
+      const part = this.ch.p[k]; if (!part) continue;
+      part.getWorldPosition(v);
+      const now = HARM.blockedAt(v.x, v.z, this.pos.y, 0.12), then = HARM.blockedAt(v.x + dx, v.z + dz, this.pos.y, 0.12);
+      if (then && !now) return false;
+    }
+    return true;
+  }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
   // how fast he goes: walking (hurry: a brisker walk), running from hurry 2 on; slower when hurt
   topSpeed() { const h = this.hurry || 1; return (h >= 2 ? this.runSpeed : this.walkSpeed * h) * this.hp.speedK(); }
@@ -9345,7 +9514,9 @@ class NPC {
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
       else { const top = this.topSpeed(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
-    const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
+    // stuck on something on the way (a trough, a rail, a crate): a step round it, then on
+    if (this.goal && can && !hold) { this.stuckT = this.speed < 0.25 ? (this.stuckT || 0) + dt : 0; if (this.stuckT > 0.7) { this.stuckT = 0; this.detour(); } }
+    const a = 1 - Math.exp(-dt * (can ? 7 : H.down() ? 10 : 3.5));   // (a body on the floor drags: it hardly slides)
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
     let nx = this.pos.x + this.vx * dt, nz = this.pos.z + this.vz * dt;
     // walls, furniture and the player stop him like they stop the player
@@ -9371,6 +9542,9 @@ class NPC {
         } else this.blockT = 0;
       } else this.blockT = 0;
     }
+    // lying on the floor and shoved along (blows, kicks): the whole body must stay out of the walls, not only where
+    // he stands — head, chest and hips are tested where they would be, and he stops at the wall
+    if (H.down() && (nx !== this.pos.x || nz !== this.pos.z) && !this.bodyFits(nx - this.pos.x, nz - this.pos.z)) { nx = this.pos.x; nz = this.pos.z; this.vx = this.vz = 0; }
     if (dt > 0) { this.vx = (nx - this.pos.x) / dt * 0.5 + this.vx * 0.5; this.vz = (nz - this.pos.z) / dt * 0.5 + this.vz * 0.5; }
     this.pos.x = nx; this.pos.z = nz;
     // on the ground: the street, the porch, a floor (people who stay in their room keep its floor)
@@ -9709,10 +9883,11 @@ class KeyAnim {
   update(dt, onThud) {
     if (this.done) return;
     const s = this.seq[this.i];
-    this.t += dt;
+    this.t += dt; if (this.settle) this.settle.t += dt;
     if (this.t >= s.d) {
       if (s.hold) { this.t = s.d; return; }
       this.t -= s.d;
+      if (s.thud || s.slam) this.settle = { t: 0, k: Math.min(1, s.thud || 0.8) };
       if ((s.thud || s.slam) && onThud) onThud(s.thud || 0, s);
       this.from = KeyAnim.copy(this.snap);
       this.i++;
@@ -9742,6 +9917,7 @@ class KeyAnim {
       const o = P.armOv[i] && P.armOv[i].key ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, key: true });
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0]; o.out = S.arm[i][1]; o.el = S.arm[i][2];
     }
+    settlePose(P, this.settle, 'key');
     P.gunInHand = false;
     return clamp((0.925 - P.pel.y) / 0.75, 0, 1);   // how far down
   }
@@ -9812,7 +9988,9 @@ class Vitals {
     const N = this.npc;
     this.lastHit = G.time;
     const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
-    if (o.ground) this.trauma += 0.11 * p / tough; else this.trauma += (head ? 0.035 : 0.02) * p / tough;
+    /* a beating knocks a man out long before it kills him: blows daze him, enough of them put him out cold (ko,
+       lying there with his eyes shut); only a long, long beating of a man who is already out kills (trauma) */
+    if (o.ground) this.trauma += (this.ko > 0 ? 0.05 : 0.03) * p / tough; else this.trauma += (head ? 0.022 : 0.012) * p / tough;
     this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1) / tough;
     this.pain = Math.min(1.5, this.pain + (head ? 0.25 : 0.18) * p);
     // bruises: one per zone, growing
@@ -9824,17 +10002,23 @@ class Vitals {
     if (this.anim) {
       if (this.lowness > 0.5) {
         this.downFor += 1.2 * p; this.anim.jit = {};
+        // still awake down there: enough and he is out cold
+        if (!this.ko && this.daze >= 1.5) this.knockOut();
+        else if (this.ko > 0) this.ko = Math.max(this.ko, 15);
         // the body on the ground jolts with it and is shoved a little
         const c = Math.cos(N.yaw), sn = Math.sin(N.yaw);
         this.jolt = { x: o.dir.x * c - o.dir.z * sn, z: o.dir.x * sn + o.dir.z * c, k: Math.min(1.5, p), head: head };
-        if (!this.pinned) { N.vx += o.dir.x * 0.9 * p; N.vz += o.dir.z * 0.9 * p; }
+        if (!this.pinned) { N.vx += o.dir.x * 0.5 * p; N.vz += o.dir.z * 0.5 * p; }
         this.pain = Math.min(1.5, this.pain + 0.2);
       }
       return 'ground';
     }
     if (this.daze >= 1 || (o.heavy && head && this.daze > 0.6)) {
       this.knocked = true;
+      // the second time down in a short while, or a hard one on a dazed head: out cold
+      this.kdN = G.time - (this.kdT || -99) < 90 ? (this.kdN || 0) + 1 : 1; this.kdT = G.time;
       this.fall(o.heavy || Math.random() < 0.5 ? 'back' : 'side', dir, Math.random() < 0.5 ? 'L' : 'R', 2.5 + this.daze * 2.2);
+      if (this.kdN >= 2 || this.daze >= 1.6) this.knockOut();
       return 'down';
     }
     this.flinchBy(dir, (o.heavy ? 1.8 : 1.05) * (head ? 1 : 0.75) * Math.min(1.3, p), head ? 'head' : 'chest', '', true);
@@ -9843,6 +10027,12 @@ class Vitals {
     N.vx += o.dir.x * kb; N.vz += o.dir.z * kb;
     this.stunT = o.heavy ? 0.8 : head ? 0.3 : 0.2;
     return 'hit';
+  }
+  // out cold: lies there, eyes shut, does not hear or speak, for half a minute or more
+  knockOut() {
+    this.ko = 25 + Math.random() * 25; this.knocked = true; this.downFor = Math.max(this.downFor, this.downT + this.ko + 4);
+    if (this.npc.onHarm) this.npc.onHarm({ type: 'ko' });
+    worldEvent('npcKo', this.npc.pos.x, this.npc.pos.y, this.npc.pos.z, { by: 'player', npc: this.npc.id });
   }
   forwardDot(dir) { const N = this.npc; return dir.x * Math.sin(N.yaw) + dir.z * Math.cos(N.yaw); }
   // an impulse that the pose turns into a jerk of the body away from the hit
@@ -9995,7 +10185,8 @@ class Vitals {
     if (this.dead) return;
     // too little blood: the knees go; less still and he is out (eyes shut, no word); then dead
     if (this.blood < BLOOD_FAINT && !this.anim) { this.fainted = true; this.fall('faint', this._w.set(-Math.sin(N.yaw) * 0.2, 0, -Math.cos(N.yaw) * 0.2)); }
-    this.out = this.blood < BLOOD_OUT;
+    if (this.ko > 0) { this.ko -= dt; if (this.ko <= 0) { this.ko = 0; this.daze = Math.min(this.daze, 0.9); } }
+    this.out = this.blood < BLOOD_OUT || this.ko > 0;
     // gut-shot: it does not let go of him (the pain keeps coming back, he moans and writhes)
     const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
     if (gut) this.pain = Math.max(this.pain, 0.75 + 0.25 * Math.sin(G.time * 0.7 + Math.sin(G.time * 0.23) * 3));
@@ -10716,8 +10907,75 @@ const NAV = {
   },
   door(R, inside) { const p = inside ? rwp(R, 0, R.floorY, R.z1 - 1.1) : rwp(R, 0, 0, R.z1 + 1.7); return [p.x, p.z]; },
   pen(R, P, inside) { const q = inside ? P.mouth : P.out, p = rwp(R, q[0], R.floorY, q[1]); return [p.x, p.z]; },
+  /* ---- out in the open: a grid over the town (1 m cells, buildings and everything at least knee high blocked),
+     searched only when the straight way is blocked (behind the church, round the bank …), then pulled tight ---- */
+  G0: [-95, -48], GW: 190, GH: 96, grid: null,
+  // (built once: every collider and every room drawn into the cells it covers, with half a metre to spare)
+  makeGrid() {
+    const g = this.grid = new Uint8Array(this.GW * this.GH), W = this.GW, H = this.GH, x0 = this.G0[0], z0 = this.G0[1], r = 0.5;
+    const each = (minx, maxx, minz, maxz, test) => {
+      const i0 = Math.max(0, Math.floor(minx - x0)), i1 = Math.min(W - 1, Math.floor(maxx - x0)), j0 = Math.max(0, Math.floor(minz - z0)), j1 = Math.min(H - 1, Math.floor(maxz - z0));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (test(x0 + i + 0.5, z0 + j + 0.5)) g[j * W + i] = 1;
+    };
+    for (const c of COLL) {
+      if (c.y0 !== undefined && c.y0 > 1) continue;
+      if (c.r !== undefined) { if ((c.h || 0.8) < 0.45) continue; const rr = c.r + r; each(c.cx - rr, c.cx + rr, c.cz - rr, c.cz + rr, (x, z) => (x - c.cx) ** 2 + (z - c.cz) ** 2 < rr * rr); continue; }
+      if ((c.h || 3) < 0.45) continue;
+      const ca = Math.cos(c.a), sa = Math.sin(c.a), ex = c.hx + c.hz + r;
+      each(c.cx - ex, c.cx + ex, c.cz - ex, c.cz + ex, (x, z) => { const dx = x - c.cx, dz = z - c.cz, lx = dx * ca - dz * sa, lz = dx * sa + dz * ca; return Math.abs(lx) < c.hx + r && Math.abs(lz) < c.hz + r; });
+    }
+    for (const R of ROOMS) {
+      if (R.parent || R.x0 === undefined) continue;
+      const cs = [[R.x0, R.z0], [R.x1, R.z0], [R.x0, R.z1], [R.x1, R.z1]].map((q) => rwp(R, q[0], 0, q[1]));
+      each(Math.min(...cs.map((p) => p.x)) - 1, Math.max(...cs.map((p) => p.x)) + 1, Math.min(...cs.map((p) => p.z)) - 1, Math.max(...cs.map((p) => p.z)) + 1, (x, z) => { const [lx, lz] = rLocal(R, x, z); return lx > R.x0 - 0.3 && lx < R.x1 + 0.3 && lz > R.z0 - 0.3 && lz < R.z1 + 0.3; });
+    }
+  },
+  cell(x, z) { const i = Math.floor(x - this.G0[0]), j = Math.floor(z - this.G0[1]); return i < 0 || j < 0 || i >= this.GW || j >= this.GH ? -1 : j * this.GW + i; },
+  free(x, z) { const c = this.cell(x, z); return c < 0 || !this.grid[c]; },
+  lineFree(ax, az, bx, bz) { const d = Math.hypot(bx - ax, bz - az), n = Math.ceil(d / 0.4); for (let k = 1; k < n; k++) { const t = k / n; if (!this.free(ax + (bx - ax) * t, az + (bz - az) * t)) return false; } return true; },
+  // the way through the open from a to b (points in between; empty when the straight line is free)
+  open(ax, az, bx, bz) {
+    if (!this.grid) this.makeGrid();
+    if (this.lineFree(ax, az, bx, bz)) return [];
+    const W = this.GW, s = this.cell(ax, az), e = this.cell(bx, bz); if (s < 0 || e < 0) return [];
+    const g = this.grid, cost = new Float32Array(W * this.GH).fill(1e9), from = new Int32Array(W * this.GH).fill(-1), open = [s];
+    const h = (c) => Math.hypot((c % W) - (e % W), Math.floor(c / W) - Math.floor(e / W));
+    cost[s] = 0; let found = false, it = 0;
+    while (open.length && it++ < 40000) {
+      let bi = 0, bf = 1e9; for (let k = 0; k < open.length; k++) { const f = cost[open[k]] + h(open[k]); if (f < bf) { bf = f; bi = k; } }
+      const c = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+      if (c === e) { found = true; break; }
+      const ci = c % W, cj = Math.floor(c / W);
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ni = ci + di, nj = cj + dj; if (ni < 0 || nj < 0 || ni >= W || nj >= this.GH) continue;
+        const n = nj * W + ni; if (g[n] && n !== e) continue;
+        if (di && dj && (g[cj * W + ni] || g[nj * W + ci])) continue;   // (no corner cutting)
+        const nc = cost[c] + (di && dj ? 1.414 : 1);
+        if (nc < cost[n]) { if (cost[n] >= 1e9) open.push(n); cost[n] = nc; from[n] = c; }
+      }
+    }
+    if (!found) return [];
+    const pts = []; for (let c = from[e]; c >= 0 && c !== s; c = from[c]) pts.push([this.G0[0] + (c % W) + 0.5, this.G0[1] + Math.floor(c / W) + 0.5]);
+    pts.reverse();
+    // pulled tight: keep only the corners the straight line cannot cut
+    const out = []; let cx = ax, cz = az;
+    for (let k = 0; k < pts.length; k++) { const nx = k + 1 < pts.length ? pts[k + 1] : [bx, bz]; if (!this.lineFree(cx, cz, nx[0], nx[1])) { out.push(pts[k]); cx = pts[k][0]; cz = pts[k][1]; } }
+    return out;
+  },
   // the points between a and b (not including b itself)
   route(ax, az, ay, bx, bz, by) {
+    const out = this.doors(ax, az, ay, bx, bz, by);
+    // the open-air legs between them go round what is in the way
+    const pts = [[ax, az]].concat(out, [[bx, bz]]), res = [];
+    for (let k = 0; k < pts.length - 1; k++) {
+      const p = pts[k], q = pts[k + 1];
+      if (k > 0) res.push(p);
+      if (!roomAt(p[0], p[1], 0.05, surfaceHeight(p[0], p[1]) + 0.5) && !roomAt(q[0], q[1], 0.05, surfaceHeight(q[0], q[1]) + 0.5)) for (const w of this.open(p[0], p[1], q[0], q[1])) res.push(w);
+    }
+    return res;
+  },
+  doors(ax, az, ay, bx, bz, by) {
     const A = this.area(ax, az, ay), B = this.area(bx, bz, by), out = [];
     if (A.key === B.key) return out;
     // out of a pen, out of the room
@@ -10727,6 +10985,65 @@ const NAV = {
     if (B.R && (!A.R || A.R !== B.R)) out.push(this.door(B.R, false), this.door(B.R, true));
     if (B.pen) out.push(this.pen(B.R, B.pen, false), this.pen(B.R, B.pen, true));
     return out;
+  }
+};
+
+// ==== npc/places.js ====
+/* ---------- where things are in Dust Creek, for people who are told "behind the church" ----------
+   PLACEMAP.find(text) reads a place out of what you say: a building (the saloon, the bank, the church …), a spot
+   in the open (the graveyard, the water tower, the windmill, the corral, the bridge, the trough …) or a person
+   ("bei Hank"), and how it relates to it (hinter, vor, neben, in, bei). It returns where that is ({ x, z }), the
+   room when it is inside one, and the place in words (dative: "hinter der Kirche") for what people remember.
+   Buildings use their own frame (front = the door side), spots in the open face the street. */
+const PLACEMAP = {
+  // room type, words, the name in the dative
+  ROOMS: [
+    ['saloon', /saloon|\bbar\b|kneipe|theke|wirtshaus/, 'dem Saloon'], ['hotel', /hotel/, 'dem Hotel'], ['bank', /\bbank\b/, 'der Bank'],
+    ['sheriff', /sheriff|gefängnis|gefaengnis|zelle/, 'dem Sheriffbüro'], ['livery', /mietstall|\bstall|scheune/, 'dem Mietstall'],
+    ['barber', /barbier|friseur|frisör/, 'dem Barbier'], ['gunsmith', /waffen/, 'dem Waffenhändler'], ['post', /\bpost/, 'der Post'],
+    ['apothecary', /apothek/, 'der Apotheke'], ['store', /gemischtwaren|kramladen|krämer|\bladen\b|store/, 'dem Gemischtwarenladen'],
+    ['church', /kirche/, 'der Kirche'], ['doctor', /praxis|beim (doc|arzt)|zum (doc|arzt)/, 'der Praxis']
+  ],
+  // spots in the open: words, where (x, z), the name in the dative
+  SPOTS: [
+    [/friedhof|gräber|graeber|\bgrab\b/, -63, 13, 'dem Friedhof'], [/wasserturm|\bturm\b/, 34, 16, 'dem Wasserturm'],
+    [/windrad|windmühle|windmuehle|windpumpe/, 47, -27, 'dem Windrad'], [/koppel|pferch|corral|gatter|pferde/, -30, 23, 'der Koppel'],
+    [/brücke|bruecke/, null, null, 'der Brücke'], [/tränke|traenke|trog/, -27.5, 6, 'der Tränke'], [/\bwagen\b|planwagen/, 29.5, 3.4, 'dem Wagen'],
+    [/ortsausgang|stadtrand|ende der stadt|östlich|osten|ostende/, 58, 3, 'dem Ostende der Stadt'], [/westlich|westen|westende/, -45, 2, 'dem Westende der Stadt'],
+    [/hauptstraße|hauptstrasse|straße|strasse|draußen|draussen/, null, null, 'der Straße']
+  ],
+  REL: [['behind', /\bhinter(m|n|em|er|s)?\b|\bhinten\b/], ['front', /\bvor(m|n|em|er|s)?\b|\bdavor\b/], ['beside', /\bneben\b|\bseitlich\b|\bdaneben\b/], ['in', /\b(im|drin|drinnen|innen)\b|\bin (der|dem|den|die|das)\b/], ['at', /\b(bei|beim|am|an|unter|unterm|auf)\b/]],
+  REL_WORD: { behind: 'hinter', front: 'vor', beside: 'neben', in: 'in', at: 'bei' },
+  // "bei dem" → "beim", "in dem" → "im"
+  words(s) { return s.replace(/^bei dem /, 'beim ').replace(/^in dem /, 'im ').replace(/^vor dem /, 'vorm ').replace(/^hinter dem /, 'hinter dem '); },
+  rel(t) { for (const [k, re] of this.REL) if (re.test(t)) return k; return null; },
+  find(text) {
+    const t = (text || '').toLowerCase(), rel = this.rel(t);
+    // a person: where he is now
+    for (const N of NPCS.list) {
+      if (N.name && new RegExp('\\b' + N.name.toLowerCase() + '\\b').test(t) && !/doc\b/.test(N.name.toLowerCase())) {
+        const near = (/bei|neben|zu/.test(t)) || !this.ROOMS.some(([, re]) => re.test(t));
+        if (near) return { x: N.pos.x, z: N.pos.z, R: N.room || null, name: 'bei ' + N.name, npc: N };
+      }
+    }
+    for (const [type, re, dat] of this.ROOMS) {
+      if (!re.test(t)) continue;
+      const R = ROOMS.find((r) => r.type === type && !r.parent); if (!R) continue;
+      const r = rel || 'in', zm = (R.z0 + R.z1) / 2;
+      const p = r === 'behind' ? rwp(R, 0, 0, R.z0 - 3.5) : r === 'front' ? rwp(R, 0, 0, R.z1 + 3) : r === 'beside' ? rwp(R, R.x1 + 3, 0, zm) : r === 'in' ? rwp(R, 0, R.floorY, zm) : rwp(R, 0, 0, R.z1 + 2.5);
+      return { x: p.x, z: p.z, R: r === 'in' ? R : null, room: R, name: this.words((r === 'in' ? 'in ' : this.REL_WORD[r] + ' ') + dat), type };
+    }
+    for (const [re, sx, sz, dat] of this.SPOTS) {
+      if (!re.test(t)) continue;
+      let x = sx, z = sz;
+      if (/brücke/i.test(dat)) { const B = W.bridge; if (!B) continue; x = B.x; z = B.z; }
+      if (x === null) return { x: null, z: null, R: null, name: 'auf ' + dat, street: true };
+      // (in the open: "behind" is away from the street, "in front" towards it)
+      const away = Math.sign(z - 2) || 1, r = rel || 'at';
+      if (r === 'behind') z += away * 4.5; else if (r === 'front') z -= away * 4; else if (r === 'beside') x += 4;
+      return { x, z, R: null, name: this.words((r === 'at' || r === 'in' ? 'bei ' : this.REL_WORD[r] + ' ') + dat) };
+    }
+    return null;
   }
 };
 
@@ -11000,7 +11317,8 @@ const BARKEEP = {
   bags: {}, lastLine: {},
   // the next line of a kind: a shuffled bag, refilled when empty, never the last one again first
   pick(kind) {
-    const L = this.LINES[kind]; if (!L) return null;
+    // (a man's own lines first: Walt does not talk like Hank)
+    const own = this.who && this.who().lines, L = (own && own[kind]) || this.LINES[kind]; if (!L) return null;
     let b = this.bags[kind];
     if (!b || !b.length) { b = this.bags[kind] = L.map((_, i) => i).sort(() => Math.random() - 0.5); if (b.length > 1 && L[b[b.length - 1]] === this.lastLine[kind]) b.unshift(b.pop()); }
     const x = L[b.pop()], text = Array.isArray(x) ? x[0] : x, mood = Array.isArray(x) ? x[1] : this.MOOD[kind];
@@ -11069,7 +11387,7 @@ const BARKEEP = {
   onHarm(info) {
     const N = this.npc;
     this.pending = null; this.attending = false; this.standoff = null;
-    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; return; }
+    if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; CREW.died(this.whoI, { cause: info.cause, by: 'player' }, CREW.seenBy(N)); return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
     // the doctor came to him and patched him up where he was: back to work (no more need to go to him)
     if (info.type === 'treated') {
@@ -11173,7 +11491,7 @@ const BARKEEP = {
     if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 0.5; this.pickIdle(); return; }
     // a gunshot needs the doctor: when it is quiet, he goes (if there still is one)
     // (shot: straight away, as soon as he is on his feet and nobody holds a gun on him; the bar can wait)
-    if (this.hurtT > 1.2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
+    if (this.hurtT > 1.2 && H.needsDoc() && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead' && !(DOC.st === 'call' && DOC.callJob && DOC.callJob.R === this.R)) { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
   },
   // developer tools: out into the middle of the street (to fight in the open) / everything healed, alive again
   toStreet() {
@@ -11232,7 +11550,8 @@ const BARKEEP = {
   settled() {
     const N = this.npc;
     if (this.st === 'dead') return false;
-    if (this.st === 'gone') return this.whoI >= this.WHO.length - 1;
+    if (this.st === 'gone' || this.st === 'closed') return CREW.settled();
+    if (!CREW.settled()) return false;
     return !N || N.hp.dead || ((this.st === 'idle' || this.st === 'duck') && !this.cur && !this.orders.length && !N.hp.needsDoc());
   },
   // walking back to his place behind the bar (from the street, from the room)
@@ -11270,7 +11589,11 @@ const BARKEEP = {
     if (this.props.shotgun) this.props.shotgun.visible = false;
     this.sg = null; this.fightLog = null; this.abortServe(); this.orders.length = 0;
     const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.vx = N.vz = 0; N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle();
+    // (alive again: as far as the crew knows, nothing happened)
+    const m = CREW.m[this.whoI]; if (m) { m.died = null; if (CREW.lastDead === m) CREW.lastDead = null; }
   },
+  // you are nowhere near (for things nobody should see happen)
+  unseen() { return G.room !== this.R && Math.hypot(PLAY.pos.x - this.R.doorW.x, PLAY.pos.z - this.R.doorW.z) > 25; },
   helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'saloon');
@@ -11290,24 +11613,37 @@ const BARKEEP = {
     onWorldEvent((e) => this.event(e));
     WORLDSIM.before((m, soft) => this.beforeSkip(m, soft));
     this.scene0 = scene;
+    CREW.init();
   },
   /* who stands behind the bar: Hank, and after him (if he dies) the ones who take the saloon over (npc/barkeep_fate.js) */
   WHO: [
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
-      mind: 'Die Whiskeylieferung aus Tucson ist überfällig, das ärgert dich. Doc Whitfield hältst du für einen guten Arzt, aber du glaubst, er nimmt heimlich selbst Laudanum. Dein Bruder Walt ist ein Hitzkopf, du sorgst dich um ihn.',
+      mind: 'Die Whiskeylieferung aus Tucson ist überfällig, das ärgert dich. Doc Whitfield hältst du für einen guten Arzt, aber du glaubst, er nimmt heimlich selbst Laudanum. Dein jüngerer Bruder Walt ist ein Hitzkopf, du sorgst dich um ihn. Den alten Jeb kennst du aus dem Krieg.',
       desc: { skin: 2, build: { width: 1.05, belly: 0.4 }, face: { nose: 'big', brows: 1.3 }, hair: { style: 'slick', color: rgb(0x231812) }, beard: { style: 'handlebar', color: rgb(0x231812) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe9e3d3), rolled: true }, vest: rgb(0x2c303a), pants: { color: rgb(0x3b3532) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), gun: false } },
       voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
-    { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
-      mind: 'Du vermisst deinen Bruder Hank und trägst seine Schürze. Den Saloon wolltest du nie, jetzt musst du ihn führen. Dem Doc traust du, sonst kaum jemandem.',
+    { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit. Du bist der stärkste Schläger im Saloon, vielleicht in der ganzen Stadt, und das weißt du: Du hast noch keine Prügelei verloren, Fäuste sind dir lieber als Worte, und wer dir dumm kommt, merkt es schnell. Du prahlst nicht viel, aber du lässt es jeden spüren.', kin: 'Bruder',
+      lines: {
+        brawl: [['Du willst dich mit mir anlegen? Mit mir?', 'amused'], ['Na endlich. Ich hab mich schon gelangweilt.', 'amused'], ['Komm her. Ich zeig dir, wie man das macht.', 'angry'], ['Das war dein letzter Fehler heute.', 'angry'], ['Mich hat noch keiner umgehauen. Du auch nicht.', 'angry']],
+        taunt: [['Bleib liegen. Ist gesünder.', 'amused'], ['Das war noch nicht mal fest.', 'amused'], ['Steh auf, wenn du dich traust.', 'angry'], ['Noch eine Runde? Gern.', 'amused'], ['Hier drin schlägt keiner härter als ich.', 'angry']],
+        won: [['Sag allen, wer dich verprügelt hat. Walt.', 'amused'], ['Raus. Und komm erst wieder, wenn du nüchtern denkst.', 'angry'], ['Ich hab’s dir gesagt.', 'amused']],
+        yield: [['Glück gehabt. Nächstes Mal nicht.', 'angry'], ['Das zählt nicht. Ich war abgelenkt.', 'angry']]
+      },
+      mind: 'Den Saloon führst du mit deinem älteren Bruder Hank; eigentlich wolltest du Pferde züchten. Dem Doc traust du, sonst kaum jemandem.',
       desc: { skin: 1, build: { width: 1.12, belly: 0.15 }, face: { nose: 'normal', brows: 1.2 }, hair: { style: 'short', color: rgb(0x8a4a22) }, beard: { style: 'full', color: rgb(0x9a5a2a) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xd8cdb6), rolled: true }, vest: rgb(0x5a3a28), pants: { color: rgb(0x3e3a34) }, boots: rgb(0x3a2418), belt: rgb(0x2a1d15), apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), gun: false } },
-      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
+      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.95, power: 1.35, skill: 0.85, toughness: 2.1 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
-      mind: 'Dein Rücken plagt dich, und nachts träumst du vom Krieg. Hank und Walt waren wie Söhne für dich. Du beobachtest mehr, als du sagst.',
+      mind: 'Dein Rücken plagt dich, und nachts träumst du vom Krieg, darum nimmst du gern die Nachtschicht. Hank und Walt sind wie Söhne für dich. Du beobachtest mehr, als du sagst.',
       desc: { skin: 2, build: { width: 0.92, belly: 0 }, face: { nose: 'big', brows: 1.1 }, hair: { style: 'bald', color: rgb(0xb0aaa0) }, beard: { style: 'chops', color: rgb(0xb0aaa0) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xcfc6b0), rolled: false }, vest: rgb(0x3a3a30), pants: { color: rgb(0x4a4238) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xcfc8b4), gun: false } },
-      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
+      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } },
+    // when all three are dead: a new owner from out of town (npc/crew.js)
+    { id: 'silas', name: 'Silas', age: 'Mitte vierzig, aus Tucson, schwarzer Hut, Revolver am Gürtel', more: 'Geschäftsmann, vorsichtig, höflich und kühl; du hast den Saloon billig gekauft, weil hier drei Barkeeper gestorben sind. Darum trägst du den Revolver am Gürtel und hast die Schrotflinte unter der Theke.', owner: true,
+      mind: 'Du kennst niemanden in Dust Creek. Du willst Geld verdienen und am Leben bleiben, in dieser Reihenfolge nicht unbedingt. Fremden traust du nicht.',
+      desc: { skin: 1, build: { width: 1.0, belly: 0.1 }, face: { nose: 'normal', brows: 1.0 }, hair: { style: 'short', color: rgb(0x2a2420) }, beard: { style: 'stache', color: rgb(0x2a2420) },
+        outfit: { hat: { style: 'cowboy', color: rgb(0x1e1a18), band: rgb(0x4a3a2a) }, bandana: null, shirt: { color: rgb(0xd9d4c8), rolled: false }, vest: rgb(0x23242a), pants: { color: rgb(0x2e2c2a) }, boots: rgb(0x1e1612), belt: rgb(0x1e1612), apron: null, bowtie: rgb(0x1e1a18), gun: true } },
+      voice: { male: true, pitch: 1.02, length: 1.0, noiseW: 0.7, browserPitch: 0.95, rate: 1.0, prefer: ['killian'] }, fight: { courage: 0.75, power: 1.1, skill: 0.75, toughness: 1.5 } }
   ],
   whoI: 0,
   who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },
@@ -11365,13 +11701,13 @@ const BARKEEP = {
     this.remember('Er hat ' + (sc.outside >= sc.shots ? 'vor deinem Saloon' : 'in deinem Saloon') + ' herumgeschossen (' + bits.join(', ') + ').');
   },
   // the settings button: he has never seen you before
-  forget() { this.grudge = 0; this.pending = null; this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
+  forget() { if (CREW.m.length) CREW.forget(); this.grudge = 0; this.pending = null; this.att = 0; this.recent = []; this.standoff = null; this.mem = []; this.served = 0; this.cool = {}; this.wasInside = false; this.damage = { holes: 0, glass: 0 }; this.sc = null; },
   persona() {
     const B = this;
     return {
       rules: [
         'Du bist ' + B.who().name + ', der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
-        'Wer du bist: ' + B.who().age + '. ' + B.who().more + ' Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.' + (B.whoI > 0 ? ' Du hast den Saloon übernommen, nachdem ' + B.WHO.slice(0, B.whoI).map((w) => w.name).join(' und dann ') + ' tot war' + (B.whoI > 1 ? 'en' : '') + '.' : ''),
+        'Wer du bist: ' + B.who().age + '. ' + B.who().more + ' Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.' + ' ' + CREW.context(B.whoI),
         'Dein Kopf ist nicht leer: ' + (B.who().mind || '') + ' Du bist neugierig und fragst ab und zu selbst nach, wenn dich etwas wundert (was er hier will, was passiert ist, woher er kommt), statt nur zu antworten. Wenn du etwas über ihn gehört hast, sprichst du ihn darauf an.',
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
@@ -11534,8 +11870,9 @@ const BARKEEP = {
     if (this.act === 'stroll') { const z = this.Z0 + 0.4 + Math.random() * (this.Z1 - this.Z0 - 0.8), p = this.roomPt(this.X.stand, z, this._v); this.npc.goTo(p.x, p.z, this.faceYaw); }
   },
   update(dt) {
+    CREW.update(dt);
     const N = this.npc;
-    if (!N) { if (this.st === 'gone') this.fate(dt); return; }
+    if (!N) return;
     this.t += dt;
     const inside = G.room === this.R;
     this.att *= 1 - dt * 0.002;
@@ -11838,22 +12175,29 @@ const BARKEEP = {
     });
   }
 };
-// what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
+// what the barkeeper remembers of you lasts between sessions (until the memories are reset in the settings); the others of the crew with him
 SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3), grudge: +BARKEEP.grudge.toFixed(3), body: BARKEEP.npc ? BARKEEP.npc.hp.save() : null,
-  whoI: BARKEEP.whoI, temper: BARKEEP.temper || null, poisonNext: !!BARKEEP.poisonNext, gone: BARKEEP.st === 'gone', diedAt: BARKEEP.diedAt || null, killedBy: BARKEEP.killedBy || null, cause: BARKEEP.cause || null }), (d) => {
-  if (d) { BARKEEP.temper = d.temper || null; BARKEEP.poisonNext = !!d.poisonNext; }
+  whoI: BARKEEP.whoI, temper: BARKEEP.temper || null, poisonNext: !!BARKEEP.poisonNext, closed: BARKEEP.st === 'gone' || BARKEEP.st === 'closed', diedAt: BARKEEP.diedAt || null, killedBy: BARKEEP.killedBy || null, cause: BARKEEP.cause || null,
+  metNew: BARKEEP.metNew !== false, asked: BARKEEP.npc && BARKEEP.npc.asked ? [...BARKEEP.npc.asked] : [], crew: CREW.save() }), (d) => {
   if (!d) return;
-  // who is behind the bar (a successor, or nobody since the body was taken away)
-  BARKEEP.diedAt = d.diedAt || null; BARKEEP.killedBy = d.killedBy || null; BARKEEP.cause = d.cause || null;
-  const want = clamp(d.whoI | 0, 0, BARKEEP.WHO.length - 1);
-  if (want !== BARKEEP.whoI && BARKEEP.npc) { BARKEEP.npc.dispose(); BARKEEP.whoI = want; BARKEEP.makeNpc(BARKEEP.scene0); BARKEEP.st = 'idle'; BARKEEP.pickIdle(); }
-  if (d.gone) { if (BARKEEP.npc) BARKEEP.npc.dispose(); BARKEEP.npc = null; BARKEEP.st = 'gone'; }
-  BARKEEP.grudge = clamp(+d.grudge || 0, 0, 1);
-  if (d.body && BARKEEP.npc && !d.gone) { BARKEEP.npc.hp.load(d.body); if (BARKEEP.npc.hp.dead) BARKEEP.st = 'dead'; else if (BARKEEP.npc.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { BARKEEP.st = 'hurt'; BARKEEP.hurtT = 0; } }
-  BARKEEP.att = clamp(+d.att || 0, -1, 1);
-  BARKEEP.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
-  BARKEEP.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
-  BARKEEP.served = Math.max(0, d.served | 0);
+  const B = BARKEEP, closed = !!(d.closed || d.gone);
+  B.temper = d.temper || null; B.poisonNext = !!d.poisonNext; B.metNew = d.metNew !== false;
+  // who is behind the bar (one of the crew, or nobody: the saloon is empty or closed)
+  B.diedAt = d.diedAt || null; B.killedBy = d.killedBy || null; B.cause = d.cause || null;
+  const want = clamp(d.whoI | 0, 0, B.WHO.length - 1);
+  if (want !== B.whoI && B.npc) { B.npc.dispose(); B.npc = null; }
+  B.whoI = want;
+  if (closed) { if (B.npc) B.npc.dispose(); B.npc = null; B.st = 'closed'; }
+  else if (!B.npc) { B.makeNpc(B.scene0); B.st = 'idle'; B.pickIdle(); }
+  B.grudge = clamp(+d.grudge || 0, 0, 1);
+  if (d.body && B.npc) { B.npc.hp.load(d.body); if (B.npc.hp.dead) B.st = 'dead'; else if (B.npc.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { B.st = 'hurt'; B.hurtT = 0; } }
+  if (B.npc && Array.isArray(d.asked)) B.npc.asked = new Set(d.asked.filter((x) => typeof x === 'string'));
+  B.att = clamp(+d.att || 0, -1, 1);
+  B.damage = { holes: Math.max(0, (d.damage && d.damage.holes) | 0), glass: Math.max(0, (d.damage && d.damage.glass) | 0) };
+  B.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(-10) : [];
+  B.served = Math.max(0, d.served | 0);
+  if (d.crew) CREW.load(d.crew); else CREW.legacy(want, closed);
+  if (B.npc) CREW.m[B.whoI].d = null;
 });
 
 // ==== npc/barkeep_fate.js ====
@@ -11865,8 +12209,8 @@ SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, 
             or stay too long, and he fires (a warning into the ceiling first). A shotgun puts you down; you come to
             at the doctor's. Having paid you back, the grudge drops.
    Death is for good: the body lies where it fell until the undertaker comes (two hours later, unseen, or while you
-   sleep); a fresh grave by the church. A day later a new barkeeper comes (his brother, then an old friend), who
-   knows what happened, and does not like you for it. */
+   sleep); a fresh grave by the church. Then the next one of the crew (npc/crew.js) takes over; what he knows of it
+   depends on what he saw (CREW.died / learnKiller). */
 Object.assign(BARKEEP, {
   /* how a successor takes the stranger who killed the man before him (picked at random, weighted by the man):
      angry (no drink for you, cold words), afraid (serves you, shaking, wants you gone), fists, the shotgun, or
@@ -11889,8 +12233,8 @@ Object.assign(BARKEEP, {
   },
   revPick(kind) {
     const L = this.REV_LINES[kind]; if (!L) return null;
-    const x = L[Math.floor(Math.random() * L.length)], W = this.WHO[Math.max(0, this.whoI - 1)];
-    return { text: x[0].replace('{n}', W ? W.name : 'er').replace('{k}', this.who().kin || 'Freund'), mood: x[1] };
+    const x = L[Math.floor(Math.random() * L.length)], D = CREW.lastDead, n = D ? this.WHO[D.i].name : 'er';
+    return { text: x[0].replace('{n}', n).replace('{k}', D ? CREW.kin(this.whoI, D.i) : 'Freund'), mood: x[1] };
   },
   revShout(kind) { const l = this.revPick(kind); if (!l || !this.npc.canBeHeard()) return; SAY.hide(this.npc); this.npc.speak(l.text, undefined, l.mood, true); },
   // the floor a grudge cannot fall under: what was done to his body
@@ -11990,59 +12334,40 @@ Object.assign(BARKEEP, {
     else { const ray = GUN.ray; ray.set(mz, dir); ray.near = 0; ray.far = 30; const h = ray.intersectObjects(W.worldMeshes.concat([this.R.mesh]), false)[0]; if (h) FX.impact(h, dir); }
   },
 
-  /* ---- death: the body, the grave, the next one ---- */
+  /* ---- death: the body, the grave; who takes over is up to the crew (npc/crew.js) ---- */
   removeBody() {
     const N = this.npc; if (!N || !N.hp.dead) return;
-    const W = this.who();
+    const W = this.who(), m = CREW.m[this.whoI], known = !!(m && m.died && m.died.known);
     GRAVES.add(W.name, TIME.day());
-    DOC.knows.push(W.name + ', der Barkeeper, ist tot (' + (N.hp.cause || 'erschossen') + ', ' + TIME.stamp(this.diedAt) + '). ' + (this.killedBy === 'player' ? 'Jeder in der Stadt weiß, dass der Fremde es war.' : ''));
+    DOC.knows.push(W.name + ', der Barkeeper, ist tot (' + (N.hp.cause || 'erschossen') + ', ' + TIME.stamp(this.diedAt) + '). ' + (this.killedBy === 'player' ? (known ? 'Die ihn gesehen haben, sagen: Der Fremde war es.' : 'Wer es war, weiß keiner.') : ''));
     if (DOC.knows.length > 6) DOC.knows.shift();
-    if (this.killedBy === 'player') DOC.feel(-0.4);
+    if (this.killedBy === 'player' && known) DOC.feel(-0.4);
+    // whoever came down and stayed with him goes with the body
+    for (const h of CREW.helpers.slice()) if (h.ph !== 'dead') CREW.gone(h);
     N.dispose();
-    this.npc = null; this.st = 'gone'; this.goneAt = TIME.min;
+    this.npc = null; this.st = 'closed'; this.goneAt = TIME.min;
+    CREW.buried(this.whoI);
   },
-  // a new barkeeper takes over (a day after)
-  arrive() {
-    const prev = this.who();
-    this.whoI++;
-    const W = this.who(), N = this.makeNpc(this.scene0);
-    // he knows the story, and he has his own view of you
-    this.mem = []; this.recent = []; this.served = 0; this.damage = { holes: 0, glass: 0 }; this.att = 0; this.cool = {}; this.bags = {};
-    N.talkLog = [];
-    this.remember('Du hast den Saloon übernommen, nachdem ' + prev.name + ' ' + (this.cause || 'gestorben') + ' ist (' + TIME.stamp(this.diedAt) + ').');
-    if (this.killedBy === 'player') {
-      this.remember('Jeder sagt, der Fremde hat ' + prev.name + ' umgebracht. Du hast ihn nie gesehen, aber du weißt, wie er aussieht.');
-      // how he takes it: not always the same
-      const T = this.TEMPERS, w = T.map((t) => t.w * (t.need ? t.need(W) : 1));
-      let r = Math.random() * w.reduce((a, b) => a + b, 0), i = 0; while (r > w[i] && i < T.length - 1) { r -= w[i]; i++; }
-      const t = T[i]; this.temper = t.id; this.grudge = t.grudge; this.att = t.att; this.remember(t.mem);
-      if (t.id === 'poison') this.poisonNext = true;
-    } else { this.grudge = 0; this.temper = null; }
-    this.st = 'idle'; this.pickIdle(); this.newT = TIME.min;
-    worldEvent('newBarkeep', N.pos.x, N.pos.y, N.pos.z, { by: 'world', who: W.id });
-  },
-  // developer tools: the next one takes over now (the one there dies off-screen, buried, the next arrives)
+  // developer tools: the one there dies off-screen and is buried, the next one alive takes over now
   devNext() {
-    if (this.whoI >= this.WHO.length - 1) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
+    if (!CREW.living().some((m) => m.i !== this.whoI)) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
     const N = this.npc;
-    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; }
+    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; const m = CREW.m[this.whoI]; if (m.died) { m.died.by = 'world'; m.died.known = false; m.died.cause = 'gestorben'; } }
     if (this.npc) this.removeBody();
-    this.arrive();
-    TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
+    const hold = CREW.hold; CREW.hold = true; CREW.update(0); CREW.hold = hold;
+    if (this.npc) TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
   },
   // what his temper does from moment to moment
   temperUpdate(dt, inside, dP) {
     const N = this.npc; if (!N || !this.temper || !inside) return;
     if (this.temper === 'afraid' && dP < 5) N.fear = G.time + 0.5;
   },
-  // called from update while dead or gone
+  // called from update while dead: the body is taken away after a while, when nobody sees it
   fate(dt) {
-    const away = G.room !== this.R && Math.hypot(PLAY.pos.x - this.R.doorW.x, PLAY.pos.z - this.R.doorW.z) > 25;
-    if (this.st === 'dead' && this.npc && TIME.min - (this.diedAt || TIME.min) > 120 && away) this.removeBody();
-    if (this.st === 'gone' && TIME.min - (this.diedAt || 0) >= 1440 && away && this.whoI < this.WHO.length - 1) this.arrive();
+    if (this.st === 'dead' && this.npc && TIME.min - (this.diedAt || TIME.min) > 120 && this.unseen()) this.removeBody();
   },
-  // the successor's first look at you
-  greetSuccessor() { if (this.whoI > 0 && !this.metNew && this.killedBy === 'player') { this.metNew = true; this.revShout('successor'); return true; } return false; }
+  // the next one's first look at you, when he knows what you did
+  greetSuccessor() { if (this.temper && !this.metNew && CREW.lastDead && this.killedBy !== 'world') { this.metNew = true; this.revShout('successor'); return true; } return false; }
 });
 
 /* ---- graves by the church (fresh earth, a wooden cross); kept in the save ---- */
@@ -12061,6 +12386,468 @@ const GRAVES = {
   rebuild() { for (let i = 0; i < this.list.length; i++) this.build(i); }
 };
 SAVE.part('graves', () => GRAVES.list.slice(), (d) => { GRAVES.list = Array.isArray(d) ? d.filter((g) => g && typeof g.name === 'string').slice(0, 6) : []; GRAVES.rebuild(); });
+
+// ==== npc/crew.js ====
+/* ---------- the saloon's crew: Hank, Walt and Jeb, in shifts; who saw what ----------
+   All three live. Whose shift it is stands behind the bar (BARKEEP runs him); the others are upstairs in their
+   rooms, awake or asleep. Three of them: Hank 10–18, Walt 18–2, Jeb 2–10; two: twelve hours each; one alone works
+   10–2 and the saloon is empty at night. The change over waits until the one there is free; when you are in the
+   saloon you see it (one comes down the stairs, the other goes up, a word between them), otherwise it just happens.
+   Each keeps his own memory of you (BARKEEP's per-person fields are swapped in and out: KEYS).
+   A shot in the saloon (or right outside), a fight, glass: whoever upstairs hears it comes down (awake: a few
+   seconds; asleep: only shots or a long racket wake him, later). Down there he sees what is going on: the one at
+   the bar hurt → presses the wound or runs for the doctor; a fight → Walt (and Hank) join in, Jeb shouts; a body →
+   on his knees by it, then he stays with it. He goes back up once it is over.
+   Witnesses: only who saw it (in the room) or came down while you were still there knows you did it; everybody
+   else knows someone is dead, not who did it (until gossip tells them). A death: the next one alive takes over once
+   the body is taken away; when all three are dead the saloon is closed, and three days later a new owner from
+   out of town (cautious, armed) opens it again. */
+const CREW = {
+  m: [], helpers: [], told: new Set(), closedAt: null, lastDead: null, hold: false, _v: new THREE.Vector3(), _w: new THREE.Vector3(),
+  KEYS: ['mem', 'att', 'grudge', 'temper', 'served', 'damage', 'recent', 'poisonNext', 'cool', 'bags', 'lastLine', 'shotAt', 'metNew', 'seenAt'],
+  OWNER: 3,
+  // what one was to another (for "{n} war mein {k}")
+  KIN: { hank: { walt: 'Bruder', jeb: 'alter Freund' }, walt: { hank: 'Bruder', jeb: 'Freund' }, jeb: { hank: 'alter Freund', walt: 'Freund' } },
+  LINES: {
+    down: [['Was ist hier los?', 'surprised'], ['Was war das?', 'surprised'], ['Ich hab Schüsse gehört!', 'surprised']],
+    help: [['Halt still, ich drück drauf.', 'neutral'], ['Ganz ruhig. Ich bin da.', 'neutral'], ['Nicht bewegen. Das wird wieder.', 'neutral']],
+    fetch: [['Ich hol den Doc!', 'surprised'], ['Halt durch, ich lauf zum Doc!', 'surprised']],
+    docCall: [['Doc! Schnell, in den Saloon! Einer ist angeschossen!', 'surprised'], ['Doc, komm mit! Im Saloon verblutet einer!', 'surprised']],
+    join: [['Lass ihn in Ruhe!', 'angry'], ['Jetzt bin ich dran!', 'angry'], ['Du legst dich mit uns beiden an?', 'angry']],
+    stop: [['Hört auf! Hört sofort auf!', 'angry'], ['Schluss jetzt!', 'angry']],
+    grief: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad'], ['Wer hat das getan?', 'sad']],
+    griefSeen: [['Nein… nein, nein.', 'sad'], ['Gott im Himmel…', 'sad']],
+    caught: [['Du warst das.', 'angry'], ['Du Schwein. Du hast ihn umgebracht.', 'angry']],
+    out: [['Verschwinde. Sofort.', 'angry'], ['Raus hier. Lass uns allein.', 'sad']],
+    quiet: [['Na gut. Ich geh wieder hoch.', 'neutral'], ['Ruft, wenn was ist.', 'neutral']],
+    hands: [['Nicht schießen!', 'surprised'], ['Ganz ruhig, Mister…', 'neutral']],
+    takeOver: [['Ich übernehme, {o}. Leg dich hin.', 'neutral'], ['Alles ruhig, {o}? Ich mach weiter.', 'neutral'], ['Geh schlafen, {o}. Ich hab’s.', 'neutral']],
+    handOver: [['Ruhiger Tag. Bis morgen.', 'sleepy'], ['Pass auf den da auf.', 'whisper'], ['Die Theke gehört dir.', 'sleepy']]
+  },
+  bags: {},
+  line(kind, o) {
+    const L = this.LINES[kind], B = this.bags[kind] || (this.bags[kind] = []);
+    if (!B.length) for (let i = 0; i < L.length; i++) B.splice(Math.floor(Math.random() * (B.length + 1)), 0, i);
+    const x = L[B.pop()]; return { text: x[0].replace('{o}', o || ''), mood: x[1] };
+  },
+  say(N, kind, o) { if (!N || N.hp.dead || N.hp.out) return false; const l = this.line(kind, o); SAY.hide(N); return N.speak(l.text, undefined, l.mood, true); },
+  blank() { return { mem: [], att: 0, grudge: 0, temper: null, served: 0, damage: { holes: 0, glass: 0 }, recent: [], poisonNext: false, cool: {}, bags: {}, lastLine: {}, shotAt: null, metNew: true, seenAt: null, talkLog: [], asked: [], body: null, bodyAt: null }; },
+  init() {
+    this.m = BARKEEP.WHO.map((W, i) => ({ i, id: W.id, alive: true, away: i >= this.OWNER, d: i === BARKEEP.whoI ? null : this.blank(), noise: 0, comeT: 0, died: null }));
+    onWorldEvent((e) => this.heard(e));
+    WORLDSIM.before((m, soft) => this.beforeSkip(m, soft));
+  },
+  // back to the start (tests, "Erinnerungen zurücksetzen" does only the memories)
+  reset() {
+    const B = BARKEEP;
+    for (const h of this.helpers) h.npc.dispose();
+    this.helpers.length = 0; this.closedAt = null; this.lastDead = null; this.told.clear();
+    if (B.npc) B.npc.dispose();
+    this.m.forEach((m) => { m.alive = true; m.away = m.i >= this.OWNER; m.d = this.blank(); m.noise = 0; m.comeT = 0; m.died = null; });
+    B.whoI = 0; this.m[0].d = null; B.makeNpc(B.scene0); B.st = 'idle'; B.pickIdle();
+    B.temper = null; B.grudge = 0; B.poisonNext = false; B.killedBy = null; B.diedAt = null; B.cause = null; B.metNew = true; B.known = false; B.forget();
+  },
+  forget() { for (const m of this.m) if (m.d) { const b = m.d.body, at = m.d.bodyAt; m.d = this.blank(); m.d.body = b; m.d.bodyAt = at; } this.told.clear(); },
+  W(i) { return BARKEEP.WHO[i]; },
+  living() { return this.m.filter((m) => m.alive && !m.away); },
+  // the shifts of those who are left: [index, from hour, to hour]
+  shifts() {
+    const L = this.living().map((m) => m.i);
+    if (L.length >= 3) return [[L[0], 10, 18], [L[1], 18, 2], [L[2], 2, 10]];
+    if (L.length === 2) return [[L[0], 10, 22], [L[1], 22, 10]];
+    return L.length ? [[L[0], 10, 2]] : [];
+  },
+  span(h, a, b) { return a < b ? h >= a && h < b : h >= a || h < b; },
+  dutyAt(h) { if (this.hold) { const L = this.living(); return L.length ? (L.some((m) => m.i === BARKEEP.whoI) && BARKEEP.st !== 'closed' ? BARKEEP.whoI : L[0].i) : -1; } for (const [i, a, b] of this.shifts()) if (this.span(h, a, b)) return i; return -1; },
+  // asleep upstairs: eight hours, in the middle of the time off
+  asleep(i, h) {
+    const s = this.shifts().find((x) => x[0] === i); if (!s) return true;
+    const len = ((s[2] - s[1]) + 24) % 24 || 24, st = (s[2] + (24 - len - 8) / 2 + 24) % 24;
+    return this.span(h, st, (st + 8) % 24);
+  },
+  shiftWords() {
+    const S = this.shifts(), w = (a) => a + ' Uhr';
+    if (!S.length) return 'Der Saloon ist geschlossen.';
+    return 'Ihr arbeitet in Schichten: ' + S.map(([i, a, b]) => this.W(i).name + ' von ' + w(a) + ' bis ' + w(b)).join(', ') + '. Wer frei hat, ist oben in seinem Zimmer und schläft oder ruht sich aus.';
+  },
+  // for the one behind the bar (his AI part): who else is there, who is dead
+  context(i) {
+    const out = [], dead = this.m.filter((m) => m.died && m.i !== i);
+    if (i === this.OWNER) out.push('Du hast den Saloon gekauft, nachdem alle drei Barkeeper davor gestorben sind: ' + dead.map((m) => this.W(m.i).name).join(', ') + '. Du kennst sie nur aus Erzählungen.');
+    else {
+      const alive = this.living().filter((m) => m.i !== i).map((m) => this.W(m.i).name);
+      out.push(this.shiftWords());
+      if (alive.length) out.push(alive.join(' und ') + (alive.length > 1 ? ' leben' : ' lebt') + ' mit dir oben über dem Saloon.');
+      for (const m of dead) out.push(this.W(m.i).name + ' ist tot (' + (m.died.cause || 'gestorben') + ', ' + TIME.stamp(m.died.at) + '). ' + (m.died.by !== 'player' ? '' : m.died.known ? 'Der Fremde war es.' : 'Wer es war, weiß niemand.'));
+    }
+    return out.join(' ');
+  },
+  kin(i, j) { const a = this.W(i), b = this.W(j); return (this.KIN[a.id] && this.KIN[a.id][b.id]) || 'Vorgänger'; },
+
+  /* ---- the one behind the bar: his own memory in and out of BARKEEP ---- */
+  stash(i) {
+    const B = BARKEEP, d = this.blank();
+    for (const k of this.KEYS) d[k] = B[k];
+    if (B.npc) { d.talkLog = B.npc.talkLog || []; d.asked = B.npc.asked ? [...B.npc.asked] : []; d.body = B.npc.hp.save(); d.bodyAt = TIME.min; }
+    this.m[i].d = d;
+  },
+  unstash(i) {
+    const B = BARKEEP, d = this.m[i].d || this.blank();
+    for (const k of this.KEYS) B[k] = d[k] !== undefined ? d[k] : this.blank()[k];
+    if (!B.damage) B.damage = { holes: 0, glass: 0 };
+    B.pending = null; B.standoff = null; B.sc = null; B.fightLog = null; B.orders.length = 0; B.cur = null; B.wasInside = G.room === B.R;
+    this.m[i].d = null;
+    return d;
+  },
+  // he takes his place behind the bar: a body with his memory and his wounds (healed a little since)
+  onDuty(i, d, where) {
+    const B = BARKEEP;
+    B.whoI = i; const N = B.makeNpc(B.scene0);
+    N.talkLog = d.talkLog || []; N.asked = new Set(d.asked || []);
+    if (d.body) { N.hp.load(d.body); if (d.bodyAt !== null && N.hp.heal) N.hp.heal(Math.max(0, TIME.min - d.bodyAt)); }
+    if (where) { N.pos.copy(where); N.room = roomAt(N.pos.x, N.pos.z, 0.05, N.pos.y + 0.1); N.yaw = B.yawFor(1); N.faceYaw = null; }
+    B.st = where ? 'return' : 'idle'; B.returnT = 0.3; B.pickIdle();
+    return N;
+  },
+  // the newest things the one going off tells the one coming on (only what is about you)
+  handTale(from, toD, toI) {
+    const facts = (from.d ? from.d.mem : BARKEEP.mem).filter((m) => !/hat dir erzählt/.test(m) && /\bEr\b|Fremde/.test(m)).slice(-3);
+    for (const f of facts) { const k = from.i + '>' + toI + ':' + f; if (this.told.has(k)) continue; this.told.add(k); toD.mem.push(GOSSIP.told(this.W(from.i), f)); if (toD.mem.length > 10) toD.mem.shift(); }
+  },
+  // where the stairs are (room frame of the saloon): the foot, and a point up in the opening
+  stair(i, out) { const R = BARKEEP.R, h = (R.ceilY - R.floorY) / 14, x = i < 0 ? 0.25 : -0.6 - i * 0.33; const p = rwp(R, x, R.floorY + (i < 0 ? 0 : (i + 1) * h), R.z0 + 0.6); return out.set(p.x, groundAt(p.x, p.z, p.y + 0.4), p.z); },
+  change(cur, want) {
+    const B = BARKEEP, see = G.room === B.R && !G.abstract;
+    if (cur >= 0) this.stash(cur);
+    const outN = cur >= 0 ? B.npc : null; B.npc = null;
+    if (want >= 0 && cur >= 0) this.handTale(this.m[cur], this.m[want].d || (this.m[want].d = this.blank()), want);
+    if (outN) { if (see) this.leave(outN, cur, want); else outN.dispose(); }
+    for (const k in B.props) B.props[k].visible = false;
+    if (want < 0) { B.st = 'closed'; return; }
+    const d = this.unstash(want);
+    const N = this.onDuty(want, d, see ? this.stair(8, this._v) : null);
+    if (see && outN) setTimeout(() => { if (B.npc === N && !N.hp.dead) this.say(N, 'takeOver', this.W(cur).name); }, 2400);
+    return N;
+  },
+  // the one going off: up the stairs (a helper on his way up), a word to the one coming on
+  leave(N, i, next) {
+    const h = this.wire(N, i);
+    h.ph = 'up'; h.t = 0; N.hurry = 1;
+    const f = this.stair(-1, this._v); N.walkTo(f.x, f.z);
+    if (next >= 0) setTimeout(() => { if (!N.hp.dead) this.say(N, 'handOver'); }, 4200);
+  },
+
+  /* ---- hearing it upstairs ---- */
+  heard(e) {
+    const B = BARKEEP, R = B.R; if (!R || !this.m.length) return;
+    const inR = e.room === 'saloon' || roomAt(e.x, e.z, 0.05, (e.y || 0) + 0.1) === R || (e.npc && B.npc && e.npc === B.npc.id && B.npc.room === R);
+    const outside = !inR && Math.hypot(e.x - R.doorW.x, e.z - R.doorW.z) < 16;
+    const k = { shot: 1, npcShot2: 1, npcShot: 0.6, npcDead: 0.5, npcKo: 0.35, npcDown: 0.3, npcSlam: 0.35, punch: 0.15, npcPunch: 0.15, glass: 0.2 }[e.type];
+    if (!k || (!inR && !(outside && (e.type === 'shot' || e.type === 'npcShot2')))) return;
+    // those at the scene see it: you did it
+    for (const h of this.helpers) if (h.npc.room === R && !h.npc.hp.dead && !h.npc.hp.out && e.by === 'player' && /npcShot|npcDead|npcKo|npcDown|shot/.test(e.type)) {
+      h.saw = (h.saw || 0) + 1;
+      const who = e.npc && NPCS.list.find((n) => n.id === e.npc && n !== h.npc);
+      if (who && e.type === 'npcShot' && !h.said['saw' + who.id]) { h.said['saw' + who.id] = 1; this.note(h.i, 'Du hast gesehen, wie der Fremde auf ' + who.name + ' geschossen hat (' + TIME.stamp() + ').'); }
+    }
+    const hr = TIME.hour();
+    for (const m of this.living()) {
+      if (m.i === B.whoI && B.npc) continue;
+      if (this.helpers.some((h) => h.i === m.i)) continue;
+      const sl = this.asleep(m.i, hr), gun = e.type === 'shot' || e.type === 'npcShot2';
+      m.noise = (m.noise || 0) * Math.exp(-(G.time - (m.noiseT || G.time)) / 30) + k * (sl && !gun ? 0.35 : 1) * (outside ? 0.7 : 1); m.noiseT = G.time;
+      if (m.noise >= 0.9 && !m.comeT) { m.comeT = G.time + (sl ? 11 + Math.random() * 9 : 3.5 + Math.random() * 4); m.why = gun ? 'shots' : 'noise'; m.wasAsleep = sl; }
+    }
+  },
+
+  /* ---- the ones who came down ---- */
+  makeBody(i, pos, yaw) {
+    const W = this.W(i), m = this.m[i];
+    const N = new NPC({ attitude: () => (m.d ? m.d.att : 0), id: 'crew_' + W.id, name: W.name, room: null, scene: BARKEEP.scene0, pos, yaw, desc: W.desc });
+    N.room = roomAt(pos.x, pos.z, 0.05, pos.y + 0.1); N.voiceProfile = W.voice; N.role = W.name + ' aus dem Saloon (' + W.age + ')';
+    if (m.d && m.d.body) { N.hp.load(m.d.body); if (m.d.bodyAt !== null && N.hp.heal) N.hp.heal(Math.max(0, TIME.min - m.d.bodyAt)); }
+    return this.wire(N, i);
+  },
+  wire(N, i) {
+    const W = this.W(i), m = this.m[i];
+    if (!m.d) m.d = this.blank();
+    const h = { i, npc: N, ph: 'down', t: 0, said: {}, saw: 0 };
+    N.id = 'crew_' + W.id; N.persona = null; N.held = () => [];
+    N.gossip = { facts: () => m.d.mem.filter((x) => !/hat dir erzählt/.test(x) && /\bEr\b|Fremde/.test(x)), hear: (from, f) => this.note(i, GOSSIP.told(from, f)) };
+    N.fight = new Brawler(N, W.fight); N.fight.on = false;
+    N.onHarm = (info) => this.helperHarm(h, info); N.onBump = null;
+    this.helpers.push(h);
+    return h;
+  },
+  note(i, text) { const d = this.m[i].d || (this.m[i].d = this.blank()); d.mem.push(text); if (d.mem.length > 10) d.mem.shift(); if (/Fremde.*(umgebracht|erschossen|getötet|erschlagen)/.test(text)) this.learnKiller(i); },
+  come(m) {
+    m.comeT = 0; m.noise = 0;
+    const h = this.makeBody(m.i, this.stair(10, this._v).clone(), 0);
+    const f = this.stair(-1, this._w); h.npc.hurry = m.why === 'shots' ? 2.1 : 1.5; h.npc.goTo(f.x, f.z);
+    this.note(m.i, (m.wasAsleep ? 'Du bist oben von ' + (m.why === 'shots' ? 'Schüssen' : 'Lärm') + ' aufgewacht' : 'Du hast oben ' + (m.why === 'shots' ? 'Schüsse' : 'Lärm') + ' gehört') + ' und bist in den Saloon hinuntergelaufen (' + TIME.stamp() + ').');
+  },
+  helperHarm(h, info) {
+    const N = h.npc, m = this.m[h.i];
+    if (info.type === 'dead') { h.ph = 'dead'; h.diedAt = TIME.min; this.died(h.i, info, this.seenBy(N)); return; }
+    if (info.type === 'shot') { if (info.zone === 'hat') return; this.note(h.i, 'Er hat dir ' + zoneInto(info.zone, info.side) + ' geschossen (' + TIME.stamp() + ').'); m.d.att = -1; m.d.grudge = Math.min(1, m.d.grudge + 0.6); m.d.shotAt = TIME.min; h.ph = 'hurt'; h.t = 0; if (N.fight.on) N.fight.stop(); return; }
+    if (info.type === 'blow' && !N.fight.on && h.ph !== 'hurt' && !N.hp.busy()) {
+      m.d.att = Math.max(-1, m.d.att - 0.1); m.d.grudge = Math.min(1, m.d.grudge + 0.05);
+      if (this.W(h.i).fight.courage >= 0.5) { h.ph = 'brawl'; N.fight.start(); } else { h.ph = 'up'; this.toStairs(h); }
+    }
+  },
+  // anyone (other than the dead one) who has it in view: in the same room, awake
+  seenBy(N) {
+    const R = N.room || null, by = [];
+    const B = BARKEEP.npc;
+    if (B && B !== N && !B.hp.dead && !B.hp.out && (B.room || null) === R) by.push('barkeep');
+    for (const h of this.helpers) if (h.npc !== N && !h.npc.hp.dead && !h.npc.hp.out && (h.npc.room || null) === R) by.push(h.npc.id);
+    const D = DOC.npc; if (D && !D.hp.dead && !D.hp.out && (D.room || null) === R && (R || Math.hypot(D.pos.x - N.pos.x, D.pos.z - N.pos.z) < 30)) by.push('doctor');
+    return by;
+  },
+  toStairs(h) { const f = this.stair(-1, this._v); h.npc.hurry = 1; h.npc.walkTo(f.x, f.z); },
+  aimedAt(N) {
+    if (!(GUN.camW > 0.5)) return false;
+    const cam = G.cam, d = this._v.set(N.pos.x, N.pos.y + 1.4, N.pos.z).sub(cam.position), L = d.length(); if (L > 18) return false;
+    d.divideScalar(L); return cam.getWorldDirection(this._w).dot(d) > Math.cos(0.12 + 0.5 / L);
+  },
+  updHelper(h, dt) {
+    const N = h.npc, B = BARKEEP, BN = B.npc, R = B.R, H = N.hp;
+    h.t += dt;
+    if (h.ph === 'dead') return;
+    if (H.dead) { h.ph = 'dead'; return; }
+    N.handShape[0] = N.handShape[1] = null;
+    if (H.busy() || H.out) { N.free(0); N.free(1); N.crouchT = 0; return; }
+    const inside = G.room === N.room && !!N.room, dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+    // a gun on him: hands up, whatever he was doing
+    if (inside && this.aimedAt(N) && h.ph !== 'up') {
+      if (N.fight.on) N.fight.stop();
+      N.stop(); N.crouchT = 0; N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); N.fear = G.time + 0.6;
+      if (!h.said.hands || G.time - h.said.hands > 20) { h.said.hands = G.time; this.say(N, 'hands'); }
+      if (h.ph === 'brawl') h.ph = 'look';
+      return;
+    }
+    if (h.ph === 'brawl') { const r = N.fight.update(dt); if (r) { h.ph = 'look'; h.t = 0; this.note(h.i, 'Du hast dich mit dem Fremden geprügelt' + (r === 'won' ? ' und ihn umgehauen' : '') + ' (' + TIME.stamp() + ').'); } return; }
+    if (h.ph === 'hurt') {
+      // hurt: to the doctor (if there is one), then back up
+      if (!H.needsDoc() || !DOC.npc || DOC.npc.hp.dead) { h.ph = 'up'; this.toStairs(h); return; }
+      const sp = DOC.spot('patient');
+      if (!h.docAsked) { if (Math.hypot(N.pos.x - sp.x, N.pos.z - sp.z) > 0.8) { if (!N.walking()) N.walkTo(sp.x, sp.z, sp.yaw); } else { h.docAsked = true; DOC.request(N, () => { h.ph = 'up'; this.toStairs(h); }); } }
+      return;
+    }
+    if (h.ph === 'up') {
+      // at the foot of the stairs: up them and gone
+      if (!N.walking()) {
+        if (!h.climb) { h.climb = true; const s = this.stair(12, this._v); N.goTo(s.x, s.z); }
+        else this.gone(h);
+      }
+      if (h.t > 40) this.gone(h);
+      return;
+    }
+    if (h.ph === 'down') {
+      if (N.walking() && h.t < 12) return;
+      h.ph = 'look'; h.t = 0;
+      if (BN && BN.hp.dead && G.room === R && dP < 14) { h.caught = true; }
+      // what the one at the bar can tell him (he is alive): who shot him
+      if (BN && !BN.hp.dead) this.handTale({ i: B.whoI, d: null }, this.m[h.i].d, h.i);
+      if (G.room === R && !(BN && BN.hp.dead)) this.say(N, 'down');
+      return;
+    }
+    // running for the doctor: to him, a word, and back
+    if (h.ph === 'fetch') {
+      const D = DOC.npc;
+      if (!D || D.hp.dead || DOC.st === 'call' || h.t > 90) { h.ph = 'back'; h.t = 0; return; }
+      if (Math.hypot(N.pos.x - D.pos.x, N.pos.z - D.pos.z) < 3.2 && (N.room || null) === (D.room || null)) {
+        if (DOC.call(PLACEMAP.find('im Saloon'), true, this.W(h.i).name)) { this.say(N, 'docCall'); this.note(h.i, 'Du bist zum Doc gelaufen und hast ihn in den Saloon geholt (' + TIME.stamp() + ').'); }
+        h.ph = 'back'; h.t = 0; N.hurry = 1.8; return;
+      }
+      if (!N.walking() || (h.walkT = (h.walkT || 0) - dt) <= 0) { h.walkT = 2; N.walkTo(D.pos.x, D.pos.z); }
+      return;
+    }
+    if (h.ph === 'back') {
+      const p = BN || null, f = p ? p.pos : this.stair(-1, this._v);
+      if (!N.walking()) { if (N.room === R && (Math.hypot(N.pos.x - f.x, N.pos.z - f.z) < 2.5 || !p || !p.hp.busy() || h.t > 6)) { h.ph = 'look'; h.t = 0; } else N.walkTo(f.x + 0.8, f.z); }
+      if (h.t > 60) { h.ph = 'look'; h.t = 0; }
+      return;
+    }
+    // looking after things: who needs him most
+    const lying = BN && (BN.hp.busy() || (BN.hp.needsDoc() && B.st === 'hurt'));
+    if (BN && BN.hp.dead) return this.vigil(h, dt, BN, inside, dP);
+    if (BN && B.st === 'brawl' && N.fight && this.W(h.i).fight.courage >= 0.6 && !PHP.out) { h.ph = 'brawl'; N.fight.start(); this.say(N, 'join'); this.note(h.i, 'Der Fremde hat sich mit ' + this.W(B.whoI).name + ' geprügelt, du bist dazwischengegangen (' + TIME.stamp() + ').'); return; }
+    if (BN && B.st === 'brawl' && !h.said.stop) { h.said.stop = 1; this.say(N, 'stop'); }
+    if (BN && lying && BN.room === N.room) return this.tend(h, dt, BN);
+    if (h.t > 12 && !(BN && B.st === 'brawl')) { if (G.room === R && !h.said.quiet) { h.said.quiet = 1; this.say(N, 'quiet'); } h.ph = 'up'; this.toStairs(h); }
+    else if (BN) { N.lookAt(this._v.set(BN.pos.x, BN.pos.y + 1.5, BN.pos.z), 1); if (inside && dP < 7 && Math.random() < dt * 0.3) N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1); }
+  },
+  // the one at the bar is hurt: hands on the wound; when it is quiet, one of them runs for the doctor
+  tend(h, dt, P) {
+    const N = h.npc, H = P.hp, w = AID.woundOf(P);
+    const docCame = DOC.callJob && DOC.callJob.P === P || DOC.queue.some((q) => q.npc === P) || DOC.st === 'call';
+    const other = this.helpers.find((x) => x !== h && x.pressing && G.time - x.pressing < 0.5);
+    // a second man (or the bleeding is held now): one goes for the doctor
+    if (!docCame && DOC.npc && !DOC.npc.hp.dead && (other || (h.pressT || 0) > 18 || !w) && !h.fetch && !this.helpers.some((x) => x !== h && x.ph === 'fetch')) { h.fetch = true; h.ph = 'fetch'; h.t = 0; N.crouchT = 0; N.free(0); N.free(1); this.say(N, 'fetch'); N.hurry = 2.2; const d = DOC.npc.pos; N.walkTo(d.x, d.z); return; }
+    if (!w) { N.crouchT = 0; N.free(0); N.free(1); N.lookAt(this._v.set(P.pos.x, P.pos.y + 0.6, P.pos.z), 1); if (h.t > 60 && !P.hp.busy()) { h.ph = 'up'; this.toStairs(h); } return; }
+    h.ph = 'look';
+    const p = H.woundPoint(w, this._v, this._w); if (!p) return;
+    // a spot by the wound, clear of his body
+    if (!h.spot || Math.hypot(P.pos.x - h.at[0], P.pos.z - h.at[1]) > 0.5) {
+      let best = null, bd = 1e9;
+      for (let a = 0; a < 10; a++) { const x = p.x + Math.cos(a * TAU / 10) * 0.7, z = p.z + Math.sin(a * TAU / 10) * 0.7; if (HARM.blockedAt(x, z, P.pos.y, 0.2)) continue; const tor = P.ch.p.torso.matrixWorld.elements, hd = P.ch.p.head.matrixWorld.elements; if (Math.hypot(x - tor[12], z - tor[14]) < 0.42 || Math.hypot(x - hd[12], z - hd[14]) < 0.45) continue; const dd = Math.hypot(x - N.pos.x, z - N.pos.z); if (dd < bd) { bd = dd; best = [x, z]; } }
+      h.spot = best || [p.x + 0.6, p.z]; h.at = [P.pos.x, P.pos.z];
+    }
+    if (Math.hypot(N.pos.x - h.spot[0], N.pos.z - h.spot[1]) > 0.3) { if (!N.walking()) { N.hurry = 1.6; N.walkTo(h.spot[0], h.spot[1]); } return; }
+    N.stop(); N.crouchT = P.hp.busy() ? 1 : 0.2;
+    if (!h.said.help) { h.said.help = 1; this.say(N, 'help'); }
+    const q = H.woundPoint(w, this._v, this._w);
+    N.faceYaw = Math.atan2(q.x - N.pos.x, q.z - N.pos.z); N.lookAt(q, 1);
+    const l = N.toLocal(q, this._w), push = Math.sin(h.t * 2.2) * 0.01;
+    N.reach(0, l.x + 0.035, l.y + push, Math.max(0.25, l.z - 0.05)); N.reach(1, l.x - 0.035, l.y + push, Math.max(0.25, l.z - 0.05));
+    N.handShape[0] = N.handShape[1] = { open: 0.85 };
+    H.press(w, G.time + 0.25); h.pressT = (h.pressT || 0) + dt; h.pressing = G.time;
+    if (h.pressT > 8 && !w.art && !w.pressed) { w.pressed = true; w.b *= 0.35; }
+    if (!h.bloody) { h.bloody = true; this.note(h.i, 'Du hast ' + P.name + ' die Wunde abgedrückt, bis der Doc kam (' + TIME.stamp() + ').'); }
+  },
+  // the body of the one at the bar: on his knees by it, a hand on him; then he stays near it
+  vigil(h, dt, P, inside, dP) {
+    const N = h.npc;
+    if (!h.knelt) {
+      const e = P.ch.p.torso.matrixWorld.elements, tx = e[12], tz = e[14];
+      if (!h.spot) { const a = Math.atan2(N.pos.x - tx, N.pos.z - tz); h.spot = [tx + Math.sin(a) * 0.7, tz + Math.cos(a) * 0.7]; if (HARM.blockedAt(h.spot[0], h.spot[1], P.pos.y, 0.2)) h.spot = [tx + Math.sin(a + 1.6) * 0.7, tz + Math.cos(a + 1.6) * 0.7]; }
+      if (Math.hypot(N.pos.x - h.spot[0], N.pos.z - h.spot[1]) > 0.35 && h.t < 15) { if (!N.walking()) N.walkTo(h.spot[0], h.spot[1]); return; }
+      N.stop(); N.crouchT = 1; h.kneelT = (h.kneelT || 0) + dt;
+      const nk = P.ch.p.head.getWorldPosition(this._v); nk.y -= 0.1; N.faceYaw = Math.atan2(nk.x - N.pos.x, nk.z - N.pos.z); N.lookAt(nk, 1);
+      const l = N.toLocal(nk, this._w); N.reach(1, l.x, l.y, Math.max(0.25, l.z)); N.mood = 'sad'; N.moodT = G.time + 4;
+      if (h.kneelT > 3.5) {
+        h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
+        // you are still here, standing over him: he knows
+        const seen = (h.caught || h.saw) && inside && dP < 14;
+        this.say(N, seen ? 'griefSeen' : 'grief');
+        if (seen) { this.learnKiller(h.i); setTimeout(() => this.say(N, 'caught'), 2600); h.angry = true; }
+      }
+      return;
+    }
+    N.mood = 'sad'; N.moodT = G.time + 2;
+    // the one who did it is still here: Walt (and Hank) go for him, Jeb wants him gone
+    if (h.angry && inside && dP < 6 && GUN.state === 'holster' && this.W(h.i).fight.courage >= 0.6 && !PHP.out && !h.fought) { h.fought = true; h.ph = 'brawl'; h.npc.fight.start(); return; }
+    if (h.angry && inside && !h.said.out && G.time - h.kneltT > 8) { h.said.out = 1; this.say(N, 'out'); }
+    if (inside && dP < 10) N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1); else N.lookAt(this._v.set(P.pos.x, P.pos.y + 0.3, P.pos.z), 1);
+  },
+  gone(h) {
+    const i = this.helpers.indexOf(h); if (i >= 0) this.helpers.splice(i, 1);
+    const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; }
+    h.npc.dispose();
+  },
+  // he knows you did it: how he takes it (the tempers of npc/barkeep_fate.js), unless he already has
+  learnKiller(i) {
+    const B = BARKEEP, onDuty = i === B.whoI && B.npc && !B.npc.hp.dead;
+    const d = onDuty ? B : this.m[i].d; if (!d || d.temper) return;
+    const dead = this.lastDead; if (!dead) return;
+    const T = B.TEMPERS, W = this.W(i), w = T.map((t) => t.w * (t.need ? t.need(W) : 1));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0), k = 0; while (r > w[k] && k < T.length - 1) { r -= w[k]; k++; }
+    const t = T[k]; d.temper = t.id; d.grudge = Math.max(d.grudge || 0, t.grudge); d.att = Math.min(d.att || 0, t.att); d.metNew = false;
+    if (t.id === 'poison') d.poisonNext = true;
+    const txt = 'Du weißt, dass der Fremde ' + this.W(dead.i).name + ' umgebracht hat. ' + t.mem;
+    if (onDuty) B.remember(txt); else this.note(i, txt);
+    if (dead.died) dead.died.known = true;
+  },
+  // one of them is dead (behind the bar or one who came down): the others learn it, as they learn it
+  died(i, info, seen) {
+    const m = this.m[i], B = BARKEEP;
+    const cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause || '') ? 'erschlagen worden' : 'gestorben';
+    m.died = { at: TIME.min, cause, by: info.by || 'player', known: false, seen: seen || [] };
+    this.lastDead = m;
+    // those who saw it (in the room) know it was you
+    if ((info.by || 'player') === 'player') {
+      for (const s of m.died.seen) {
+        if (s === 'doctor') { DOC.knows.push('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); if (DOC.knows.length > 6) DOC.knows.shift(); m.died.known = true; continue; }
+        const h = this.helpers.find((x) => x.npc.id === s);
+        if (h) { this.note(h.i, 'Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(h.i); }
+        else if (s === 'barkeep' && B.npc) { B.remember('Du hast gesehen, wie der Fremde ' + this.W(i).name + ' umgebracht hat (' + TIME.stamp() + ').'); this.learnKiller(B.whoI); }
+      }
+    }
+  },
+  // the body is taken away (BARKEEP.removeBody, or one who came down): a grave; the rest hear of it
+  buried(i) {
+    const m = this.m[i], dd = m.died || (m.died = { at: TIME.min, cause: 'gestorben', known: false });
+    m.alive = false;
+    for (const o of this.m) {
+      if (!o.alive || o.away || o.i === i) continue;
+      const d = o.i === BARKEEP.whoI && BARKEEP.npc && !BARKEEP.npc.hp.dead ? BARKEEP : (o.d || (o.d = this.blank()));
+      const say = (t) => (d === BARKEEP ? BARKEEP.remember(t) : this.note(o.i, t));
+      if (d.mem.some((x) => x.indexOf(this.W(i).name + ' ist tot') >= 0)) continue;
+      say(this.W(i).name + ' ist tot (' + dd.cause + ', ' + TIME.stamp(dd.at) + '). Er liegt jetzt bei der Kirche. ' + (this.W(o.i).id === 'walt' && this.W(i).id === 'hank' ? 'Du vermisst deinen Bruder und trägst jetzt seine Schürze. ' : '') + (dd.by !== 'player' || dd.known ? '' : 'Wer es war, weiß niemand; du beobachtest jeden Fremden genau.'));
+      if (dd.by !== 'player') continue;
+      if (!dd.known) d.att = Math.min(d.att || 0, -0.15);
+      else if (!d.temper) this.learnKiller(o.i);
+    }
+    if (!this.living().length) this.closedAt = TIME.min;
+  },
+  // the new owner comes to town: he only knows what people say
+  ownerArrives() {
+    const B = BARKEEP, o = this.m[this.OWNER]; o.away = false; o.alive = true; o.d = this.blank();
+    const knew = this.m.some((m) => m.died && m.died.known && m.died.by === 'player');
+    o.d.mem.push('Du hast den Saloon in Dust Creek gekauft, billig, weil drei Barkeeper hintereinander gestorben sind (' + TIME.stamp() + ').');
+    o.d.mem.push(knew ? 'Man erzählt dir in der Stadt, ein Fremder hat sie umgebracht. Du hast seine Beschreibung gehört.' : 'Wer sie umgebracht hat, weiß keiner. Du traust keinem Fremden.');
+    o.d.att = knew ? -0.6 : -0.3; o.d.grudge = knew ? 0.4 : 0.15;
+    this.closedAt = null;
+    if (knew) { this.lastDead = this.m.filter((m) => m.died).slice(-1)[0] || this.lastDead; }
+    B.st = 'closed';
+  },
+  /* ---- every frame ---- */
+  update(dt) {
+    const B = BARKEEP; if (!B.R || !this.m.length) return;
+    for (let i = this.helpers.length - 1; i >= 0; i--) { const h = this.helpers[i]; this.updHelper(h, dt); if (h.ph === 'dead' && TIME.min - (h.diedAt || TIME.min) > 120 && B.unseen()) { GRAVES.add(this.W(h.i).name, TIME.day()); this.helpers.splice(i, 1); h.npc.dispose(); this.buried(h.i); } }
+    for (const m of this.living()) if (m.comeT && G.time > m.comeT) { if (m.i === B.whoI && B.npc) m.comeT = 0; else this.come(m); }
+    // everybody is dead: closed; three days later the new owner
+    if (!this.living().length) {
+      if (this.closedAt === null) this.closedAt = TIME.min;
+      const o = this.m[this.OWNER];
+      if (o && o.away && TIME.min - this.closedAt >= 4320 && B.unseen()) this.ownerArrives();
+      return;
+    }
+    if (B.st === 'dead') return;
+    const want = this.dutyAt(TIME.hour()), cur = B.npc && !B.npc.hp.dead ? B.whoI : -1;
+    if (want === cur) return;
+    // the one there finishes first (serving, hurt, a fight, a gun on him …)
+    if (cur >= 0) { const N = B.npc; if (!(B.st === 'idle' && !B.cur && !B.orders.length && !B.pending && !N.hp.needsDoc() && !N.hp.busy() && !N.talking && !N.thinking && B.aimedT <= 0 && !N.fight.on && !this.helpers.some((h) => h.ph !== 'up'))) return; }
+    if (want >= 0 && this.helpers.some((h) => h.i === want)) return;   // (he is down here already; let him go up first)
+    this.change(cur, want);
+  },
+  beforeSkip(m, soft) {
+    if (soft || m < 20) return;
+    // asleep, you do not see them come and go: whoever came down goes back up, a hurt man is seen to by the doctor
+    for (const h of this.helpers.slice()) {
+      if (h.ph === 'dead') continue;
+      if (h.npc.fight.on) h.npc.fight.stop();
+      const BN = BARKEEP.npc;
+      if (BN && !BN.hp.dead && BN.hp.needsDoc() && DOC.npc && !DOC.npc.hp.dead && !(DOC.st === 'call')) DOC.call(PLACEMAP.find('im Saloon'), true, true);
+      this.gone(h);
+    }
+    for (const x of this.m) x.comeT = 0;
+  },
+  settled() { return !this.helpers.some((h) => h.ph !== 'dead') && !this.m.some((x) => x.comeT); },
+  save() {
+    return { m: this.m.map((x) => ({ alive: x.alive, away: x.away, died: x.died ? { at: x.died.at, cause: x.died.cause, known: !!x.died.known, by: x.died.by || 'player' } : null, d: x.d ? { ...x.d, asked: x.d.asked || [], mem: x.d.mem.slice(-10) } : null })),
+      closedAt: this.closedAt, lastDead: this.lastDead ? this.lastDead.i : null, helpers: this.helpers.filter((h) => h.ph !== 'dead').map((h) => h.i), deadHelpers: this.helpers.filter((h) => h.ph === 'dead').map((h) => h.i) };
+  },
+  load(s) {
+    if (!s || !Array.isArray(s.m)) return;
+    for (const h of this.helpers) h.npc.dispose();
+    this.helpers.length = 0;
+    s.m.forEach((x, i) => {
+      const m = this.m[i]; if (!m || !x) return;
+      m.alive = !!x.alive; m.away = !!x.away; m.died = x.died || null; m.comeT = 0; m.noise = 0;
+      if (i !== BARKEEP.whoI || BARKEEP.st === 'closed' || !BARKEEP.npc) { const d = this.blank(); if (x.d) for (const k in d) if (x.d[k] !== undefined) d[k] = x.d[k]; d.mem = Array.isArray(d.mem) ? d.mem.filter((t) => typeof t === 'string').slice(-10) : []; m.d = d; }
+    });
+    // those who were down here when you left went back up; a body of one of them was taken away meanwhile
+    for (const i of s.deadHelpers || []) { const m = this.m[i]; if (m && m.alive) { if (!GRAVES.list.some((g) => g.name === this.W(i).name)) GRAVES.add(this.W(i).name, TIME.day()); this.buried(i); } }
+    this.closedAt = typeof s.closedAt === 'number' ? s.closedAt : null;
+    this.lastDead = typeof s.lastDead === 'number' ? this.m[s.lastDead] || null : null;
+  },
+  // an old save (before the crew): whoever came before the one there is dead
+  legacy(whoI, gone) {
+    for (const m of this.m) if (m.i < this.OWNER && (m.i < whoI || (gone && m.i === whoI))) { m.alive = false; m.died = m.died || { at: TIME.min, cause: 'gestorben', known: true }; this.lastDead = m; }
+  }
+};
 
 // ==== npc/doctor.js ====
 /* ---------- Doc Whitfield, the doctor ----------
@@ -12090,16 +12877,16 @@ const DOC = {
     coming: [['Ich komme! Geh voraus!', 'surprised'], ['Meine Tasche… los, schnell!', 'surprised'], ['Bin unterwegs!', 'surprised'], ['Verdammt. Ich komme.', 'angry']],
     comingCalm: [['Ich seh es mir an.', 'neutral'], ['Gut, ich komme mit.', 'neutral'], ['Na schön. Zeig es mir.', 'neutral']],
     onsite: [['Platz da! Lasst mich ran!', 'angry'], ['Halt still. Ich bin ja da.', 'neutral'], ['Zeig her… ruhig atmen.', 'neutral']],
+    dead: [['Der ist tot. Da kann ich nichts mehr tun.', 'sleepy'], ['Tot. Kein Puls mehr. Zu spät.', 'sleepy'], ['Für den kommt jede Hilfe zu spät.', 'sleepy'], ['Er ist tot. Ich hätte früher hier sein müssen.', 'sleepy']],
     late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
     fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
     refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
     sell: [['Wickel fest, nicht zu fest. Und dann bring ihn zu mir.', 'neutral'], ['Ein Verband ersetzt keinen Arzt. Merk dir das.', 'neutral'], ['Hier. Druck drauf, dann wickeln.', 'neutral']],
     mutter: [['Wo hab ich nur das Laudanum hingestellt…', 'whisper'], ['Boston… hätte ich nur nie…', 'whisper'], ['Drei Schusswunden diese Woche. Drei.', 'whisper'], ['Die Hände… immer die Hände waschen.', 'whisper'], ['Hm. Das Rezept stimmt so nicht.', 'whisper']]
   },
-  // places he can be called to: words in what you say → a building (room type), or out in the street
-  PLACES: [['saloon', /saloon|bar\b|kneipe|theke|hank|walt|jeb/], ['hotel', /hotel/], ['bank', /bank/], ['sheriff', /sheriff|gefängnis|zelle/], ['livery', /stall|pferd/],
-    ['barber', /barbier|friseur|rasier/], ['gunsmith', /waffen/], ['post', /\bpost/], ['apothecary', /apothek/], ['store', /gemischt|kramladen|laden\b|store/], ['street', /straße|strasse|draußen|vor (dem|der|die)/]],
-  placeOf(text) { const t = (text || '').toLowerCase(); for (const [k, re] of this.PLACES) if (re.test(t)) return k; return null; },
+  // where he is called to: anything in town you can name, and how ("hinter der Kirche", "beim Wasserturm", "bei
+  // Hank"): npc/places.js
+  placeOf(text) { return PLACEMAP.find(text); },
   // called from a conversation: where to (the place you named, or with you), how urgent (how you said it)
   callFromTalk(action) {
     const t = (TALK.lastText || '').toLowerCase(), place = action === 'follow' ? null : this.placeOf(t);
@@ -12108,12 +12895,15 @@ const DOC = {
   },
   /* a call for help: he goes there (runs, if it is urgent), looks for whoever is hurt, patches him up where he lies;
      nobody there: he was made a fool of, and remembers it (twice, and he no longer believes you easily) */
-  call(place, urgent) {
+  call(place, urgent, trusted) {
     const N = this.npc; if (!N || N.hp.dead || N.hp.busy() || this.st === 'fight') return false;
-    if (this.fooledN >= 2 && this.att < -0.2 && !this.patientNear(PLAY.pos, 30)) { this.say('refuseCall'); return false; }
+    if (!trusted && this.fooledN >= 2 && this.att < -0.2 && !this.patientNear(PLAY.pos, 30)) { this.say('refuseCall'); return false; }
+    // place: 'follow' (with you), 'here' (by himself, round him), or what PLACEMAP found
     let dest = null, R = null;
-    if (place !== 'follow' && place !== 'street') { R = ROOMS.find((r) => r.type === place && !r.parent); if (R) { const p = rwp(R, 0, R.floorY, R.z1 - 1.6); dest = p; } }
-    this.callJob = { place, R, dest, urgent, t: 0, phase: 'go', P: null, walkT: 0 };
+    const P = place && typeof place === 'object' ? place : null;
+    if (P && P.street) place = 'street';
+    else if (P) { R = P.R || P.room || null; dest = { x: P.x, z: P.z }; }
+    this.callJob = { place: P ? (P.type || 'spot') : place, where: P, R, dest, urgent, t: 0, phase: 'go', P: null, walkT: 0, by: typeof trusted === 'string' ? trusted : null };
     this.st = 'call'; this.queue.length = 0; this.cur = null;
     N.hurry = urgent ? 2.1 : 1.3; N.free(0); N.free(1); N.endGesture && N.endGesture();
     if (dest) N.walkTo(dest.x, dest.z);
@@ -12127,7 +12917,7 @@ const DOC = {
       if (room !== undefined && (n.room || null) !== (room || null)) continue;
       if (Math.hypot(n.pos.x - p.x, n.pos.z - p.z) > r) continue;
       // (only who needs him: dead, bleeding, an open gunshot; a bandaged man is done)
-      const H = n.hp, need = H.dead || H.bleed > 0.0005 || H.dying > 0 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.6);
+      const H = n.hp, need = (H.dead && !n.docChecked) || H.bleed > 0.0005 || H.dying > 0 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.6);
       const sc = H.dead ? 0.5 : n.plight();
       if (need && sc > bs) { bs = sc; best = n; }
     }
@@ -12153,12 +12943,13 @@ const DOC = {
     if (J.phase === 'none') {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
-      this.remember('Der Fremde hat dich umsonst ' + (J.R ? ({ saloon: 'zum Saloon', hotel: 'zum Hotel', bank: 'zur Bank', sheriff: 'zum Sheriff', livery: 'zum Mietstall', barber: 'zum Barbier', gunsmith: 'zum Waffenhändler', post: 'zur Post', apothecary: 'zur Apotheke', store: 'zum Laden' }[J.place] || 'irgendwohin') : 'durch die Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
+      this.remember('Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
       this.say('fooled'); N.gesture('fist_shake'); home(); return;
     }
     if (J.phase === 'to') {
       const P = J.P;
-      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); P.waitFor = null; home(); return; }
+      // dead: he goes to him all the same and sees for himself (phase 'check')
+      if (P.hp.dead) J.dead = true;
       // he sees the doctor coming and waits for him (on his way to the practice, say): he stops where he is
       if (Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z) < 14) P.waitFor = { by: N, t: G.time + 1.5 };
       // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor; again if he moved
@@ -12172,7 +12963,25 @@ const DOC = {
       J.toT += dt;
       const dS = Math.hypot(N.pos.x - J.spot[0], N.pos.z - J.spot[1]), dP = Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z);
       if (dS > 0.3 && !(J.toT > 6 && dP < 1.7)) { if (!N.walking() || (J.walkT -= dt) <= 0) { J.walkT = 1.5; N.walkTo(J.spot[0], J.spot[1]); } if (J.toT > 25) J.phase = 'none'; return; }
-      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1; this.askHow(P);
+      N.stop(); J.t = 0; N.hurry = 1;
+      if (J.dead || P.hp.dead) { J.phase = 'check'; return; }
+      J.phase = 'work'; this.askHow(P);
+      return;
+    }
+    // a body: down on one knee, two fingers on the neck, a moment; then he knows
+    if (J.phase === 'check') {
+      const P = J.P; N.crouchT = 1;
+      const nk = P.ch.p.head.getWorldPosition(this._v); nk.y -= 0.12;
+      N.faceYaw = Math.atan2(nk.x - N.pos.x, nk.z - N.pos.z); N.lookAt(nk, 1);
+      const l = N.toLocal(nk, this._w); N.reach(1, l.x, l.y, Math.max(0.25, l.z)); N.handShape[1] = { point: 0.6, open: 0.3 };
+      if (J.t > 3.2) {
+        P.docChecked = true; N.handShape[1] = null; N.free(1); N.crouchT = 0;
+        const said = this.say('dead');
+        if (!said && G.room === (N.room || null)) TOAST.show('Doc: „Der ist tot. Da kann ich nichts mehr tun.“');
+        this.remember(P.name + ' war tot, als du kamst. Du konntest nichts mehr tun (' + TIME.stamp() + ').');
+        worldEvent('docChecked', P.pos.x, P.pos.y, P.pos.z, { by: 'doctor', npc: P.id });
+        J.phase = 'after'; J.t = 0; N.gesture('shake_head');
+      }
       return;
     }
     if (J.phase === 'work') {
@@ -12191,7 +13000,7 @@ const DOC = {
         const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
         this.learn(P, 0); this.snip(); this.say('done');
-        this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').');
+        if (J.by) this.remember(J.by + ' hat dich zu ' + P.name + ' geholt, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); else { this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); }
         P.waitFor = null;
         if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
         this.queue = this.queue.filter((q) => q.npc !== P);
@@ -12308,10 +13117,10 @@ const DOC = {
     if (e.type === 'shot' && inside) { this.feel(-0.2); this.say('shot', 6); }
     if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor' && G.room === this.R) this.feel(-0.3);
     // somebody goes down near him: once it is quiet for a moment, he goes to help by himself
-    if ((e.type === 'npcShot' || e.type === 'npcDown') && e.npc !== 'doctor') {
+    if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor') {
       const N = this.npc, V = NPCS.list.find((n) => n.id === e.npc);
       if (V && (V.room || null) === (N.room || null) && Math.hypot(V.pos.x - N.pos.x, V.pos.z - N.pos.z) < 16 && this.st === 'idle')
-        setTimeout(() => { if (this.st === 'idle' && !V.hp.dead && this.patientNear(V.pos, 1, V.room)) { this.say('onsite', 20); this.call('here', true); } }, 2500 + Math.random() * 1500);
+        setTimeout(() => { if (this.st === 'idle' && this.patientNear(V.pos, 1, V.room)) { if (!V.hp.dead) this.say('onsite', 20); this.call('here', !V.hp.dead); } }, 2500 + Math.random() * 1500);
     }
   },
   /* ---- per frame ---- */
@@ -12429,9 +13238,10 @@ const DOC = {
       rules: [
         'Du bist Doc Whitfield, der Arzt von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle.',
         'Wer du bist: um die sechzig, graues Haar, schwarze Weste, Fliege. Studiert in Boston, aus Gründen, über die du nicht sprichst, hier gelandet. Gebildet, ruhig, trocken und ein wenig zynisch. Du hast zu viele Schusswunden gesehen. Du duzt jeden.',
-        'Dust Creek hat: den Saloon (Hank ist der Barkeeper), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
+        'Dust Creek hat: den Saloon (Hank, sein Bruder Walt und der alte Jeb schenken dort in Schichten aus), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
         'Dein Kopf ist nicht leer: Dir geht das Laudanum aus und die Postkutsche bringt keins; nachts greifst du selbst manchmal zur Flasche, das weiß keiner. Hank hältst du für ehrlich und stur, er schenkt zu großzügig ein. Du bist neugierig wie ein Arzt: Du fragst nach, wie etwas passiert ist und wer es war, und sprichst den Fremden auf das an, was dir Patienten über ihn erzählt haben.',
         'Eine Behandlung kostet 50 Cent; Verbandszeug verkaufst du für 15 Cent (Knopf im Spiel). wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
+        'Du kennst jeden Winkel der Stadt: die Kirche mit dem Friedhof am Westende, die Hauptstraße mit Saloon, Hotel, Bank, Sheriff, Mietstall mit der Koppel dahinter, Barbier, Waffenhändler, Post, Apotheke und Laden, den Wasserturm und das Windrad hinter den Häusern im Osten, die Brücke über das ausgetrocknete Bachbett. Nennt er einen Ort wie „hinter der Kirche“, weißt du sofort, wo das ist.',
         'Sagt dir der Fremde, dass irgendwo jemand verletzt ist, verblutet oder stirbt, und du glaubst ihm: action come (du gehst sofort hin, bei Lebensgefahr rennst du; den Ort nennt er selbst). Sollst du einfach mitkommen: action follow. Wurdest du schon umsonst gerufen, bist du misstrauisch und fragst nach, statt gleich loszulaufen.',
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
@@ -12479,12 +13289,14 @@ const DOC = {
     };
   }
 };
-SAVE.part('doc', () => ({ fooled: DOC.fooledN, mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null }), (d) => {
+SAVE.part('doc', () => ({ fooled: DOC.fooledN, mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null, asked: DOC.npc && DOC.npc.asked ? [...DOC.npc.asked] : [] }), (d) => {
   if (!d) return;
   DOC.att = clamp(+d.att || 0, -1, 1); DOC.fooledN = d.fooled | 0;
   DOC.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').slice(-10) : [];
   DOC.knows = Array.isArray(d.knows) ? d.knows.filter((x) => typeof x === 'string').slice(-6) : [];
   if (d.body && DOC.npc) { DOC.npc.hp.load(d.body); if (DOC.npc.hp.dead) DOC.st = 'dead'; }
+  // the questions he has asked you already (TALK.wonder): not again
+  if (DOC.npc && Array.isArray(d.asked)) DOC.npc.asked = new Set(d.asked.filter((x) => typeof x === 'string'));
 });
 
 // ==== npc/direct.js ====
@@ -15104,6 +15916,7 @@ const DEV = {
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();
+    POST.warm(G.renderer, G.scene, G.cam);
     let rt = 0;
     window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
     document.getElementById('boot').classList.add('gone');

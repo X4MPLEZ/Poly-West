@@ -16,7 +16,8 @@ BUDGET = {'street': {'calls': 70, 'tris': 260000}, 'saloon': {'calls': 60, 'tris
 RESET = '''() => { G.noRender = true; G.camHook = null; INPUT.keys.clear(); if (SIT.busy()) { SIT.cancel(); }
   if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; } GUN.setAim(false); GUN.hipT = 0;
   FIST.st = 'idle'; FIST.clip = null; FIST.fight = 0; FIST.holding = false; FIST.queued = false; FIST.stamina = 1;
-  PLAY.vx = PLAY.vz = 0; PLAY.softColl = 0; GAIT.init = false; G.lookAt = null; }'''
+  PLAY.vx = PLAY.vz = 0; PLAY.softColl = 0; GAIT.init = false; G.lookAt = null; CREW.hold = true;
+  if (CREW.helpers.length || CREW.m.some((m) => m.died || (!m.alive && m.i < 3)) || BARKEEP.whoI !== 0 || !BARKEEP.npc) CREW.reset(); }'''
 PLACE = '''(a) => { PLAY.pos.set(a[0], a[1], a[2]); PLAY.yaw = a[3] + Math.PI; PLAY.camYaw = a[3]; PLAY.camPitch = 0.3; PLAY.camDist = 5;
   PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; for (let k = 0; k < 20; k++) G.stepFrame(1/60); }'''
 WALK = '''(a) => { const [yaw, secs, keys] = a; INPUT.keys.clear(); (keys || ['w']).forEach(k => INPUT.keys.add(k));
@@ -868,26 +869,84 @@ async def check_revenge(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_fate(g):
-    """death is for good: no more service, the body is taken away (a grave), a day later his brother takes over,
-       knows who did it and greets you accordingly; all of it in the save"""
+    """death is for good: no more service, the body is taken away (a grave), the next of the crew takes over. Who saw
+       it knows: killed with the others coming down while you stand there → they know (a temper of their own, the
+       greeting); killed and gone before anyone came → nobody knows who; all of it in the save"""
     await g.js(RESET)
-    r = await g.js('''() => { const B = BARKEEP, N = B.npc, R = B.R, out = {}; B.revive(); B.forget(); G.noRender = true;
-      const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); GAIT.init = false; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
-      N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(0, 0.15, 0.1).applyMatrix4(N.ch.p.head.matrixWorld);
-      const o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
-      GUN.hitResult(hit, d, 0); for (let k = 0; k < 120; k++) G.stepFrame(1/60);
+    r = await g.js('''() => { const B = BARKEEP, R = B.R, out = {}; CREW.reset(); CREW.hold = true; G.noRender = true;
+      const rnd0 = Math.random; let seed = 7; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      const kill = (stay) => { const N = B.npc; TIME.min = 1440 * 2 + 12 * 60; const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); G.room = R; GAIT.init = false; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+        N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(0, 0.15, 0.1).applyMatrix4(N.ch.p.head.matrixWorld);
+        const o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z), d = w.clone().sub(o).normalize(); worldEvent('shot', o.x, o.y, o.z, { by: 'player' });
+        GUN.hitResult(GUN.trace(o, d, 0, 50), d, 0); for (let k = 0; k < 60 * stay; k++) G.stepFrame(1/60); return N; };
+      // 1: you stay; Jeb (awake) and Walt (woken by the shot) come down and find you over him
+      const N = kill(30);
       out.dead = N.hp.dead && B.st === 'dead'; out.noBar = !barActions(B.C, null).some((a) => a.label === 'Bestellen');
-      PLAY.pos.set(10, 0, 3); TIME.skip(8 * 60); G.stepFrame(1/60);
-      out.grave = GRAVES.list.length === 1 && GRAVES.list[0].name === 'Hank' && B.st === 'gone' && !NPCS.list.some((n) => n.name === 'Hank');
-      TIME.skip(20 * 60); G.stepFrame(1/60);
-      out.next = B.npc && B.npc.name; out.knows = B.mem.some((m) => /umgebracht/.test(m)); out.grudge = +B.grudge.toFixed(2); out.temper = B.temper; out.tGrudge = (B.TEMPERS.find((t) => t.id === B.temper) || {}).grudge;
-      out.ctx = /Walt/.test(B.npc.persona.rules) && /Hank/.test(B.npc.persona.rules);
-      const snap = SAVE.snapshot(); out.saved = snap.parts.hank.whoI === 1 && snap.parts.graves.length === 1;
-      // back to Hank for the other checks
-      B.npc.dispose(); B.whoI = 0; B.makeNpc(B.scene0); B.st = 'idle'; B.pickIdle(); B.forget(); B.killedBy = null; B.diedAt = null; B.metNew = false;
-      for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.list = []; GRAVES.meshes = [];
-      G.noRender = false; return out; }''')
-    ok = r['dead'] and r['noBar'] and r['grave'] and r['next'] == 'Walt' and r['knows'] and r['temper'] and abs(r['grudge'] - r['tGrudge']) < 0.01 and r['ctx'] and r['saved']
+      out.down = CREW.helpers.map((h) => h.npc.name + ':' + h.ph);
+      PLAY.pos.set(10, 0, 3); G.room = null; for (let k = 0; k < 60 * 3; k++) G.stepFrame(1/60); TIME.skip(4 * 60); G.stepFrame(1/60);
+      out.grave = GRAVES.list.length === 1 && GRAVES.list[0].name === 'Hank' && !NPCS.list.some((n) => n.name === 'Hank');
+      out.next = B.npc && B.npc.name; out.known = !!CREW.m[0].died.known; out.temper = B.temper; out.metNew = B.metNew;
+      out.tGrudge = (B.TEMPERS.find((t) => t.id === B.temper) || {}).grudge; out.grudge = +B.grudge.toFixed(2);
+      out.knows = B.mem.some((m) => /umgebracht/.test(m)); out.jeb = (CREW.m[2].d.mem || []).some((m) => /Fremde.*umgebracht/.test(m)) && !!CREW.m[2].d.temper;
+      out.ctx = /Hank ist tot/.test(B.npc.persona.rules) && /Jeb/.test(B.npc.persona.rules);
+      const snap = SAVE.snapshot(); out.saved = snap.parts.hank.whoI === 1 && snap.parts.hank.crew.m[0].alive === false && snap.parts.graves.length === 1;
+      // 2: Walt, killed with nobody there to see it, and you gone before Jeb comes down: nobody knows
+      CREW.m[2].d.temper = null; CREW.m[2].d.mem = []; CREW.m[2].d.grudge = 0;
+      kill(1.5); PLAY.pos.set(10, 0, 3); G.room = null; for (let k = 0; k < 60 * 40; k++) G.stepFrame(1/60);
+      out.found = CREW.helpers.map((h) => h.npc.name + ':' + h.ph);
+      TIME.skip(4 * 60); G.stepFrame(1/60);
+      out.next2 = B.npc && B.npc.name; out.known2 = !!CREW.m[1].died.known; out.temper2 = B.temper || null;
+      out.unknown = B.mem.some((m) => /Walt ist tot/.test(m) && /weiß niemand/.test(m));
+      out.doc = DOC.knows.slice(-1)[0];
+      Math.random = rnd0;
+      for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.list = []; GRAVES.meshes = []; DOC.knows = []; DOC.att = 0; DOC.mem = [];
+      CREW.reset(); CREW.hold = true; G.noRender = false; return out; }''')
+    ok = (r['dead'] and r['noBar'] and r['grave'] and r['next'] == 'Walt' and r['known'] and r['temper'] and abs(r['grudge'] - r['tGrudge']) < 0.01
+          and r['knows'] and r['jeb'] and r['ctx'] and r['saved'] and r['next2'] == 'Jeb' and not r['known2'] and not r['temper2'] and r['unknown'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_crew(g):
+    """Hank, Walt and Jeb work in shifts (the one coming on hears what happened); seen from inside, one comes down the
+       stairs, the other goes up; a shot wakes the ones upstairs, they come down and see to the hurt one (gut shot: hands
+       on the wound, one runs for the doctor); all dead: closed, three days later a new owner (armed)"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, R = B.R, out = {}; CREW.reset(); CREW.hold = false; G.noRender = true;
+      const rnd0 = Math.random; let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      const run = (s) => { for (let k = 0; k < 60 * s; k++) G.stepFrame(1/60); };
+      { const D = DOC, sd = D.spot('desk'); if (D.npc.hp.dead) DOC.npc.hp = new Vitals(D.npc); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0; }
+      PLAY.pos.set(20, 0, 3); G.room = null; GAIT.init = false;
+      B.remember('Er hat dir Trinkgeld gegeben (Tag 1, mittags).');
+      TIME.min = 1440 + 18 * 60 + 1; run(0.5); out.at18 = B.who().name; out.told = B.mem.some((m) => /Hank hat dir erzählt/.test(m));
+      TIME.min = 1440 * 2 + 2 * 60 + 1; run(0.5); out.at2 = B.who().name;
+      TIME.min = 1440 * 2 + 10 * 60 + 1; run(0.5); out.at10 = B.who().name; out.hankKept = B.mem.some((m) => /Trinkgeld/.test(m) && !/erzählt/.test(m));
+      // seen: Walt comes down the stairs, Hank goes up them
+      TIME.min = 1440 * 2 + 17 * 60 + 59.6; PLAY.pos.copy(rwp(R, 1.5, R.floorY, -1.5)); G.room = R; GAIT.init = false; run(3);
+      out.seen = [B.who().name, B.st, CREW.helpers.map((h) => h.npc.name + ':' + h.ph).join()];
+      run(30); out.after = [B.st, CREW.helpers.length, NPCS.list.filter((n) => /Hank|Walt|Jeb/.test(n.name)).map((n) => n.name).join()];
+      // a shot: those upstairs come down; Walt lies there hurt (thigh): one presses, one runs for the doctor
+      const N = B.npc; PLAY.pos.copy(rwp(R, -1.5, R.floorY, -1.5)); worldEvent('shot', PLAY.pos.x, 1.5, PLAY.pos.z, { by: 'player' });
+      N.hp.shot({ zone: 'belly', side: 'L', part: 'torso', local: new THREE.Vector3(0.06, 0.08, 0.13), dir: new THREE.Vector3(1, 0, 0), point: N.pos.clone() });
+      N.onHarm({ type: 'shot', zone: 'belly', side: 'L' });
+      out.come = CREW.m.filter((m) => m.comeT).map((m) => m.id);
+      let pressed = false, fetched = false, k = 0;
+      for (; k < 60 * 90 && !(N.hp.wounds.some((w) => w.bandaged)); k++) { G.stepFrame(1/60); for (const h of CREW.helpers) { if (h.pressing && G.time - h.pressing < 0.1) pressed = true; if (h.ph === 'fetch') fetched = true; } }
+      out.pressed = pressed; out.fetched = fetched; out.treated = N.hp.wounds.some((w) => w.bandaged); out.secs = Math.round(k / 60);
+      out.docMem = DOC.mem.slice(-1)[0];
+      for (k = 0; k < 60 * 120 && CREW.helpers.length; k++) G.stepFrame(1/60); out.upAgain = CREW.helpers.map((h) => h.npc.name + ':' + h.ph).join();
+      // all three dead: closed; a new owner three days later
+      CREW.hold = true; PLAY.pos.set(20, 0, 3); G.room = null;
+      for (let i = 0; i < 2; i++) { B.devNext(); run(0.2); }
+      B.npc.hp.die('Test', null, 'back'); B.killedBy = 'world'; run(0.2); TIME.skip(180); run(0.2);
+      out.closed = [B.st, !!B.npc, CREW.living().length];
+      TIME.skip(3 * 1440 + 60); run(0.5); TIME.min = Math.floor(TIME.min / 1440) * 1440 + 1440 + 12 * 60; run(0.5);
+      out.owner = B.npc && B.npc.name; out.gun = !!(B.npc && B.who().desc.outfit.gun); out.ownerCtx = B.npc && /gekauft/.test(B.npc.persona.rules);
+      Math.random = rnd0;
+      for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.list = []; GRAVES.meshes = []; DOC.knows = []; DOC.att = 0; DOC.mem = [];
+      const D = DOC, sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0;
+      CREW.reset(); CREW.hold = true; G.noRender = false; return out; }''')
+    ok = (r['at18'] == 'Walt' and r['told'] and r['at2'] == 'Jeb' and r['at10'] == 'Hank' and r['hankKept'] and r['seen'][0] == 'Walt' and r['seen'][1] == 'return'
+          and 'Hank:up' in r['seen'][2] and r['after'][0] == 'idle' and r['after'][1] == 0 and r['after'][2] == 'Walt' and len(r['come']) == 2 and r['pressed'] and r['fetched']
+          and r['treated'] and 'geholt' in (r['docMem'] or '') and r['upAgain'] == '' and r['closed'] == ['closed', False, 0] and r['owner'] == 'Silas' and r['gun'] and r['ownerCtx'])
     return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_block(g):
@@ -1216,8 +1275,8 @@ async def check_docmeet(g):
 
 async def check_fastclock(g):
     """time is one: with the clock at 60× (and when sleeping) the town lives those minutes: Hank, shot, gets to the
-       doctor, is patched up and back at his bar within game minutes; dead, he is taken away and the next one arrives
-       a day later; a night's sleep takes little computing"""
+       doctor, is patched up and back at his bar within game minutes; dead, he is taken away and the next of the crew
+       takes over; a night's sleep takes little computing"""
     await g.js(RESET)
     r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, R = B.R, D = DOC, out = {}; B.revive(); B.forget(); G.noRender = true;
       const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0;
@@ -1229,19 +1288,19 @@ async def check_fastclock(g):
       out.realSecs = +(k / 60).toFixed(1); out.gameMin = Math.round(TIME.min - m0); out.back = B.st === 'idle' && N.room === R; out.bandaged = N.hp.wounds.some((w) => w.bandaged);
       // the one at the bar dies; the town takes it from there
       const who0 = B.whoI; N.hp.die('Test', null, 'back'); B.killedBy = 'player';
-      for (k = 0; k < 60 * 70 && B.whoI === who0; k++) G.stepFrame(1/60);
+      for (k = 0; k < 60 * 70 && !(B.npc && B.whoI !== who0); k++) G.stepFrame(1/60);
       TIME.speed = 1;
-      out.next = B.whoI > who0 ? B.who().name : null; out.dayLater = Math.round(TIME.min - m0);
+      out.next = B.npc && B.whoI !== who0 ? B.who().name : null; out.later = Math.round(TIME.min - m0);
       // a night's sleep: how long it takes to compute
       B.npc.hp.shot({ zone: 'arm', side: 'L', part: 'uArmL', local: new THREE.Vector3(0, -0.14, 0.06), dir: new THREE.Vector3(1, 0, 0), point: B.npc.pos.clone() });
       B.npc.onHarm({ type: 'shot', zone: 'arm', side: 'L' });
       const t0 = performance.now(); TIME.skip(600); out.skipMs = Math.round(performance.now() - t0);
       out.afterSleep = [B.st, B.npc.hp.wounds.some((w) => w.bandaged), B.npc.room === R];
       // put Hank back for the other checks (and the town as it was: no graves, nobody knows)
-      B.whoI = 0; B.npc.dispose(); B.makeNpc(B.scene0); B.st = 'idle'; B.temper = null; B.grudge = 0; B.poisonNext = false; B.killedBy = null; B.diedAt = null; B.cause = null; B.metNew = false; B.pickIdle();
+      CREW.reset(); CREW.hold = true;
       for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.meshes = []; GRAVES.list = []; D.knows = []; D.att = 0; D.mem = [];
       G.noRender = false; return out; }""")
-    ok = (r['back'] and r['bandaged'] and r['gameMin'] < 400 and r['next'] and r['dayLater'] >= 1440 and r['skipMs'] < 1500
+    ok = (r['back'] and r['bandaged'] and r['gameMin'] < 400 and r['next'] and r['later'] >= 120 and r['skipMs'] < 1500
           and r['afterSleep'][0] == 'idle' and r['afterSleep'][1] and r['afterSleep'][2])
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -1271,8 +1330,59 @@ async def check_react(g):
     ok = r['start'] in ('flinch', 'cower') and r['alert'] and len(r['asked']) > 0 and len(r['docHeard']) > 0
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_docplaces(g):
+    """the doctor knows the town: "behind the church" is behind the church, he goes there and patches up who lies
+       there; called to a dead man he goes all the same, kneels, feels for the pulse and says that he is dead"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, D = DOC, out = {}; B.revive(); B.forget(); G.noRender = true; D.fooledN = 0; D.att = 0; const aiWas = SETTINGS.v.aiTalk; SETTINGS.v.aiTalk = false;
+      const home = () => { const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0; };
+      home();
+      const tests = { kirche: 'Hank liegt hinter der Kirche!', turm: 'Am Wasserturm', bank: 'neben der Bank', walt: 'bei Hank', brucke: 'unter der Brücke' };
+      out.find = {}; for (const k in tests) { const f = PLACEMAP.find(tests[k]); out.find[k] = f ? [f.name, Math.round(f.x), Math.round(f.z)] : null; }
+      const where = PLACEMAP.find('hinter der Kirche'), ch = ROOMS.find((r) => r.type === 'church');
+      out.behindChurch = where && rLocal(ch, where.x, where.z)[1] < ch.z0;
+      // Hank shot behind the church; you tell the doc
+      B.st = 'street'; B.streetT = -1e9; N.room = null; N.pos.set(where.x, groundAt(where.x, where.z, 2), where.z); PLAY.pos.set(-40, 0, 4); GAIT.init = false;
+      N.hp.shot({ zone: 'thigh', side: 'R', part: 'thighR', local: new THREE.Vector3(-0.02, -0.2, 0.09), dir: new THREE.Vector3(1, 0, 0), point: N.pos.clone() }); N.hp.downFor = 999;
+      for (let k = 0; k < 30; k++) { G.stepFrame(1/60); B.st = 'hurt'; }
+      TALK.lastText = 'Doc, schnell! Hank verblutet hinter der Kirche!'; D.callFromTalk('come');
+      out.dest = D.callJob && D.callJob.where && D.callJob.where.name;
+      let k = 0; for (; k < 60 * 90 && !N.hp.wounds.some((w) => w.bandaged); k++) G.stepFrame(1/60);
+      out.secs = +(k / 60).toFixed(1); out.treated = N.hp.wounds.some((w) => w.bandaged); out.fooled = D.fooledN;
+      // a dead man: he goes, checks, says it
+      for (k = 0; k < 60 * 30 && D.st === 'call'; k++) G.stepFrame(1/60);
+      home(); B.revive(); B.st = 'street'; B.streetT = -1e9; N.room = null; N.pos.set(-40, 0, 4); G.stepFrame(1/60); N.hp.die('Test', null, 'back');
+      const said = []; const sp = D.npc.speak; D.npc.speak = function (t, d, m, kk) { said.push(t); return sp.call(this, t, d, m, kk); };
+      PLAY.pos.set(-42, 0, 6); GAIT.init = false; TALK.lastText = 'Doc, bei der Tränke liegt einer, komm schnell!';
+      const tr = PLACEMAP.find('bei der Tränke'); N.pos.set(tr.x + 1, 0, tr.z + 1); G.stepFrame(1/60);
+      D.callFromTalk('come'); let checked = false;
+      for (k = 0; k < 60 * 90 && D.st === 'call'; k++) { G.stepFrame(1/60); if (D.callJob && D.callJob.phase === 'check') checked = true; }
+      D.npc.speak = sp; out.checked = checked; out.saidDead = said.filter((t) => /tot/i.test(t)); out.docChecked = !!N.docChecked; out.fooled2 = D.fooledN;
+      SETTINGS.v.aiTalk = aiWas; home(); B.revive(); B.forget(); D.att = 0; D.mem = []; D.fooledN = 0; G.noRender = false; return out; }""")
+    ok = (r['behindChurch'] and r['find']['kirche'] and 'Kirche' in r['find']['kirche'][0] and r['find']['turm'] and r['find']['bank'] and r['find']['walt'] and r['find']['brucke']
+          and r['dest'] == 'hinter der Kirche' and r['treated'] and r['fooled'] == 0 and r['checked'] and r['docChecked'] and len(r['saidDead']) > 0 and r['fooled2'] == 0)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_beating(g):
+    """a beating knocks him out cold first (eyes shut, no word, he stays down); only a long, long beating of a man
+       who is out kills him"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true; B.toStreet(); N.pos.set(-8, 0, 2); PLAY.pos.set(-12, 0, 5); GAIT.init = false;
+      for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      const dir = new THREE.Vector3(1, 0, 0); let n = 0, koAt = null, deadAt = null;
+      for (; n < 200 && !N.hp.dead; n++) {
+        const down = !!N.hp.anim && N.hp.lowness > 0.5;
+        N.hp.blow({ head: !down || n % 2 === 0, power: 1, dir, heavy: n % 4 === 3, ground: down });
+        for (let k = 0; k < 24; k++) { G.stepFrame(1/60); if (B.st === 'brawl') { N.fight.stop(); B.st = 'street'; } }
+        if (koAt === null && N.hp.ko > 0) { koAt = n + 1; out.koOut = N.hp.out; out.koSpeak = N.canBeHeard(); }
+      }
+      out.koAt = koAt; out.deadAt = N.hp.dead ? n : null; out.cause = N.hp.cause;
+      B.revive(); G.noRender = false; return out; }""")
+    ok = r['koAt'] is not None and r['koOut'] and not r['koSpeak'] and r['deadAt'] is not None and r['deadAt'] - r['koAt'] >= 18
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

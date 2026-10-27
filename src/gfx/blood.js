@@ -32,9 +32,14 @@ const BLOOD = {
     E[kind] = S; this.all.push(S);
     return S;
   },
+  /* what was drawn is kept as a recipe per slot (what kind of mark, where, the random seed it was drawn with), so a
+     saved game draws the same marks again (SAVE part 'blood') */
+  seeded(fn) { const seed = (Math.random() * 2147483647) | 0, r0 = Math.random; Math.random = mulberry32(seed); try { fn(); } finally { Math.random = r0; } return seed; },
+  rec(W, o) { const S = W.S; (S.rec || (S.rec = []))[W.i] = o; o.born = S.born[W.i]; },
   // a slot for a new mark (the oldest goes); returns a writer
   slot(R, kind) {
     const S = this.set(R, kind), i = S.next; S.next = (S.next + 1) % S.cap;
+    if (S.rec) S.rec[i] = null;
     this.runs = this.runs.filter((r) => !(r.S === S && r.i === i)); this.pools = this.pools.filter((p) => !(p.S === S && p.i === i));
     S.born[i] = TIME.min; S.age[i] = -1;
     return { S, i, v: 0 };
@@ -88,9 +93,16 @@ const BLOOD = {
   },
   /* ---- spatter: a bullet came out of someone (or went in), the blood flung onto a wall or the floor. dir: the way
      it flew; k: how much (a head: more). On a wall a few runs start to creep down. ---- */
-  splat(R, pt, n, dir, k) {
+  splat(R, pt, n, dir, k, seed) {
     const K = this.k(); if (!K) return;
-    k = (k || 1) * K;
+    const k0 = k || 1;
+    let W = null;
+    const run = () => { W = this.splat0(R, pt, n, dir, k0 * K); };
+    if (seed === undefined) seed = this.seeded(run); else { const r0 = Math.random; Math.random = mulberry32(seed); try { run(); } finally { Math.random = r0; } }
+    this.rec(W, { t: 's', R: this.rid(R), p: [pt.x, pt.y, pt.z], n: [n.x, n.y, n.z], d: dir ? [dir.x, dir.y, dir.z] : null, k: k0, seed });
+    return W;
+  },
+  splat0(R, pt, n, dir, k) {
     const W = this.slot(R, 'big'), F = this.frame(pt, n, dir), perp = dir ? Math.abs(dir.dot(n)) : 1;
     const r0 = (0.045 + Math.random() * 0.03) * Math.sqrt(k), along = 1 + (1 - perp) * 0.8;
     // the blob, a little ahead of where it hit (longer the flatter it came), and a few smaller ones beside it
@@ -114,6 +126,7 @@ const BLOOD = {
       }
     }
     this.close(W);
+    return W;
   },
   /* ---- a pool where a man lies bleeding: it spreads with what he loses (vol: blood fraction lost), tongues
      run out over the floor ---- */
@@ -123,13 +136,22 @@ const BLOOD = {
     const gy = groundAt(at.x, at.z, N.pos.y + 0.3);
     let P = H.poolMark;
     if (!P || P.R !== R || Math.hypot(P.x - at.x, P.z - at.z) > 0.45 || !this.pools.includes(P)) {
-      const W = this.slot(R, 'big'), F = this.frame(new THREE.Vector3(at.x, gy + 0.004, at.z), this._n.set(0, 1, 0), null);
-      P = H.poolMark = { S: W.S, i: W.i, F, x: at.x, z: at.z, vol: 0, r: 0.02, lobes: [0, 1, 2].map(() => ({ a: Math.random() * TAU, k: 0.4 + Math.random() * 0.9, w: 0.2 + Math.random() * 0.25 })), noise: Array.from({ length: 16 }, () => Math.random() - 0.5), R, t: 0 };
-      this.pools.push(P);
+      P = H.poolMark = this.newPool(R, at.x, gy, at.z);
     }
     P.vol += vol * K;
   },
+  newPool(R, x, gy, z, seed) {
+    let P = null;
+    const make = () => {
+      const W = this.slot(R, 'big'), F = this.frame(new THREE.Vector3(x, gy + 0.004, z), this._n.set(0, 1, 0), null);
+      P = { S: W.S, i: W.i, F, x, z, gy, vol: 0, r: 0.02, lobes: [0, 1, 2].map(() => ({ a: Math.random() * TAU, k: 0.4 + Math.random() * 0.9, w: 0.2 + Math.random() * 0.25 })), noise: Array.from({ length: 16 }, () => Math.random() - 0.5), R, t: 0 };
+    };
+    if (seed === undefined) seed = this.seeded(make); else { const r0 = Math.random; Math.random = mulberry32(seed); try { make(); } finally { Math.random = r0; } }
+    P.seed = seed; this.pools.push(P);
+    return P;
+  },
   writePool(P) {
+    this.rec({ S: P.S, i: P.i }, { t: 'p', R: this.rid(P.R), x: P.x, gy: P.gy, z: P.z, r: +P.r.toFixed(3), vol: +P.vol.toFixed(4), seed: P.seed });
     const S = P.S, W = { S, i: P.i, v: 0 }, F = P.F, k = 16, pts = [], rim = [];
     const lobeGrow = clamp((P.r - 0.12) / 0.5, 0, 1);
     for (let i = 0; i < k; i++) {
@@ -154,7 +176,13 @@ const BLOOD = {
     const dir = mv > 0.2 ? this._c.set(N.vx, 0, N.vz).normalize() : null;
     this.drop(R, x, gy, z, dir, (0.009 + Math.random() * 0.008) * Math.sqrt(K), h, mv);
   },
-  drop(R, x, gy, z, dir, s, h, mv) {
+  drop(R, x, gy, z, dir, s, h, mv, seed) {
+    let W = null;
+    const run = () => { W = this.drop0(R, x, gy, z, dir, s, h, mv); };
+    if (seed === undefined) seed = this.seeded(run); else { const r0 = Math.random; Math.random = mulberry32(seed); try { run(); } finally { Math.random = r0; } }
+    this.rec(W, { t: 'd', R: this.rid(R), x, gy, z, d: dir ? [dir.x, dir.z] : null, s, h, mv: mv || 0, seed });
+  },
+  drop0(R, x, gy, z, dir, s, h, mv) {
     const W = this.slot(R, 'small'), F = this.frame(new THREE.Vector3(x, gy + 0.003, z), this._n.set(0, 1, 0), dir);
     const e = 1 + Math.min(1.5, (mv || 0) * 0.6);
     this.blob(W, F, 0.003, 0, 0, s * e, s, 6, 0.35, 1, 0.85);
@@ -162,6 +190,7 @@ const BLOOD = {
     const ns = h > 0.5 ? 3 : 1;
     for (let j = 0; j < ns; j++) { const a = dir ? (Math.random() - 0.5) * 0.8 : Math.random() * TAU, d = s * (1.6 + Math.random() * 1.6) * e; this.droplet(W, F, 0.003, Math.cos(a) * d, Math.sin(a) * d, Math.cos(a), Math.sin(a), s * 0.28, 1.8, 0.85); }
     this.close(W);
+    return W;
   },
   /* ---- a torn artery pumps: a spurt with each beat, out of the wound, landing as drops ---- */
   spurt(p, n, k, N) {
@@ -175,6 +204,35 @@ const BLOOD = {
     // where it lands (the arc down to the floor)
     const gy = groundAt(p.x, p.z, p.y + 0.2), dy = p.y - gy, t = (vy + Math.sqrt(vy * vy + 2 * 9.8 * Math.max(0, dy))) / 9.8;
     for (let j = 0; j < 2; j++) { const f = 0.7 + Math.random() * 0.5; this.drop(N.room || null, p.x + vx * t * f, gy, p.z + vz * t * f, this._c.set(vx, 0, vz).normalize(), 0.01 + Math.random() * 0.008, 1, 1.5); }
+  },
+  rid(R) { return R ? ROOMS.indexOf(R) : -1; },
+  room(id) { return id >= 0 ? ROOMS[id] || null : null; },
+  // all the marks there are, oldest first (for the save)
+  save() {
+    const out = [];
+    for (const S of this.all) if (S.rec) S.rec.forEach((r, i) => { if (r && S.born[i] > -1e8) out.push(Object.assign({}, r, { born: S.born[i] })); });
+    out.sort((a, b) => a.born - b.born);
+    return out.slice(-400).map((r) => JSON.parse(JSON.stringify(r, (k, v) => (typeof v === 'number' ? +v.toFixed(4) : v))));
+  },
+  load(list) {
+    if (!Array.isArray(list) || !this.k()) return;
+    const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+    for (const r of list) {
+      if (!r || typeof r.seed !== 'number') continue;
+      const R = this.room(r.R | 0);
+      if (r.t === 's' && Array.isArray(r.p) && Array.isArray(r.n)) {
+        const W = this.splat(R, V(r.p), V(r.n), r.d ? V(r.d) : null, r.k || 1, r.seed); if (!W) continue;
+        for (const q of this.runs) if (q.S === W.S && q.i === W.i) q.t = q.tau * 3.9;
+        W.S.born[W.i] = r.born; W.S.rec[W.i].born = r.born;
+      } else if (r.t === 'd') {
+        this.drop(R, r.x, r.gy, r.z, r.d ? this._c.set(r.d[0], 0, r.d[1]).normalize() : null, r.s, r.h, r.mv, r.seed);
+        const S = this.set(R, 'small'), i = (S.next - 1 + S.cap) % S.cap; S.born[i] = r.born; S.rec[i].born = r.born;
+      } else if (r.t === 'p') {
+        const P = this.newPool(R, r.x, r.gy, r.z, r.seed); P.vol = r.vol; P.r = r.r; this.writePool(P); P.S.born[P.i] = r.born; P.S.rec[P.i].born = r.born;
+        const j = this.pools.indexOf(P); if (j >= 0) this.pools.splice(j, 1);   // (it does not grow any more)
+      }
+    }
+    for (const S of this.all) for (let i = 0; i < S.cap; i++) if (S.born[i] > -1e8) this.colour(S, i, clamp((TIME.min - S.born[i]) / 300, 0, 1));
   },
   /* ---- per frame: runs creep, pools spread, old marks darken ---- */
   update(dt) {
@@ -209,3 +267,5 @@ const BLOOD = {
     for (const S of this.all) S.mesh.visible = !S.R || !!S.R.mesh.visible;
   }
 };
+// the marks stay where they are (until newer ones take their place)
+SAVE.part('blood', () => BLOOD.save(), (d) => BLOOD.load(d));

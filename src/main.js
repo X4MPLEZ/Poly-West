@@ -138,6 +138,7 @@
     updatePlayer(0.016);
     G.lookAt = null; updateCamera(1);
     layout();
+    POST.warm(G.renderer, G.scene, G.cam);
     let rt = 0;
     window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
     document.getElementById('boot').classList.add('gone');

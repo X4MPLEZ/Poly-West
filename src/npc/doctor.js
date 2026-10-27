@@ -25,16 +25,16 @@ const DOC = {
     coming: [['Ich komme! Geh voraus!', 'surprised'], ['Meine Tasche… los, schnell!', 'surprised'], ['Bin unterwegs!', 'surprised'], ['Verdammt. Ich komme.', 'angry']],
     comingCalm: [['Ich seh es mir an.', 'neutral'], ['Gut, ich komme mit.', 'neutral'], ['Na schön. Zeig es mir.', 'neutral']],
     onsite: [['Platz da! Lasst mich ran!', 'angry'], ['Halt still. Ich bin ja da.', 'neutral'], ['Zeig her… ruhig atmen.', 'neutral']],
+    dead: [['Der ist tot. Da kann ich nichts mehr tun.', 'sleepy'], ['Tot. Kein Puls mehr. Zu spät.', 'sleepy'], ['Für den kommt jede Hilfe zu spät.', 'sleepy'], ['Er ist tot. Ich hätte früher hier sein müssen.', 'sleepy']],
     late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
     fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
     refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
     sell: [['Wickel fest, nicht zu fest. Und dann bring ihn zu mir.', 'neutral'], ['Ein Verband ersetzt keinen Arzt. Merk dir das.', 'neutral'], ['Hier. Druck drauf, dann wickeln.', 'neutral']],
     mutter: [['Wo hab ich nur das Laudanum hingestellt…', 'whisper'], ['Boston… hätte ich nur nie…', 'whisper'], ['Drei Schusswunden diese Woche. Drei.', 'whisper'], ['Die Hände… immer die Hände waschen.', 'whisper'], ['Hm. Das Rezept stimmt so nicht.', 'whisper']]
   },
-  // places he can be called to: words in what you say → a building (room type), or out in the street
-  PLACES: [['saloon', /saloon|bar\b|kneipe|theke|hank|walt|jeb/], ['hotel', /hotel/], ['bank', /bank/], ['sheriff', /sheriff|gefängnis|zelle/], ['livery', /stall|pferd/],
-    ['barber', /barbier|friseur|rasier/], ['gunsmith', /waffen/], ['post', /\bpost/], ['apothecary', /apothek/], ['store', /gemischt|kramladen|laden\b|store/], ['street', /straße|strasse|draußen|vor (dem|der|die)/]],
-  placeOf(text) { const t = (text || '').toLowerCase(); for (const [k, re] of this.PLACES) if (re.test(t)) return k; return null; },
+  // where he is called to: anything in town you can name, and how ("hinter der Kirche", "beim Wasserturm", "bei
+  // Hank"): npc/places.js
+  placeOf(text) { return PLACEMAP.find(text); },
   // called from a conversation: where to (the place you named, or with you), how urgent (how you said it)
   callFromTalk(action) {
     const t = (TALK.lastText || '').toLowerCase(), place = action === 'follow' ? null : this.placeOf(t);
@@ -43,12 +43,15 @@ const DOC = {
   },
   /* a call for help: he goes there (runs, if it is urgent), looks for whoever is hurt, patches him up where he lies;
      nobody there: he was made a fool of, and remembers it (twice, and he no longer believes you easily) */
-  call(place, urgent) {
+  call(place, urgent, trusted) {
     const N = this.npc; if (!N || N.hp.dead || N.hp.busy() || this.st === 'fight') return false;
-    if (this.fooledN >= 2 && this.att < -0.2 && !this.patientNear(PLAY.pos, 30)) { this.say('refuseCall'); return false; }
+    if (!trusted && this.fooledN >= 2 && this.att < -0.2 && !this.patientNear(PLAY.pos, 30)) { this.say('refuseCall'); return false; }
+    // place: 'follow' (with you), 'here' (by himself, round him), or what PLACEMAP found
     let dest = null, R = null;
-    if (place !== 'follow' && place !== 'street') { R = ROOMS.find((r) => r.type === place && !r.parent); if (R) { const p = rwp(R, 0, R.floorY, R.z1 - 1.6); dest = p; } }
-    this.callJob = { place, R, dest, urgent, t: 0, phase: 'go', P: null, walkT: 0 };
+    const P = place && typeof place === 'object' ? place : null;
+    if (P && P.street) place = 'street';
+    else if (P) { R = P.R || P.room || null; dest = { x: P.x, z: P.z }; }
+    this.callJob = { place: P ? (P.type || 'spot') : place, where: P, R, dest, urgent, t: 0, phase: 'go', P: null, walkT: 0, by: typeof trusted === 'string' ? trusted : null };
     this.st = 'call'; this.queue.length = 0; this.cur = null;
     N.hurry = urgent ? 2.1 : 1.3; N.free(0); N.free(1); N.endGesture && N.endGesture();
     if (dest) N.walkTo(dest.x, dest.z);
@@ -62,7 +65,7 @@ const DOC = {
       if (room !== undefined && (n.room || null) !== (room || null)) continue;
       if (Math.hypot(n.pos.x - p.x, n.pos.z - p.z) > r) continue;
       // (only who needs him: dead, bleeding, an open gunshot; a bandaged man is done)
-      const H = n.hp, need = H.dead || H.bleed > 0.0005 || H.dying > 0 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.6);
+      const H = n.hp, need = (H.dead && !n.docChecked) || H.bleed > 0.0005 || H.dying > 0 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.6);
       const sc = H.dead ? 0.5 : n.plight();
       if (need && sc > bs) { bs = sc; best = n; }
     }
@@ -88,12 +91,13 @@ const DOC = {
     if (J.phase === 'none') {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
-      this.remember('Der Fremde hat dich umsonst ' + (J.R ? ({ saloon: 'zum Saloon', hotel: 'zum Hotel', bank: 'zur Bank', sheriff: 'zum Sheriff', livery: 'zum Mietstall', barber: 'zum Barbier', gunsmith: 'zum Waffenhändler', post: 'zur Post', apothecary: 'zur Apotheke', store: 'zum Laden' }[J.place] || 'irgendwohin') : 'durch die Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
+      this.remember('Der Fremde hat dich zu einem Verletzten ' + (J.where ? J.where.name : 'irgendwo in der Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
       this.say('fooled'); N.gesture('fist_shake'); home(); return;
     }
     if (J.phase === 'to') {
       const P = J.P;
-      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); P.waitFor = null; home(); return; }
+      // dead: he goes to him all the same and sees for himself (phase 'check')
+      if (P.hp.dead) J.dead = true;
       // he sees the doctor coming and waits for him (on his way to the practice, say): he stops where he is
       if (Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z) < 14) P.waitFor = { by: N, t: G.time + 1.5 };
       // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor; again if he moved
@@ -107,7 +111,25 @@ const DOC = {
       J.toT += dt;
       const dS = Math.hypot(N.pos.x - J.spot[0], N.pos.z - J.spot[1]), dP = Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z);
       if (dS > 0.3 && !(J.toT > 6 && dP < 1.7)) { if (!N.walking() || (J.walkT -= dt) <= 0) { J.walkT = 1.5; N.walkTo(J.spot[0], J.spot[1]); } if (J.toT > 25) J.phase = 'none'; return; }
-      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1; this.askHow(P);
+      N.stop(); J.t = 0; N.hurry = 1;
+      if (J.dead || P.hp.dead) { J.phase = 'check'; return; }
+      J.phase = 'work'; this.askHow(P);
+      return;
+    }
+    // a body: down on one knee, two fingers on the neck, a moment; then he knows
+    if (J.phase === 'check') {
+      const P = J.P; N.crouchT = 1;
+      const nk = P.ch.p.head.getWorldPosition(this._v); nk.y -= 0.12;
+      N.faceYaw = Math.atan2(nk.x - N.pos.x, nk.z - N.pos.z); N.lookAt(nk, 1);
+      const l = N.toLocal(nk, this._w); N.reach(1, l.x, l.y, Math.max(0.25, l.z)); N.handShape[1] = { point: 0.6, open: 0.3 };
+      if (J.t > 3.2) {
+        P.docChecked = true; N.handShape[1] = null; N.free(1); N.crouchT = 0;
+        const said = this.say('dead');
+        if (!said && G.room === (N.room || null)) TOAST.show('Doc: „Der ist tot. Da kann ich nichts mehr tun.“');
+        this.remember(P.name + ' war tot, als du kamst. Du konntest nichts mehr tun (' + TIME.stamp() + ').');
+        worldEvent('docChecked', P.pos.x, P.pos.y, P.pos.z, { by: 'doctor', npc: P.id });
+        J.phase = 'after'; J.t = 0; N.gesture('shake_head');
+      }
       return;
     }
     if (J.phase === 'work') {
@@ -126,7 +148,7 @@ const DOC = {
         const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
         this.learn(P, 0); this.snip(); this.say('done');
-        this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').');
+        if (J.by) this.remember(J.by + ' hat dich zu ' + P.name + ' geholt, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); else { this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').'); }
         P.waitFor = null;
         if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
         this.queue = this.queue.filter((q) => q.npc !== P);
@@ -243,10 +265,10 @@ const DOC = {
     if (e.type === 'shot' && inside) { this.feel(-0.2); this.say('shot', 6); }
     if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor' && G.room === this.R) this.feel(-0.3);
     // somebody goes down near him: once it is quiet for a moment, he goes to help by himself
-    if ((e.type === 'npcShot' || e.type === 'npcDown') && e.npc !== 'doctor') {
+    if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor') {
       const N = this.npc, V = NPCS.list.find((n) => n.id === e.npc);
       if (V && (V.room || null) === (N.room || null) && Math.hypot(V.pos.x - N.pos.x, V.pos.z - N.pos.z) < 16 && this.st === 'idle')
-        setTimeout(() => { if (this.st === 'idle' && !V.hp.dead && this.patientNear(V.pos, 1, V.room)) { this.say('onsite', 20); this.call('here', true); } }, 2500 + Math.random() * 1500);
+        setTimeout(() => { if (this.st === 'idle' && this.patientNear(V.pos, 1, V.room)) { if (!V.hp.dead) this.say('onsite', 20); this.call('here', !V.hp.dead); } }, 2500 + Math.random() * 1500);
     }
   },
   /* ---- per frame ---- */
@@ -364,9 +386,10 @@ const DOC = {
       rules: [
         'Du bist Doc Whitfield, der Arzt von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle.',
         'Wer du bist: um die sechzig, graues Haar, schwarze Weste, Fliege. Studiert in Boston, aus Gründen, über die du nicht sprichst, hier gelandet. Gebildet, ruhig, trocken und ein wenig zynisch. Du hast zu viele Schusswunden gesehen. Du duzt jeden.',
-        'Dust Creek hat: den Saloon (Hank ist der Barkeeper), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
+        'Dust Creek hat: den Saloon (Hank, sein Bruder Walt und der alte Jeb schenken dort in Schichten aus), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
         'Dein Kopf ist nicht leer: Dir geht das Laudanum aus und die Postkutsche bringt keins; nachts greifst du selbst manchmal zur Flasche, das weiß keiner. Hank hältst du für ehrlich und stur, er schenkt zu großzügig ein. Du bist neugierig wie ein Arzt: Du fragst nach, wie etwas passiert ist und wer es war, und sprichst den Fremden auf das an, was dir Patienten über ihn erzählt haben.',
         'Eine Behandlung kostet 50 Cent; Verbandszeug verkaufst du für 15 Cent (Knopf im Spiel). wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
+        'Du kennst jeden Winkel der Stadt: die Kirche mit dem Friedhof am Westende, die Hauptstraße mit Saloon, Hotel, Bank, Sheriff, Mietstall mit der Koppel dahinter, Barbier, Waffenhändler, Post, Apotheke und Laden, den Wasserturm und das Windrad hinter den Häusern im Osten, die Brücke über das ausgetrocknete Bachbett. Nennt er einen Ort wie „hinter der Kirche“, weißt du sofort, wo das ist.',
         'Sagt dir der Fremde, dass irgendwo jemand verletzt ist, verblutet oder stirbt, und du glaubst ihm: action come (du gehst sofort hin, bei Lebensgefahr rennst du; den Ort nennt er selbst). Sollst du einfach mitkommen: action follow. Wurdest du schon umsonst gerufen, bist du misstrauisch und fragst nach, statt gleich loszulaufen.',
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
@@ -414,10 +437,12 @@ const DOC = {
     };
   }
 };
-SAVE.part('doc', () => ({ fooled: DOC.fooledN, mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null }), (d) => {
+SAVE.part('doc', () => ({ fooled: DOC.fooledN, mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null, asked: DOC.npc && DOC.npc.asked ? [...DOC.npc.asked] : [] }), (d) => {
   if (!d) return;
   DOC.att = clamp(+d.att || 0, -1, 1); DOC.fooledN = d.fooled | 0;
   DOC.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').slice(-10) : [];
   DOC.knows = Array.isArray(d.knows) ? d.knows.filter((x) => typeof x === 'string').slice(-6) : [];
   if (d.body && DOC.npc) { DOC.npc.hp.load(d.body); if (DOC.npc.hp.dead) DOC.st = 'dead'; }
+  // the questions he has asked you already (TALK.wonder): not again
+  if (DOC.npc && Array.isArray(d.asked)) DOC.npc.asked = new Set(d.asked.filter((x) => typeof x === 'string'));
 });

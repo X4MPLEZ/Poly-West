@@ -32,10 +32,14 @@ const PHP = {
     DRINK.cancel();
     if (this.hp <= 0) { this.knockout(o); return 'out'; }
     if ((this.daze >= 1 || (o.heavy && this.daze > 0.6)) && !FALL.busy() && !SIT.busy()) {
-      FALL.start(false, 'back', Math.atan2(o.dir.x, o.dir.z));
+      // down: not always onto the backside; the way the blow went decides, and it is never the same twice
+      const d = Math.atan2(o.dir.x, o.dir.z), r = Math.random(), kind = r < 0.4 ? 'back' : r < 0.75 ? 'side' : 'fwd';
+      FALL.start(false, kind, kind === 'fwd' ? d + (Math.random() - 0.5) * 1.2 : d + (Math.random() - 0.5) * 0.8);
       this.daze = 0.4;
       return 'down';
     }
+    // drunk and hit: he reels from it, a step or two the way it sent him, instead of standing like a post
+    if (DRUNK.level > 0.3 && !FALL.busy() && !SIT.busy()) DRUNK.stagger(Math.atan2(o.dir.x, o.dir.z), !!o.heavy, 0);
     return 'hit';
   },
   knockout(o) {

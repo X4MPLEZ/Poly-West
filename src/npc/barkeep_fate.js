@@ -6,8 +6,8 @@
             or stay too long, and he fires (a warning into the ceiling first). A shotgun puts you down; you come to
             at the doctor's. Having paid you back, the grudge drops.
    Death is for good: the body lies where it fell until the undertaker comes (two hours later, unseen, or while you
-   sleep); a fresh grave by the church. A day later a new barkeeper comes (his brother, then an old friend), who
-   knows what happened, and does not like you for it. */
+   sleep); a fresh grave by the church. Then the next one of the crew (npc/crew.js) takes over; what he knows of it
+   depends on what he saw (CREW.died / learnKiller). */
 Object.assign(BARKEEP, {
   /* how a successor takes the stranger who killed the man before him (picked at random, weighted by the man):
      angry (no drink for you, cold words), afraid (serves you, shaking, wants you gone), fists, the shotgun, or
@@ -30,8 +30,8 @@ Object.assign(BARKEEP, {
   },
   revPick(kind) {
     const L = this.REV_LINES[kind]; if (!L) return null;
-    const x = L[Math.floor(Math.random() * L.length)], W = this.WHO[Math.max(0, this.whoI - 1)];
-    return { text: x[0].replace('{n}', W ? W.name : 'er').replace('{k}', this.who().kin || 'Freund'), mood: x[1] };
+    const x = L[Math.floor(Math.random() * L.length)], D = CREW.lastDead, n = D ? this.WHO[D.i].name : 'er';
+    return { text: x[0].replace('{n}', n).replace('{k}', D ? CREW.kin(this.whoI, D.i) : 'Freund'), mood: x[1] };
   },
   revShout(kind) { const l = this.revPick(kind); if (!l || !this.npc.canBeHeard()) return; SAY.hide(this.npc); this.npc.speak(l.text, undefined, l.mood, true); },
   // the floor a grudge cannot fall under: what was done to his body
@@ -131,59 +131,40 @@ Object.assign(BARKEEP, {
     else { const ray = GUN.ray; ray.set(mz, dir); ray.near = 0; ray.far = 30; const h = ray.intersectObjects(W.worldMeshes.concat([this.R.mesh]), false)[0]; if (h) FX.impact(h, dir); }
   },
 
-  /* ---- death: the body, the grave, the next one ---- */
+  /* ---- death: the body, the grave; who takes over is up to the crew (npc/crew.js) ---- */
   removeBody() {
     const N = this.npc; if (!N || !N.hp.dead) return;
-    const W = this.who();
+    const W = this.who(), m = CREW.m[this.whoI], known = !!(m && m.died && m.died.known);
     GRAVES.add(W.name, TIME.day());
-    DOC.knows.push(W.name + ', der Barkeeper, ist tot (' + (N.hp.cause || 'erschossen') + ', ' + TIME.stamp(this.diedAt) + '). ' + (this.killedBy === 'player' ? 'Jeder in der Stadt weiß, dass der Fremde es war.' : ''));
+    DOC.knows.push(W.name + ', der Barkeeper, ist tot (' + (N.hp.cause || 'erschossen') + ', ' + TIME.stamp(this.diedAt) + '). ' + (this.killedBy === 'player' ? (known ? 'Die ihn gesehen haben, sagen: Der Fremde war es.' : 'Wer es war, weiß keiner.') : ''));
     if (DOC.knows.length > 6) DOC.knows.shift();
-    if (this.killedBy === 'player') DOC.feel(-0.4);
+    if (this.killedBy === 'player' && known) DOC.feel(-0.4);
+    // whoever came down and stayed with him goes with the body
+    for (const h of CREW.helpers.slice()) if (h.ph !== 'dead') CREW.gone(h);
     N.dispose();
-    this.npc = null; this.st = 'gone'; this.goneAt = TIME.min;
+    this.npc = null; this.st = 'closed'; this.goneAt = TIME.min;
+    CREW.buried(this.whoI);
   },
-  // a new barkeeper takes over (a day after)
-  arrive() {
-    const prev = this.who();
-    this.whoI++;
-    const W = this.who(), N = this.makeNpc(this.scene0);
-    // he knows the story, and he has his own view of you
-    this.mem = []; this.recent = []; this.served = 0; this.damage = { holes: 0, glass: 0 }; this.att = 0; this.cool = {}; this.bags = {};
-    N.talkLog = [];
-    this.remember('Du hast den Saloon übernommen, nachdem ' + prev.name + ' ' + (this.cause || 'gestorben') + ' ist (' + TIME.stamp(this.diedAt) + ').');
-    if (this.killedBy === 'player') {
-      this.remember('Jeder sagt, der Fremde hat ' + prev.name + ' umgebracht. Du hast ihn nie gesehen, aber du weißt, wie er aussieht.');
-      // how he takes it: not always the same
-      const T = this.TEMPERS, w = T.map((t) => t.w * (t.need ? t.need(W) : 1));
-      let r = Math.random() * w.reduce((a, b) => a + b, 0), i = 0; while (r > w[i] && i < T.length - 1) { r -= w[i]; i++; }
-      const t = T[i]; this.temper = t.id; this.grudge = t.grudge; this.att = t.att; this.remember(t.mem);
-      if (t.id === 'poison') this.poisonNext = true;
-    } else { this.grudge = 0; this.temper = null; }
-    this.st = 'idle'; this.pickIdle(); this.newT = TIME.min;
-    worldEvent('newBarkeep', N.pos.x, N.pos.y, N.pos.z, { by: 'world', who: W.id });
-  },
-  // developer tools: the next one takes over now (the one there dies off-screen, buried, the next arrives)
+  // developer tools: the one there dies off-screen and is buried, the next one alive takes over now
   devNext() {
-    if (this.whoI >= this.WHO.length - 1) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
+    if (!CREW.living().some((m) => m.i !== this.whoI)) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
     const N = this.npc;
-    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; }
+    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; const m = CREW.m[this.whoI]; if (m.died) { m.died.by = 'world'; m.died.known = false; m.died.cause = 'gestorben'; } }
     if (this.npc) this.removeBody();
-    this.arrive();
-    TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
+    const hold = CREW.hold; CREW.hold = true; CREW.update(0); CREW.hold = hold;
+    if (this.npc) TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
   },
   // what his temper does from moment to moment
   temperUpdate(dt, inside, dP) {
     const N = this.npc; if (!N || !this.temper || !inside) return;
     if (this.temper === 'afraid' && dP < 5) N.fear = G.time + 0.5;
   },
-  // called from update while dead or gone
+  // called from update while dead: the body is taken away after a while, when nobody sees it
   fate(dt) {
-    const away = G.room !== this.R && Math.hypot(PLAY.pos.x - this.R.doorW.x, PLAY.pos.z - this.R.doorW.z) > 25;
-    if (this.st === 'dead' && this.npc && TIME.min - (this.diedAt || TIME.min) > 120 && away) this.removeBody();
-    if (this.st === 'gone' && TIME.min - (this.diedAt || 0) >= 1440 && away && this.whoI < this.WHO.length - 1) this.arrive();
+    if (this.st === 'dead' && this.npc && TIME.min - (this.diedAt || TIME.min) > 120 && this.unseen()) this.removeBody();
   },
-  // the successor's first look at you
-  greetSuccessor() { if (this.whoI > 0 && !this.metNew && this.killedBy === 'player') { this.metNew = true; this.revShout('successor'); return true; } return false; }
+  // the next one's first look at you, when he knows what you did
+  greetSuccessor() { if (this.temper && !this.metNew && CREW.lastDead && this.killedBy !== 'world') { this.metNew = true; this.revShout('successor'); return true; } return false; }
 });
 
 /* ---- graves by the church (fresh earth, a wooden cross); kept in the save ---- */

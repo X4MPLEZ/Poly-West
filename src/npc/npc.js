@@ -116,6 +116,31 @@ class NPC {
     if (H.blood < 0.8 || H.needsDoc()) return 1;
     return 0;
   }
+  // a way round what is in the way: a free point to one side, a little ahead; the way on is kept
+  detour() {
+    const g = this.goal; if (!g) return;
+    const dx = g.x - this.pos.x, dz = g.z - this.pos.z, d = Math.hypot(dx, dz) || 1, fx = dx / d, fz = dz / d, px = -fz, pz = fx;
+    const y = this.pos.y, clear = (x, z) => { for (let k = 1; k <= 4; k++) { const t = k / 4; if (HARM.blockedAt(this.pos.x + (x - this.pos.x) * t, this.pos.z + (z - this.pos.z) * t, y, 0.3)) return false; } return true; };
+    const side = (this.detourSide = -(this.detourSide || 1));
+    for (const dist of [1.2, 2, 3]) for (const s of [side, -side]) {
+      const cx = this.pos.x + px * s * dist + fx * 0.5, cz = this.pos.z + pz * s * dist + fz * 0.5;
+      if (!clear(cx, cz)) continue;
+      if (this.legPass) this.path = [[g.x, g.z]].concat(this.path || []); else this.dest = [g.x, g.z, this.faceYaw];
+      const fy = this.faceYaw; this.goTo(cx, cz, undefined, true); this.legPass = true; if (!this.dest) this.faceYaw = fy;
+      return;
+    }
+  }
+  // would the lying body (head, chest, hips) be clear of walls and furniture if moved by dx, dz?
+  bodyFits(dx, dz) {
+    const v = this._bf || (this._bf = new THREE.Vector3());
+    for (const k of ['head', 'torso', 'pelvis']) {
+      const part = this.ch.p[k]; if (!part) continue;
+      part.getWorldPosition(v);
+      const now = HARM.blockedAt(v.x, v.z, this.pos.y, 0.12), then = HARM.blockedAt(v.x + dx, v.z + dz, this.pos.y, 0.12);
+      if (then && !now) return false;
+    }
+    return true;
+  }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
   // how fast he goes: walking (hurry: a brisker walk), running from hurry 2 on; slower when hurt
   topSpeed() { const h = this.hurry || 1; return (h >= 2 ? this.runSpeed : this.walkSpeed * h) * this.hp.speedK(); }
@@ -207,7 +232,9 @@ class NPC {
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
       else { const top = this.topSpeed(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
-    const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
+    // stuck on something on the way (a trough, a rail, a crate): a step round it, then on
+    if (this.goal && can && !hold) { this.stuckT = this.speed < 0.25 ? (this.stuckT || 0) + dt : 0; if (this.stuckT > 0.7) { this.stuckT = 0; this.detour(); } }
+    const a = 1 - Math.exp(-dt * (can ? 7 : H.down() ? 10 : 3.5));   // (a body on the floor drags: it hardly slides)
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
     let nx = this.pos.x + this.vx * dt, nz = this.pos.z + this.vz * dt;
     // walls, furniture and the player stop him like they stop the player
@@ -233,6 +260,9 @@ class NPC {
         } else this.blockT = 0;
       } else this.blockT = 0;
     }
+    // lying on the floor and shoved along (blows, kicks): the whole body must stay out of the walls, not only where
+    // he stands — head, chest and hips are tested where they would be, and he stops at the wall
+    if (H.down() && (nx !== this.pos.x || nz !== this.pos.z) && !this.bodyFits(nx - this.pos.x, nz - this.pos.z)) { nx = this.pos.x; nz = this.pos.z; this.vx = this.vz = 0; }
     if (dt > 0) { this.vx = (nx - this.pos.x) / dt * 0.5 + this.vx * 0.5; this.vz = (nz - this.pos.z) / dt * 0.5 + this.vz * 0.5; }
     this.pos.x = nx; this.pos.z = nz;
     // on the ground: the street, the porch, a floor (people who stay in their room keep its floor)
