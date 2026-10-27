@@ -521,7 +521,7 @@ class Vitals {
 
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
-  THIN: /^(uArm|fArm|thigh|shin|foot|hat)/, SLACK: 0.06,
+  THIN: /^(uArm|fArm|hand|thigh|shin|foot|hat)/, SLACK: 0.06,
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
@@ -549,6 +549,7 @@ const HARM = {
         for (const name in N.ch.p) {
           if (pass === 1 && !this.THIN.test(name)) continue;
           const part = N.ch.p[name];
+          if (part.visible === false) continue;
           const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
           const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
           this._inv.copy(part.matrixWorld).invert();
@@ -585,6 +586,7 @@ const HARM = {
     if (part === 'pelvis' || part === 'gun') return p.y > 0.02 ? { zone: 'belly', side: '' } : { zone: 'hip', side: p.x > 0 ? 'L' : 'R' };
     if (/^uArm/.test(part)) return { zone: 'arm', side };
     if (/^fArm/.test(part)) return { zone: p.y < -0.25 ? 'hand' : 'arm', side };
+    if (/^hand/.test(part)) return { zone: 'hand', side };
     if (/^(thigh|shin)/.test(part)) return { zone: 'leg', side };
     if (/^foot/.test(part)) return { zone: 'foot', side };
     return { zone: 'chest', side: '' };

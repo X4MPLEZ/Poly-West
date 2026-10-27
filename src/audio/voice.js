@@ -332,6 +332,10 @@ const VOICE = {
     src.connect(g); g.connect(this.output());
     const dur = buf.duration / pr;
     job.npc.talkT = dur + 0.15;
+    // the mouth follows the sentence: its loudness every 40 ms of playing time (0..1)
+    const st = Math.max(1, Math.round(buf.sampleRate * 0.04)), env = new Float32Array(Math.ceil(job.pcm.length / st));
+    for (let i = 0; i < env.length; i++) { let q = 0; const a = i * st, b = Math.min(job.pcm.length, a + st); for (let j = a; j < b; j++) q += job.pcm[j] * job.pcm[j]; env[i] = Math.min(1, Math.sqrt(q / Math.max(1, b - a)) * 4.5); }
+    job.npc.lip = { t0: performance.now() + 30, step: 40 / pr, env };
     this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
     // a breath between sentences, as long as the mood wants it
     src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), M.gap * 1000); };

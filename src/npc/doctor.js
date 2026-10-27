@@ -30,8 +30,8 @@ const DOC = {
     const s = this.SPOTS.desk, p = rwp(R, s[0], R.floorY, s[1]);
     this.npc = new NPC({
       id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.05,
-      colors: { shirt: rgb(0xe8e4da), vest: rgb(0x2a2a2e), jeans: rgb(0x34322f), jeansD: rgb(0x2c2a28), bandana: rgb(0x2a2a2e), stache: rgb(0x8a8378), skin: rgb(0xe0b394), skinD: rgb(0xcb9b7c), boot: rgb(0x1e1a18), belt: rgb(0x1e1a18) },
-      look: { hat: 'none', gun: false, bowtie: rgb(0x2a2a2e), hair: rgb(0x9a948a) }
+      desc: { skin: 0, build: { width: 0.95, belly: 0.1 }, face: { nose: 'small', brows: 0.9 }, hair: { style: 'slick', color: rgb(0x9a948a) }, beard: { style: 'goatee', color: rgb(0x8a8378) },
+        outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe8e4da) }, vest: rgb(0x2a2a2e), pants: { color: rgb(0x34322f) }, boots: rgb(0x1e1a18), belt: rgb(0x1e1a18), bowtie: rgb(0x2a2a2e), glasses: true, gun: false } }
     });
     const N = this.npc;
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };

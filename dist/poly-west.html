@@ -3116,6 +3116,71 @@ function buildAtlas(signFont) {
   return tex;
 }
 
+// ==== char/look.js ====
+/* ---------- what a person looks like, as data ----------
+   One description per figure (the player, Hank, the doctor, later anyone in town); char/rig.js builds the body from
+   it. Everything a character editor or a shop would change lives here: build, skin, face, hair, beard, clothes.
+     build:  { width 0.9..1.15, belly 0..1 }
+     skin:   index into LOOK.SKIN (or a colour)
+     face:   { nose: 'small' | 'normal' | 'big', brows: thickness 0.7..1.4 }
+     hair:   { style: 'short' | 'slick' | 'long' | 'balding' | 'bald', color }
+     beard:  { style: 'none' | 'stubble' | 'stache' | 'handlebar' | 'goatee' | 'chops' | 'full', color }
+     outfit: { hat: null | { style: 'cowboy', color, band }, bandana: null | colour, shirt: { color, rolled },
+               vest: null | colour, pants: { color }, boots: colour, belt: colour, buckle: colour,
+               apron, bowtie, garter (null | colour), glasses (bool), gun (bool) }
+   lookFrom(colors, opt) turns the older colour lists into a description. */
+const LOOK = {
+  SKIN: [0xf0c8a8, 0xe8b590, 0xdca482, 0xd99f78, 0xc68a62, 0xa96d48, 0x8a5434, 0x5e3a24].map(rgb),
+  HAIR: { black: rgb(0x1c1512), dark: rgb(0x2e2018), brown: rgb(0x5a3a26), red: rgb(0x8a4a22), blond: rgb(0xc4a064), grey: rgb(0x9a948a), white: rgb(0xd8d4cc) },
+  HAIR_STYLES: ['short', 'slick', 'long', 'balding', 'bald'],
+  BEARDS: ['none', 'stubble', 'stache', 'handlebar', 'goatee', 'chops', 'full'],
+  // the player's cowboy, and the base every description is filled from
+  BASE: {
+    build: { width: 1, belly: 0 },
+    skin: 3,
+    face: { nose: 'normal', brows: 1 },
+    hair: { style: 'short', color: rgb(0x4a3020) },
+    beard: { style: 'stache', color: rgb(0x5a3a26) },
+    outfit: {
+      hat: { style: 'cowboy', color: rgb(0x5b3b26), band: rgb(0x2a1d15) }, bandana: rgb(0xc23a2c),
+      shirt: { color: rgb(0xe3d3b3), rolled: false }, vest: rgb(0x4a352a), pants: { color: rgb(0x3f5878) },
+      boots: rgb(0x6a4029), belt: rgb(0x2a1d15), buckle: rgb(0xd9b04c),
+      apron: null, bowtie: null, garter: null, glasses: false, gun: true
+    }
+  },
+  // a full description from a partial one (deep for the groups)
+  make(d) {
+    const B = this.BASE, o = d || {};
+    const L = {
+      build: Object.assign({}, B.build, o.build), skin: o.skin !== undefined ? o.skin : B.skin,
+      face: Object.assign({}, B.face, o.face), hair: Object.assign({}, B.hair, o.hair), beard: Object.assign({}, B.beard, o.beard),
+      outfit: Object.assign({}, B.outfit, o.outfit)
+    };
+    L.outfit.shirt = Object.assign({}, B.outfit.shirt, o.outfit && o.outfit.shirt);
+    L.outfit.pants = Object.assign({}, B.outfit.pants, o.outfit && o.outfit.pants);
+    if (L.outfit.hat) L.outfit.hat = Object.assign({}, B.outfit.hat, L.outfit.hat);
+    return L;
+  },
+  skinCol(L) { return Array.isArray(L.skin) ? L.skin : this.SKIN[clamp(L.skin | 0, 0, this.SKIN.length - 1)]; },
+  // the older way of giving a look: a colour list and a few options
+  from(colors, opt) {
+    const C = colors || {}, O = opt || {}, d = { outfit: {} }, f = d.outfit;
+    if (C.skin) d.skin = C.skin;
+    if (C.shirt) f.shirt = { color: C.shirt };
+    if (C.vest) f.vest = C.vest;
+    if (C.jeans) f.pants = { color: C.jeans };
+    if (C.boot) f.boots = C.boot;
+    if (C.belt) f.belt = C.belt;
+    if (C.bandana) f.bandana = C.bandana;
+    if (C.hat) f.hat = { color: C.hat, band: C.band || rgb(0x2a1d15) };
+    if (C.stache) d.beard = { style: 'stache', color: C.stache };
+    if (O.hat === 'none') { f.hat = null; d.hair = { style: 'slick', color: O.hair || rgb(0x2e2018) }; }
+    if (O.gun === false) f.gun = false;
+    for (const k of ['apron', 'bowtie', 'garter']) if (O[k]) f[k] = O[k];
+    return this.make(d);
+  }
+};
+
 // ==== char/rig.js ====
 /* ---------- the cowboy: 13 rigid parts on a procedural rig ----------
    Legs use two-bone IK towards feet that are planted in the world, so a foot on the ground never slides.
@@ -3125,96 +3190,211 @@ const RIG = {
   waistY: 0.14, neckY: 0.47, shoulderX: 0.305, shoulderY: 0.41, upper: 0.29, headTop: 0.31
 };
 
-/* over: colours. opt (for NPCs): hat 'cowboy' | 'none' (then hair), gun (default true), apron, bowtie, garter colours */
-function buildCharacter(over, opt) {
-  const O = Object.assign({ hat: 'cowboy', gun: true }, opt || {});
-  const C = Object.assign({
-    hat: rgb(0x5b3b26), band: rgb(0x2a1d15), skin: rgb(0xd99f78), skinD: rgb(0xc4876a), shirt: rgb(0xe3d3b3), vest: rgb(0x4a352a),
-    jeans: rgb(0x3f5878), jeansD: rgb(0x34496a), belt: rgb(0x2a1d15), buckle: rgb(0xd9b04c), boot: rgb(0x6a4029), sole: rgb(0x2e1f17),
-    bandana: rgb(0xc23a2c), dark: rgb(0x1e1612), stache: rgb(0x5a3a26)
-  }, over || {});
-  const root = new THREE.Group();
-  const p = {};
-  const add = (name, mb) => {
-    const m = new THREE.Mesh(mb.build());
-    m.matrixAutoUpdate = false; m.layers.enable(3); m.name = name; m.frustumCulled = false;
-    root.add(m); p[name] = m; return m;
-  };
-  // pelvis: origin at the hip-joint centre
-  let mb = new MB();
-  mb.box(0, -0.1, 0, 0.44, 0.27, 0.26, C.jeans, 9, { bottom: true });
-  mb.box(0, 0.1, 0, 0.47, 0.09, 0.28, C.belt, 0);
-  mb.box(0, 0.11, 0.142, 0.1, 0.07, 0.02, C.buckle, 0);
-  if (O.gun) mb.box(-0.265, -0.22, 0.02, 0.08, 0.3, 0.15, C.belt, 0, { bottom: true });
-  if (O.apron) { mb.box(0, -0.46, 0.142, 0.42, 0.6, 0.02, O.apron, 9); mb.box(0, 0.1, 0.152, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
-  add('pelvis', mb);
-  // torso: origin at the waist
-  mb = new MB();
-  mb.box(0, 0, 0, 0.48, 0.47, 0.26, C.shirt, 9, { bottom: true });
-  for (const s of [-1, 1]) mb.box(s * 0.13, 0.03, 0.135, 0.18, 0.41, 0.03, C.vest, 9);
-  mb.box(0, 0.03, -0.135, 0.46, 0.41, 0.03, C.vest, 9);
-  mb.box(0, 0.47, 0, 0.36, 0.03, 0.22, C.shirt, 9);
-  add('torso', mb);
-  // head: origin at the base of the neck
-  mb = new MB();
-  mb.box(0, -0.03, 0, 0.13, 0.08, 0.13, C.skin, 0);
-  mb.box(0, -0.06, 0, 0.29, 0.09, 0.29, C.bandana, 9, { bottom: true });
-  mb.box(0, -0.15, 0.135, 0.16, 0.12, 0.03, C.bandana, 9, { bottom: true });
-  mb.box(0, 0.035, 0, 0.26, 0.275, 0.26, C.skin, 0);
-  for (const s of [-1, 1]) mb.box(s * 0.062, 0.17, 0.13, 0.045, 0.04, 0.014, C.dark, 0);
-  mb.box(0, 0.11, 0.13, 0.05, 0.06, 0.05, C.skinD, 0);
-  mb.box(0, 0.085, 0.132, 0.15, 0.035, 0.016, C.stache, 0);
-  for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, C.skinD, 0);
-  if (O.hat === 'none') {
-    // hair, parted in the middle and slicked down
-    const hc = O.hair || rgb(0x2e2018);
-    for (const s of [-1, 1]) mb.box(s * 0.07, 0.3, -0.005, 0.135, 0.04, 0.275, hc, 0);
-    mb.box(0, 0.12, -0.138, 0.275, 0.2, 0.02, hc, 0);
-    for (const s of [-1, 1]) mb.box(s * 0.138, 0.2, -0.04, 0.02, 0.11, 0.18, hc, 0);
+/* ---------- the body, built from a description (char/look.js) ----------
+   Every part is still built on its own, in its own frame (pelvis, torso, head, hat, upper arm, forearm, hand, thigh,
+   shin, foot, gun), but all of them go into ONE skinned mesh: each vertex hangs rigidly on the bone of its part, so a
+   figure costs one draw call. ch.p[name] is the bone (matrix, matrixWorld, children for bandages; .geometry: the
+   part alone, for hit tests; .material: the figure's material; .visible = false folds the part away).
+   The face and the hands have shapes (morph targets): brows, lids, mouth; fist, open hand, pointing finger. */
+const MORPHS = ['browAngry', 'browSad', 'browUp', 'lid', 'mouthOpen', 'smile', 'frown', 'fistL', 'fistR', 'openL', 'openR', 'pointL', 'pointR'];
+const FACE0 = { browAngry: 0, browSad: 0, browUp: 0, lid: 0, mouthOpen: 0, smile: 0, frown: 0 };
+
+// the head: origin at the base of the neck, face to +z (front at z = 0.13). e: the face's shape (FACE0 keys, 0..1)
+function buildHead(mb, L, e) {
+  const O = L.outfit, skin = LOOK.skinCol(L), skinD = mulc(skin, 0.88), hair = L.hair.color, beard = L.beard.color;
+  const dark = rgb(0x1e1612), white = rgb(0xeee6d8), lip = rgb(0x5a2620), mouthC = rgb(0x2a1210);
+  const M = (x, y, z, rz) => new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationZ(rz || 0));
+  // neck, scarf, the head itself, ears
+  mb.box(0, -0.03, 0, 0.13, 0.08, 0.13, skin, 0);
+  if (O.bandana) { mb.box(0, -0.06, 0, 0.29, 0.09, 0.29, O.bandana, 9, { bottom: true }); mb.box(0, -0.15, 0.135, 0.16, 0.12, 0.03, O.bandana, 9, { bottom: true }); }
+  else mb.box(0, -0.06, 0, 0.2, 0.07, 0.2, O.shirt.color, 9, { bottom: true });   // the collar
+  mb.box(0, 0.035, 0, 0.26, 0.275, 0.26, skin, 0);
+  for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, skinD, 0);
+  // eyes: white, a dark pupil, the upper lid coming down over them (lid 1 = shut)
+  for (const s of [-1, 1]) {
+    mb.box(s * 0.06, 0.163, 0.132, 0.058, 0.046, 0.012, white, 0);
+    mb.box(s * 0.056, 0.168, 0.139, 0.026, 0.034, 0.006, dark, 0);
+    const lh = 0.006 + 0.044 * e.lid;
+    mb.box(s * 0.06, 0.212 - lh, 0.142, 0.066, lh, 0.008, skinD, 0);
+  }
+  // brows: up, frowned down at the inner end (angry), raised at the inner end (sad)
+  const bw = 0.078, bh = 0.02 * (L.face.brows || 1);
+  for (const s of [-1, 1]) {
+    const y = 0.226 + e.browUp * 0.024 - e.browAngry * 0.012 + e.browSad * 0.006, a = s * (e.browAngry * 0.5 - e.browSad * 0.42);
+    mb.push(M(s * 0.062, y, 0.143, a)); mb.box(0, -bh / 2, 0, bw, bh, 0.016, hair, 0); mb.pop();
+  }
+  // nose
+  const nz = L.face.nose === 'big' ? [0.064, 0.074, 0.064] : L.face.nose === 'small' ? [0.042, 0.05, 0.04] : [0.05, 0.062, 0.05];
+  mb.box(0, 0.105, 0.13, nz[0], nz[1], nz[2], skinD, 0);
+  // mouth: a dark slot that opens downwards, teeth showing at the top, lip corners that go up (smile) or down
+  const open = e.mouthOpen, sm = e.smile, fr = e.frown;
+  mb.box(0, 0.058 - open * 0.03, 0.13, 0.082 + sm * 0.016, 0.014 + open * 0.03, 0.012, mouthC, 0);
+  mb.box(0, 0.068 - open * 0.004, 0.126 + Math.min(1, open * 3) * 0.011, 0.06 + sm * 0.01, 0.002 + open * 0.009, 0.003, white, 0);   // (inside the head while shut)
+  for (const s of [-1, 1]) {
+    mb.push(M(s * (0.05 + sm * 0.012), 0.064 + sm * 0.016 - fr * 0.018 - open * 0.008, 0.137, s * (sm - fr) * 0.65));
+    mb.box(0, -0.007, 0, 0.032, 0.014, 0.01, lip, 0); mb.pop();
+  }
+  // beard
+  const st = L.beard.style;
+  if (st === 'stubble' || st === 'full' || st === 'chops') mb.box(0, -0.0, 0.1295, 0.255, 0.105, 0.004, mixc(skin, beard, 0.45), 0);
+  if (st === 'stache' || st === 'handlebar' || st === 'full' || st === 'stubble') mb.box(0, 0.077, 0.136, st === 'stubble' ? 0.11 : 0.14, st === 'stubble' ? 0.016 : 0.026, 0.016, st === 'stubble' ? mixc(skin, beard, 0.6) : beard, 0);
+  if (st === 'handlebar') for (const s of [-1, 1]) { mb.push(M(s * 0.08, 0.085, 0.138, s * 0.9)); mb.box(0, 0, 0, 0.04, 0.016, 0.014, beard, 0); mb.pop(); }
+  if (st === 'goatee') { mb.box(0, -0.005, 0.132, 0.06, 0.052, 0.03, beard, 0); mb.box(0, 0.077, 0.136, 0.1, 0.02, 0.014, beard, 0); }
+  if (st === 'full') { mb.box(0, -0.035, 0.12, 0.25, 0.075, 0.05, beard, 0); for (const s of [-1, 1]) mb.box(s * 0.122, -0.01, 0.04, 0.03, 0.16, 0.17, beard, 0); }
+  if (st === 'chops') for (const s of [-1, 1]) mb.box(s * 0.128, 0.03, 0.05, 0.022, 0.15, 0.13, beard, 0);
+  // hair (under a hat only the sides and the back show)
+  const hs = L.hair.style;
+  if (hs === 'slick') {
+    for (const s of [-1, 1]) mb.box(s * 0.07, 0.3, -0.005, 0.135, 0.04, 0.275, hair, 0);
+    mb.box(0, 0.12, -0.138, 0.275, 0.2, 0.02, hair, 0);
+    for (const s of [-1, 1]) mb.box(s * 0.138, 0.2, -0.04, 0.02, 0.11, 0.18, hair, 0);
+  } else if (hs !== 'bald') {
+    if (hs !== 'balding') { mb.box(0, 0.3, -0.005, 0.275, 0.04, 0.275, hair, 0); mb.box(0, 0.268, 0.134, 0.275, 0.05, 0.014, hair, 0); }
+    mb.box(0, hs === 'long' ? -0.04 : 0.1, -0.139, 0.278, hs === 'long' ? 0.35 : 0.21, 0.022, hair, 0);
+    for (const s of [-1, 1]) mb.box(s * 0.139, hs === 'long' ? 0.02 : 0.18, -0.03, 0.022, hs === 'long' ? 0.27 : 0.13, 0.2, hair, 0);
+  }
+  if (O.glasses) {
+    const g = rgb(0x2a2420);
+    for (const s of [-1, 1]) { mb.box(s * 0.06, 0.212, 0.148, 0.074, 0.008, 0.006, g, 0); mb.box(s * 0.06, 0.156, 0.148, 0.074, 0.008, 0.006, g, 0); for (const t of [-1, 1]) mb.box(s * 0.06 + t * 0.035, 0.156, 0.148, 0.007, 0.064, 0.006, g, 0); mb.box(s * 0.132, 0.19, 0.06, 0.008, 0.008, 0.16, g, 0); }
+    mb.box(0, 0.19, 0.148, 0.03, 0.007, 0.006, g, 0);
   }
   if (O.bowtie) { mb.box(0, -0.115, 0.152, 0.13, 0.05, 0.025, O.bowtie, 0); mb.box(0, -0.115, 0.16, 0.035, 0.035, 0.02, mulc(O.bowtie, 0.7), 0); }
-  add('head', mb);
+}
+// a hand: origin at the wrist, hanging along -y, palm to the body, thumb to the front (+z). s: +1 left, -1 right.
+// h: { fist, open, point } 0..1 (all 0: loosely curled)
+function buildHand(mb, L, s, h) {
+  const skin = LOOK.skinCol(L), skinD = mulc(skin, 0.9);
+  const f = h.fist, o = h.open, pt = h.point;
+  const mix = (r, F, Op) => r + f * (F - r) + o * (Op - r);
+  mb.box(0, -0.075, 0, 0.088, 0.077, 0.1, skin, 0);                                   // palm and back of the hand
+  // the four fingers (the index one on its own, so it can point)
+  const fy = mix(-0.112, -0.098, -0.152), fh = mix(0.04, 0.03, 0.08), fz = mix(0.012, 0.024, -0.004), fd = mix(0.075, 0.058, 0.03);
+  mb.box(-s * 0.012, fy, fz, 0.062, fh, fd, skinD, 0);
+  const iy = lerp(fy, -0.165, pt), ih = lerp(fh, 0.08, pt), iz = lerp(fz, 0.03, pt), id = lerp(fd, 0.024, pt);
+  mb.box(s * 0.031, iy, iz, 0.022, ih, id, skinD, 0);
+  // the thumb: along the front; out to the side when open, across the fingers in a fist
+  const ty = mix(-0.072, -0.095, -0.07), tz = mix(0.055, 0.06, 0.068), tx = mix(s * 0.012, -s * 0.005, s * 0.03);
+  mb.box(tx, ty, tz, 0.026, mix(0.045, 0.026, 0.05), mix(0.028, 0.024, 0.024), skin, 0);
+}
+
+/* over: colours (older callers) or a full look description; opt: the older options (hat, gun, apron …) */
+function buildCharacter(over, opt) {
+  const L = over && over.outfit ? LOOK.make(over) : LOOK.from(over, opt);
+  const O = L.outfit, skin = LOOK.skinCol(L), shirt = O.shirt.color, pants = O.pants.color, pantsD = mulc(pants, 0.84);
+  const W = clamp(L.build.width || 1, 0.85, 1.2), belly = clamp(L.build.belly || 0, 0, 1);
+  const parts = [];   // { name, mb, shape: fn(mb, params) | null }
+  const add = (name, build, shape) => { const mb = new MB(); build(mb); parts.push({ name, mb, shape }); };
+  // pelvis: origin at the hip-joint centre
+  add('pelvis', (mb) => {
+    mb.box(0, -0.1, 0, 0.44 * W, 0.27, 0.26 + belly * 0.04, pants, 9, { bottom: true });
+    mb.box(0, 0.1, belly * 0.02, 0.47 * W, 0.09, 0.28 + belly * 0.05, O.belt, 0);
+    mb.box(0, 0.11, 0.142 + belly * 0.045, 0.1, 0.07, 0.02, O.buckle, 0);
+    if (O.gun) mb.box(-0.265 * W, -0.22, 0.02, 0.08, 0.3, 0.15, O.belt, 0, { bottom: true });
+    if (O.apron) { mb.box(0, -0.46, 0.142 + belly * 0.04, 0.42, 0.6, 0.02, O.apron, 9); mb.box(0, 0.1, 0.152 + belly * 0.05, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
+  });
+  // torso: origin at the waist
+  add('torso', (mb) => {
+    mb.box(0, 0, 0, 0.48 * W, 0.47, 0.26, shirt, 9, { bottom: true });
+    if (belly > 0.01) mb.box(0, 0.0, 0.125, 0.42 * W, 0.3, belly * 0.08, shirt, 9, { bottom: true });
+    if (O.vest) {
+      for (const s of [-1, 1]) mb.box(s * 0.13 * W, 0.03, 0.135 + belly * 0.07, 0.18 * W, 0.41, 0.03, O.vest, 9);
+      mb.box(0, 0.03, -0.135, 0.46 * W, 0.41, 0.03, O.vest, 9);
+    }
+    if (O.apron) mb.box(0, 0.0, 0.14 + belly * 0.08, 0.3, 0.32, 0.015, O.apron, 9);
+    mb.box(0, 0.47, 0, 0.36 * W, 0.03, 0.22, shirt, 9);
+  });
+  add('head', (mb) => buildHead(mb, L, FACE0), (mb, e) => buildHead(mb, L, Object.assign({}, FACE0, e)));
   // hat: origin on top of the head
-  if (O.hat !== 'none') {
-    mb = new MB();
-    mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, C.hat, 0, { bottom: true });
-    mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, C.band, 0, { noTop: true });
-    mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, C.hat, 0);
-    mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(C.hat, 0.8), 0);
-    add('hat', mb);
-  }
-  // arms: upper arm from the shoulder, forearm + hand from the elbow, both hang along -y
+  if (O.hat) add('hat', (mb) => {
+    const H = O.hat;
+    mb.cyl(0, -0.02, 0, 0.36, 0.36, 0.035, 14, H.color, 0, { bottom: true });
+    mb.cyl(0, 0.015, 0, 0.185, 0.165, 0.05, 12, H.band, 0, { noTop: true });
+    mb.cyl(0, 0.065, 0, 0.175, 0.145, 0.12, 12, H.color, 0);
+    mb.box(0, 0.17, 0, 0.06, 0.03, 0.22, mulc(H.color, 0.8), 0);
+  });
   for (const side of ['L', 'R']) {
-    mb = new MB();
-    mb.box(0, -RIG.upper - 0.02, 0, 0.13, RIG.upper + 0.06, 0.14, C.shirt, 9, { bottom: true });
-    if (O.garter) mb.box(0, -0.13, 0, 0.14, 0.035, 0.15, O.garter, 0);
-    add('uArm' + side, mb);
-    mb = new MB();
-    mb.box(0, -0.2, 0, 0.12, 0.22, 0.13, C.shirt, 9, { bottom: true });
-    mb.box(0, -0.205, 0, 0.125, 0.04, 0.135, mulc(C.shirt, 0.88), 9);
-    mb.box(0, -0.3, 0.005, 0.1, 0.1, 0.11, C.skin, 0, { bottom: true });
-    add('fArm' + side, mb);
+    const s = side === 'L' ? 1 : -1;
+    // arms: upper arm from the shoulder, forearm from the elbow (rolled sleeves show the skin), the hand at the wrist
+    add('uArm' + side, (mb) => {
+      mb.box(0, -RIG.upper - 0.02, 0, 0.13, RIG.upper + 0.06, 0.14, shirt, 9, { bottom: true });
+      if (O.garter) mb.box(0, -0.13, 0, 0.14, 0.035, 0.15, O.garter, 0);
+    });
+    add('fArm' + side, (mb) => {
+      if (O.shirt.rolled) { mb.box(0, -0.06, 0, 0.125, 0.08, 0.135, mulc(shirt, 0.92), 9, { bottom: true }); mb.box(0, -0.2, 0.005, 0.105, 0.15, 0.11, skin, 0, { bottom: true }); }
+      else { mb.box(0, -0.2, 0, 0.12, 0.22, 0.13, shirt, 9, { bottom: true }); mb.box(0, -0.205, 0, 0.125, 0.04, 0.135, mulc(shirt, 0.88), 9); }
+    });
+    const h0 = { fist: 0, open: 0, point: 0 };
+    add('hand' + side, (mb) => buildHand(mb, L, s, h0), (mb, e) => buildHand(mb, L, s, Object.assign({}, h0, e)));
     // legs
-    mb = new MB();
-    mb.box(0, -RIG.thigh - 0.03, 0, 0.19, RIG.thigh + 0.07, 0.21, C.jeans, 9, { bottom: true });
-    add('thigh' + side, mb);
-    mb = new MB();
-    mb.box(0, -0.2, 0, 0.18, 0.22, 0.19, C.jeansD, 9, { bottom: true });
-    mb.box(0, -RIG.shin, 0, 0.2, 0.24, 0.215, C.boot, 0, { bottom: true });
-    mb.box(0, -0.2, 0, 0.215, 0.035, 0.225, mulc(C.boot, 0.8), 0);
-    add('shin' + side, mb);
+    add('thigh' + side, (mb) => mb.box(0, -RIG.thigh - 0.03, 0, 0.19, RIG.thigh + 0.07, 0.21, pants, 9, { bottom: true }));
+    add('shin' + side, (mb) => {
+      mb.box(0, -0.2, 0, 0.18, 0.22, 0.19, pantsD, 9, { bottom: true });
+      mb.box(0, -RIG.shin, 0, 0.2, 0.24, 0.215, O.boots, 0, { bottom: true });
+      mb.box(0, -0.2, 0, 0.215, 0.035, 0.225, mulc(O.boots, 0.8), 0);
+    });
     // boot: origin at the ankle, toe along +z, sole at -ankleH
-    mb = new MB();
-    mb.box(0, -RIG.ankleH + 0.02, (RIG.toeF - RIG.heelB) / 2 + 0.005, 0.2, 0.1, RIG.toeF + RIG.heelB + 0.01, C.boot, 0, { bottom: true });
-    mb.box(0, -RIG.ankleH, 0.03, 0.2, 0.025, RIG.toeF * 2 - 0.05, C.sole, 0, { bottom: true });
-    mb.box(0, -RIG.ankleH, -RIG.heelB + 0.025, 0.18, 0.045, 0.06, C.sole, 0, { bottom: true });
-    add('foot' + side, mb);
+    add('foot' + side, (mb) => {
+      const sole = rgb(0x2e1f17);
+      mb.box(0, -RIG.ankleH + 0.02, (RIG.toeF - RIG.heelB) / 2 + 0.005, 0.2, 0.1, RIG.toeF + RIG.heelB + 0.01, O.boots, 0, { bottom: true });
+      mb.box(0, -RIG.ankleH, 0.03, 0.2, 0.025, RIG.toeF * 2 - 0.05, sole, 0, { bottom: true });
+      mb.box(0, -RIG.ankleH, -RIG.heelB + 0.025, 0.18, 0.045, 0.06, sole, 0, { bottom: true });
+    });
   }
-  if (O.gun) add('gun', buildGunGeo());
-  const ch = { root, p, parts: Object.values(p), pose: makePose() };
+  if (O.gun) parts.push({ name: 'gun', mb: buildGunGeo() });
+  return skinFigure(parts, L);
+}
+
+// the parts into one skinned mesh: bones with identity bind (vertices stay in their part's frame), morphs as deltas
+function skinFigure(parts, L) {
+  const root = new THREE.Group(), p = {}, bones = [];
+  const geos = parts.map((q) => q.geo || q.mb.build());
+  let nv = 0; for (const g of geos) nv += g.attributes.position.count;
+  const A = { position: new Float32Array(nv * 3), normal: new Float32Array(nv * 3), color: new Float32Array(nv * 3), uv: new Float32Array(nv * 2), tile: new Float32Array(nv) };
+  const SI = new Uint16Array(nv * 4), SW = new Float32Array(nv * 4);
+  const morph = MORPHS.map(() => new Float32Array(nv * 3));
+  let o = 0;
+  parts.forEach((q, bi) => {
+    const g = geos[bi], n = g.attributes.position.count;
+    for (const k in A) { const src = g.attributes[k]; if (src) A[k].set(src.array, o * src.itemSize); }
+    for (let i = 0; i < n; i++) { SI[(o + i) * 4] = bi; SW[(o + i) * 4] = 1; }
+    // shapes: each morph is the part built with that one shape at full, minus the plain part
+    if (q.shape) for (let mi = 0; mi < MORPHS.length; mi++) {
+      const name = MORPHS[mi], side = /[LR]$/.test(name) ? name.slice(-1) : '', key = side ? name.slice(0, -1) : name;
+      if ((q.name === 'head') !== (name in FACE0) || (side && q.name !== 'hand' + side)) continue;
+      const mb = new MB(); q.shape(mb, { [key]: 1 });
+      const P2 = mb.P, P0 = g.attributes.position.array;
+      if (P2.length !== P0.length) continue;   // (a shape that changed the number of triangles is left out)
+      const D = morph[mi];
+      for (let j = 0; j < P0.length; j++) D[o * 3 + j] = P2[j] - P0[j];
+    }
+    const b = new THREE.Bone(); b.name = q.name; b.matrixAutoUpdate = false; b.geometry = g;
+    root.add(b); bones.push(b); p[q.name] = b;
+    o += n;
+  });
+  const G = new THREE.BufferGeometry();
+  G.setAttribute('position', new THREE.BufferAttribute(A.position, 3));
+  G.setAttribute('normal', new THREE.BufferAttribute(A.normal, 3));
+  G.setAttribute('color', new THREE.BufferAttribute(A.color, 3));
+  G.setAttribute('uv', new THREE.BufferAttribute(A.uv, 2));
+  G.setAttribute('tile', new THREE.BufferAttribute(A.tile, 1));
+  G.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4));
+  G.setAttribute('skinWeight', new THREE.BufferAttribute(SW, 4));
+  G.morphAttributes.position = morph.map((a, i) => { const at = new THREE.BufferAttribute(a, 3); at.name = MORPHS[i]; return at; });
+  G.morphTargetsRelative = true;
+  G.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 1.6);
+  const mesh = new THREE.SkinnedMesh(G, G_LIT_PLACEHOLDER());
+  mesh.frustumCulled = false; mesh.layers.enable(3); mesh.name = 'figure';
+  root.add(mesh);
+  mesh.bind(new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4())), new THREE.Matrix4());
+  mesh.updateMorphTargets();
+  // the bones answer for the figure's material (code that sets a part's material sets the figure's)
+  for (const b of bones) Object.defineProperty(b, 'material', { get: () => mesh.material, set: (m) => { if (m) mesh.material = m; } });
+  const ch = { root, p, parts: bones, mesh, look: L, pose: makePose(), mi: mesh.morphTargetDictionary, face: null };
   applyPose(ch);
   return ch;
 }
+// (the figure's first material: the outdoor one once it exists)
+function G_LIT_PLACEHOLDER() { return (typeof G !== 'undefined' && G.litMat) || new THREE.MeshBasicMaterial({ vertexColors: true }); }
 
 function makePose() {
   return {
@@ -3222,7 +3402,9 @@ function makePose() {
     spYaw: 0, spPitch: 0, spRoll: 0, hdYaw: 0, hdPitch: 0, hatDy: 0, hatTilt: 0,
     ank: [new THREE.Vector3(0.12, RIG.ankleH, 0), new THREE.Vector3(-0.12, RIG.ankleH, 0)],
     ftYaw: [0, 0], ftPitch: [0, 0],
-    arm: [{ sw: 0, out: 0.08, el: 0.15 }, { sw: 0, out: 0.08, el: 0.15 }]
+    arm: [{ sw: 0, out: 0.08, el: 0.15 }, { sw: 0, out: 0.08, el: 0.15 }],
+    // the hands' shapes (0..1) and the wrists' bend (rad: x forward/back, z sideways); reset with the gait every frame
+    hand: [{ fist: 0, open: 0, point: 0 }, { fist: 0, open: 0, point: 0 }], wrist: [{ x: 0, z: 0 }, { x: 0, z: 0 }]
   };
 }
 
@@ -3230,7 +3412,7 @@ function makePose() {
 const RM = {
   pel: new THREE.Matrix4(), tor: new THREE.Matrix4(), head: new THREE.Matrix4(), tmp: new THREE.Matrix4(), e: new THREE.Euler(),
   H: new THREE.Vector3(), K: new THREE.Vector3(), A: new THREE.Vector3(), d: new THREE.Vector3(), pole: new THREE.Vector3(),
-  x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3()
+  x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(), zero: new THREE.Vector3(1e-4, 1e-4, 1e-4)
 };
 function rotTo(m, x, y, z, rx, ry, rz, order) {
   RM.e.set(rx, ry, rz, order || 'YXZ');
@@ -3263,6 +3445,8 @@ function applyPose(ch) {
     if (o && o.w > 0.001) { sw += (o.sw - sw) * o.w; out += (o.out - out) * o.w; el += (o.el - el) * o.w; yw = o.yw * o.w; }
     ua.matrix.multiplyMatrices(RM.tor, rotTo(RM.tmp, s * RIG.shoulderX, RIG.shoulderY, 0, -sw, yw, s * out, 'ZYX'));
     fa.matrix.multiplyMatrices(ua.matrix, rotTo(RM.tmp, 0, -RIG.upper, 0, -el, 0, 0));
+    const hb = p['hand' + side], wr = P.wrist ? P.wrist[i] : null;
+    if (hb) hb.matrix.multiplyMatrices(fa.matrix, rotTo(RM.tmp, 0, -0.2, 0, wr ? -wr.x : 0, 0, wr ? s * wr.z : 0));
     // two-bone leg IK: hip -> knee -> ankle, knee pointing where the foot points
     const L1 = RIG.thigh, L2 = RIG.shin;
     RM.H.set(s * RIG.hipX, 0, 0).applyMatrix4(RM.pel);
@@ -3280,8 +3464,104 @@ function applyPose(ch) {
     rotTo(p['foot' + side].matrix, RM.A.x, RM.A.y, RM.A.z, P.ftPitch[i], fy, 0);
   }
   if (p.gun) p.gun.matrix.multiplyMatrices(P.gunInHand ? p.fArmR.matrix : RM.pel, P.gunInHand ? GUNM.hand : GUNM.holster);
-  for (const m of ch.parts) m.matrixWorldNeedsUpdate = true;
+  // the hands' shapes; a part that is not there (a hat knocked off, later a lost arm) is folded into its joint
+  if (ch.mesh && P.hand) {
+    const I = ch.mesh.morphTargetInfluences, D = ch.mi;
+    for (let i = 0; i < 2; i++) { const h = P.hand[i], sd = i === 0 ? 'L' : 'R'; I[D['fist' + sd]] = h.fist; I[D['open' + sd]] = h.open; I[D['point' + sd]] = h.point; }
+  }
+  for (const m of ch.parts) { if (m.visible === false) m.matrix.scale(RM.zero); m.matrixWorldNeedsUpdate = true; }
 }
+
+// ==== char/face.js ====
+/* ---------- faces: a few shapes, read from across the room ----------
+   The head has seven shapes (char/rig.js: brows angry / sad / up, lids, mouth open, smile, frown). A feeling is a mix
+   of them (PRESETS); the face eases towards it, blinks now and then, and the mouth follows the voice (the loudness of
+   the sentence being played, audio/voice.js: npc.lip) or, without one, makes talking movements.
+   FACE.update(ch, dt, { mood, k, talk, dead, sleep }) once a frame per figure; FACE.npcWant(npc) and
+   FACE.playerWant() say what each one feels right now. */
+const FACE = {
+  KEYS: ['browAngry', 'browSad', 'browUp', 'lid', 'mouthOpen', 'smile', 'frown'],
+  PRESETS: {
+    neutral: {},
+    amused: { smile: 1, browUp: 0.3, lid: 0.18 },
+    happy: { smile: 1, browUp: 0.45 },
+    angry: { browAngry: 1, frown: 0.6, lid: 0.25 },
+    surprised: { browUp: 1, mouthOpen: 0.65 },
+    disgusted: { browAngry: 0.55, frown: 0.85, lid: 0.35 },
+    sleepy: { lid: 0.62, browSad: 0.2 },
+    whisper: { browUp: 0.25, lid: 0.12 },
+    drunk: { lid: 0.45, smile: 0.5, browUp: 0.2 },
+    sad: { browSad: 1, frown: 0.7, lid: 0.25 },
+    fear: { browSad: 0.75, browUp: 0.85, mouthOpen: 0.35, frown: 0.35 },
+    pain: { browSad: 0.55, browAngry: 0.6, lid: 0.7, mouthOpen: 0.35, frown: 1 },
+    dazed: { lid: 0.55, mouthOpen: 0.2, browSad: 0.35 },
+    focus: { browAngry: 0.45, lid: 0.32 },
+    dead: { lid: 0.78, mouthOpen: 0.28 },
+    sleep: { lid: 1 }
+  },
+  _t: {},
+  update(ch, dt, want) {
+    const F = ch.face || (ch.face = { cur: {}, blinkT: 1 + Math.random() * 3, blink: 0 }), T = this._t;
+    for (const k of this.KEYS) T[k] = 0;
+    // the feeling, at its strength, with a second one on top (pain over anything)
+    const add = (name, k) => { const p = this.PRESETS[name]; if (!p || k <= 0) return; for (const key in p) T[key] = Math.max(T[key], p[key] * k); };
+    add(want.mood || 'neutral', want.k === undefined ? 1 : want.k);
+    if (want.mood2) add(want.mood2, want.k2 === undefined ? 1 : want.k2);
+    // the mouth: the voice opens it; smiling and frowning ease off while it talks
+    const talk = clamp(want.talk || 0, 0, 1);
+    if (talk > 0.02) { T.mouthOpen = Math.max(T.mouthOpen, talk * 0.85); T.smile *= 0.7; T.frown *= 0.7; }
+    // blinking: every few seconds, quicker when hurt or tired; never when dead or asleep
+    const asleep = want.dead || want.sleep;
+    if (!asleep) {
+      F.blinkT -= dt;
+      if (F.blinkT <= 0) { F.blink = 0.001; F.blinkT = 1.8 + Math.random() * 3.6; if (Math.random() < 0.15) F.blinkT = 0.25; }
+    }
+    if (F.blink > 0) { F.blink += dt; if (F.blink > 0.16) F.blink = 0; }
+    const bl = F.blink > 0 ? Math.sin(Math.PI * F.blink / 0.16) : 0;
+    // ease towards it (the mouth fast, brows a little slower, the lids in between)
+    const C = F.cur, I = ch.mesh.morphTargetInfluences, D = ch.mi;
+    for (const k of this.KEYS) {
+      const rate = k === 'mouthOpen' ? 28 : k === 'lid' ? 14 : 9;
+      const c = C[k] || 0; C[k] = c + (T[k] - c) * (1 - Math.exp(-dt * rate));
+      I[D[k]] = k === 'lid' ? Math.max(C[k], bl) : C[k];
+    }
+  },
+  // the mouth from a played sentence (loudness per few ms), or talking movements while a voice without one speaks
+  talkOf(npc) {
+    const L = npc.lip, now = performance.now();
+    if (L && now >= L.t0 && now < L.t0 + L.env.length * L.step) { const i = Math.floor((now - L.t0) / L.step); return clamp(L.env[i] * 1.15, 0, 1); }
+    if (npc.talkT > 0 && !(L && now < L.t0 + L.env.length * L.step + 300)) { const t = G.time; return 0.15 + 0.45 * Math.abs(Math.sin(t * 13)) * (0.5 + 0.5 * Math.abs(Math.sin(t * 4.7))); }
+    return 0;
+  },
+  _w: { mood: 'neutral', k: 1, mood2: null, k2: 0, talk: 0, dead: false, sleep: false },
+  // what a person shows: dead, down, in pain, afraid, fighting, what he last said, and how he feels about you
+  npcWant(N) {
+    const W = this._w, H = N.hp; W.mood = 'neutral'; W.k = 1; W.mood2 = null; W.k2 = 0; W.dead = false; W.sleep = false;
+    W.talk = this.talkOf(N);
+    if (H.dead) { W.mood = 'dead'; W.dead = true; W.talk = 0; return W; }
+    if (H.anim) { W.mood = H.lowness > 0.5 ? 'dazed' : 'pain'; W.mood2 = 'pain'; W.k2 = clamp(H.pain, 0, 1); return W; }
+    if (N.mood && G.time < (N.moodT || 0)) W.mood = N.mood;
+    else if (N.fear && G.time < N.fear) W.mood = 'fear';
+    else if (N.fight && N.fight.on) W.mood = 'angry';
+    else if (N.feel && N.feel.mood && G.time - N.feel.t < 25) { W.mood = N.feel.mood; W.k = 0.6; }   // (how the talk left him: talk.js)
+    else if (N.attitude) { const f = N.attitude(); W.mood = f > 0.35 ? 'amused' : f < -0.35 ? 'angry' : 'neutral'; W.k = Math.min(1, Math.abs(f)) * 0.5; }
+    if (H.pain > 0.25) { W.mood2 = 'pain'; W.k2 = clamp(H.pain - 0.2, 0, 1); }
+    if (H.daze > 0.5) { W.mood2 = 'dazed'; W.k2 = H.daze - 0.4; }
+    return W;
+  },
+  playerWant() {
+    const W = this._w; W.mood = 'neutral'; W.k = 1; W.mood2 = null; W.k2 = 0; W.dead = false; W.sleep = false; W.talk = 0;
+    if (PHP.out) { W.mood = 'dead'; W.sleep = true; return W; }
+    if (typeof SLEEP !== 'undefined' && SLEEP.busy && SLEEP.busy() && SLEEP.st === 'sleep') { W.mood = 'sleep'; W.sleep = true; return W; }
+    if (G.time - PHP.lastHit < 0.7 || (FALL.busy() && FALL.down > 0.5)) W.mood = 'pain';
+    else if (FIST.inFight() || FIST.st !== 'idle') W.mood = 'angry';
+    else if (GUN.wantAim) W.mood = 'focus';
+    else if (DRUNK.level > 0.25) { W.mood = 'drunk'; W.k = Math.min(1, DRUNK.level); }
+    else if (PHP.hp < 0.5) { W.mood = 'pain'; W.k = (0.5 - PHP.hp) * 1.4; }
+    if (DRUNK.level > 0.25 && W.mood !== 'drunk') { W.mood2 = 'drunk'; W.k2 = Math.min(0.7, DRUNK.level); }
+    return W;
+  }
+};
 
 // ==== char/gait.js ====
 /* ---------- gait parameters as a function of speed ---------- */
@@ -3398,6 +3678,8 @@ function updateGait() {
     g.feet.forEach((F, i) => { restPoint(i, pos, yaw, F.plant); F.yaw = yaw; });
     g.init = true;
   }
+  // the hands start each frame loosely curled; what holds or hits something closes them
+  for (let i = 0; i < 2; i++) { const h = P.hand[i]; h.fist = 0; h.open = 0; h.point = 0; P.wrist[i].x = 0; P.wrist[i].z = 0; }
   // sitting: the seat has the whole pose
   if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
@@ -3669,12 +3951,22 @@ vec3 albedo(vec3 col, float tIn, vec2 uv, float amt) {
 }`;
 
 const SH = {};
+// (figures are skinned meshes with shapes: the chunks do nothing for everything else)
 SH.litV = `
 attribute float tile;
+#include <morphtarget_pars_vertex>
+#include <skinning_pars_vertex>
 varying vec3 vCol; varying vec3 vN; varying vec3 vW; varying vec2 vUv; varying float vTile;
 void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+  #include <beginnormal_vertex>
+  #include <morphnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  #include <begin_vertex>
+  #include <morphtarget_vertex>
+  #include <skinning_vertex>
+  vec4 w = modelMatrix * vec4(transformed, 1.0);
+  vW = w.xyz; vN = normalize(mat3(modelMatrix) * objectNormal);
   vCol = color; vUv = uv; vTile = tile;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
@@ -4369,6 +4661,7 @@ function updateWorld(dt, t) {
 
 function updateCharacterVisual() {
   updateGait();
+  FACE.update(W.ch, GAIT.dt || 0, FACE.playerWant());
   DUST.update(GAIT.dt || 0);
   const g = groundAt(PLAY.pos.x, PLAY.pos.z, PLAY.pos.y);
   W.blob.position.set(PLAY.pos.x, g + 0.04, PLAY.pos.z);
@@ -5137,6 +5430,7 @@ const FALL = {
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0] + wob * 0.5 * (i ? -1 : 1); o.out = S.arm[i][1] + Math.abs(wob) * 0.2; o.el = S.arm[i][2];
     }
     P.gunInHand = false;
+    if (P.hand) for (const h of P.hand) h.open = 0.55;
     this.down = clamp((0.925 - P.pel.y) / 0.75, 0, 1);
   }
 };
@@ -5820,6 +6114,10 @@ const VOICE = {
     src.connect(g); g.connect(this.output());
     const dur = buf.duration / pr;
     job.npc.talkT = dur + 0.15;
+    // the mouth follows the sentence: its loudness every 40 ms of playing time (0..1)
+    const st = Math.max(1, Math.round(buf.sampleRate * 0.04)), env = new Float32Array(Math.ceil(job.pcm.length / st));
+    for (let i = 0; i < env.length; i++) { let q = 0; const a = i * st, b = Math.min(job.pcm.length, a + st); for (let j = a; j < b; j++) q += job.pcm[j] * job.pcm[j]; env[i] = Math.min(1, Math.sqrt(q / Math.max(1, b - a)) * 4.5); }
+    job.npc.lip = { t0: performance.now() + 30, step: 40 / pr, env };
     this.playing = { npc: job.npc, src, end: performance.now() + dur * 1000 };
     // a breath between sentences, as long as the mood wants it
     src.onended = () => { try { g.disconnect(); } catch (e) { /* ignore */ } this.playing = null; setTimeout(() => this.pump(), M.gap * 1000); };
@@ -6367,6 +6665,8 @@ const GUN = {
       P.armOv[0] = { w: this.ovLW, sw: this.ovL.sw, yw: this.ovL.yw, out: this.ovL.out, el: this.ovL.el };
     } else P.armOv[0] = null;
     P.gunInHand = this.inHand;
+    if (this.inHand) P.hand[1].fist = Math.max(P.hand[1].fist, 0.8 * this.ovW);
+    if (this.ovLW > 0.01) P.hand[0].fist = Math.max(P.hand[0].fist, 0.5 * this.ovLW);
   },
   // arm angles that point the right hand at a world point (out = 0: sw/yw give the direction exactly)
   solveAim(P, tgt, low, w) {
@@ -7268,6 +7568,7 @@ const FIST = {
     if (goal) for (const k of ['ty', 'tp', 'pz', 'dy', 'roll']) B[k] = lerp(this.bodyFrom[k] || 0, bodyGoal[k], e);
     else { const k2 = 1 - Math.exp(-dt * 12); for (const k of ['ty', 'tp', 'pz', 'dy', 'roll']) B[k] += (bodyGoal[k] - B[k]) * k2; }
     P.spYaw += B.ty * gw; P.pelYaw += B.ty * 0.4 * gw; P.spRoll += B.roll * gw;
+    for (let i = 0; i < 2; i++) P.hand[i].fist = Math.max(P.hand[i].fist, gw);
     P.spPitch += B.tp * gw; P.pel.z += B.pz * gw; P.pel.y -= B.dy * gw;
     P.hdYaw -= B.ty * 1.15 * gw; P.hdPitch += (0.12 - B.tp * 0.9) * gw; P.hdRoll = (P.hdRoll || 0) - B.roll * gw;   // chin tucked, eyes on the target
     // a kick, a stamp, a knee: the foot leaves the ground and goes where the key says; back to the gait in the recovery
@@ -8034,6 +8335,7 @@ const DRINK = {
     // blend from whatever the arm was doing (sitting at the bar, hanging) to the drinking arm
     if (base && base.w > 0.001) P.armOv[1] = { w: lerp(base.w, 1, w), sw: lerp(base.sw, r.sw, w), yw: lerp(base.yw, r.yw, w), out: lerp(base.out, r.out, w), el: lerp(base.el, r.el, w) };
     else P.armOv[1] = { w, sw: r.sw, yw: r.yw, out: r.out, el: r.el };
+    if (P.hand) P.hand[1].fist = Math.max(P.hand[1].fist, 0.55 * w);
   },
   // after the pose is applied: put the vessel in the hand
   late() {
@@ -8175,7 +8477,7 @@ const NPCS = {
 class NPC {
   constructor(o) {
     this.id = o.id; this.name = o.name; this.room = o.room || null;
-    this.ch = buildCharacter(o.colors, o.look);
+    this.ch = buildCharacter(o.desc || o.colors, o.look);
     this.ch.pose.armOv = [null, null];
     this.mat = null;
     o.scene.add(this.ch.root);
@@ -8186,6 +8488,8 @@ class NPC {
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
     this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
     this.tw = 0; this.leanF = 0; this.lunge = 0; this.hurry = 1;
+    this.handShape = [null, null];   // { fist, open, point } the behaviour wants for a hand (null: by what it holds)
+    this.mood = 'neutral'; this.moodT = 0; this.fear = 0; this.attitude = o.attitude || null;
     this.lean = 0; this.leanT = 0; this.crouch = 0; this.crouchT = 0; this.talkT = 0; this.nod = 0;
     this.body = { cx: this.pos.x, cz: this.pos.z, r: 0.32, npc: this };
     NPCS.bodies.push(this.body);
@@ -8199,6 +8503,7 @@ class NPC {
   // gone for good (a body taken away): out of the scene and out of every list
   dispose() {
     if (this.ch.root.parent) this.ch.root.parent.remove(this.ch.root);
+    try { this.ch.mesh.geometry.dispose(); this.ch.mesh.skeleton.dispose(); } catch (e) { /* ignore */ }
     const i = NPCS.list.indexOf(this); if (i >= 0) NPCS.list.splice(i, 1);
     const j = NPCS.bodies.indexOf(this.body); if (j >= 0) NPCS.bodies.splice(j, 1);
     const a = ACTORS.list.findIndex((x) => x.id === this.id && x.kind === 'npc'); if (a >= 0) ACTORS.list.splice(a, 1);
@@ -8231,7 +8536,7 @@ class NPC {
   // he speaks only where you can hear him: in his room (or near him outdoors)
   canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
-  speak(text, dur, mood, keep) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
+  speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
@@ -8355,9 +8660,18 @@ class NPC {
       const r = armIK(i, h.p, h.pole), o = h.ov;
       o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
+    // the hands: holding something closes them, fighting makes fists; a shape the behaviour asked for wins
+    for (let i = 0; i < 2; i++) {
+      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i];
+      hs.fist = 0.55 * w; hs.open = 0; hs.point = 0;
+      if (this.fight && this.fight.on) hs.fist = 1;
+      if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
+    }
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);
+    if (this.hp.anim) for (const hs of P.hand) { hs.fist = 0; hs.point = 0; hs.open = this.hp.dead ? 0.7 : 0.4; }
     applyPose(this.ch);
+    FACE.update(this.ch, dt, FACE.npcWant(this));
     const root = this.ch.root;
     root.position.copy(this.pos); root.rotation.y = this.yaw;
     root.visible = !this.room || !!this.room.mesh.visible;
@@ -8922,7 +9236,7 @@ class Vitals {
 
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
-  THIN: /^(uArm|fArm|thigh|shin|foot|hat)/, SLACK: 0.06,
+  THIN: /^(uArm|fArm|hand|thigh|shin|foot|hat)/, SLACK: 0.06,
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
@@ -8950,6 +9264,7 @@ const HARM = {
         for (const name in N.ch.p) {
           if (pass === 1 && !this.THIN.test(name)) continue;
           const part = N.ch.p[name];
+          if (part.visible === false) continue;
           const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
           const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
           this._inv.copy(part.matrixWorld).invert();
@@ -8986,6 +9301,7 @@ const HARM = {
     if (part === 'pelvis' || part === 'gun') return p.y > 0.02 ? { zone: 'belly', side: '' } : { zone: 'hip', side: p.x > 0 ? 'L' : 'R' };
     if (/^uArm/.test(part)) return { zone: 'arm', side };
     if (/^fArm/.test(part)) return { zone: p.y < -0.25 ? 'hand' : 'arm', side };
+    if (/^hand/.test(part)) return { zone: 'hand', side };
     if (/^(thigh|shin)/.test(part)) return { zone: 'leg', side };
     if (/^foot/.test(part)) return { zone: 'foot', side };
     return { zone: 'chest', side: '' };
@@ -9687,23 +10003,23 @@ const BARKEEP = {
   /* who stands behind the bar: Hank, and after him (if he dies) the ones who take the saloon over (npc/barkeep_fate.js) */
   WHO: [
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
-      colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
-      look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) },
+      desc: { skin: 2, build: { width: 1.05, belly: 0.4 }, face: { nose: 'big', brows: 1.3 }, hair: { style: 'slick', color: rgb(0x231812) }, beard: { style: 'handlebar', color: rgb(0x231812) },
+        outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe9e3d3), rolled: true }, vest: rgb(0x2c303a), pants: { color: rgb(0x3b3532) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), gun: false } },
       voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
-      colors: { shirt: rgb(0xd8cdb6), vest: rgb(0x5a3a28), jeans: rgb(0x3e3a34), jeansD: rgb(0x34302b), bandana: rgb(0x8a2a22), stache: rgb(0x9a5a2a), skin: rgb(0xe0aa86), skinD: rgb(0xc89070), boot: rgb(0x3a2418), belt: rgb(0x2a1d15) },
-      look: { hat: 'none', gun: false, apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), hair: rgb(0x8a4a22) },
+      desc: { skin: 1, build: { width: 1.12, belly: 0.15 }, face: { nose: 'normal', brows: 1.2 }, hair: { style: 'short', color: rgb(0x8a4a22) }, beard: { style: 'full', color: rgb(0x9a5a2a) },
+        outfit: { hat: null, bandana: null, shirt: { color: rgb(0xd8cdb6), rolled: true }, vest: rgb(0x5a3a28), pants: { color: rgb(0x3e3a34) }, boots: rgb(0x3a2418), belt: rgb(0x2a1d15), apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), gun: false } },
       voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
-      colors: { shirt: rgb(0xcfc6b0), vest: rgb(0x3a3a30), jeans: rgb(0x4a4238), jeansD: rgb(0x3e372e), bandana: rgb(0x3a3a30), stache: rgb(0xb0aaa0), skin: rgb(0xd09a78), skinD: rgb(0xb88464), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
-      look: { hat: 'none', gun: false, apron: rgb(0xcfc8b4), hair: rgb(0xb0aaa0) },
+      desc: { skin: 2, build: { width: 0.92, belly: 0 }, face: { nose: 'big', brows: 1.1 }, hair: { style: 'bald', color: rgb(0xb0aaa0) }, beard: { style: 'chops', color: rgb(0xb0aaa0) },
+        outfit: { hat: null, bandana: null, shirt: { color: rgb(0xcfc6b0), rolled: false }, vest: rgb(0x3a3a30), pants: { color: rgb(0x4a4238) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xcfc8b4), gun: false } },
       voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
   ],
   whoI: 0,
   who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },
   makeNpc(scene) {
     const W = this.who(), p = this.roomPt(this.X.stand, -6.4, this._v);
-    this.npc = new NPC({ id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, colors: W.colors, look: W.look });
+    this.npc = new NPC({ attitude: () => this.att, id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, desc: W.desc });
     const N = this.npc;
     N.persona = this.persona();
     N.held = () => this.held();
@@ -9960,6 +10276,7 @@ const BARKEEP = {
       }
     }
     const handsUp = this.aimedT > 0.2;
+    if (handsUp || this.st === 'duck') N.fear = G.time + 0.6;   // (his face: afraid)
     N.leanT = 0; N.crouchT = 0;
     if (this.st === 'brawl') { for (const k in this.props) this.props[k].visible = false; const r = N.fight.update(dt); if (r) this.endBrawl(r); this.placeProps(); return; }
     if (N.hp.busy() || this.st === 'hurt') { if (this.st !== 'hurt') { this.st = 'hurt'; this.hurtT = 0; } this.updHurt(dt, inside); this.placeProps(); return; }
@@ -10419,8 +10736,8 @@ const DOC = {
     const s = this.SPOTS.desk, p = rwp(R, s[0], R.floorY, s[1]);
     this.npc = new NPC({
       id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.05,
-      colors: { shirt: rgb(0xe8e4da), vest: rgb(0x2a2a2e), jeans: rgb(0x34322f), jeansD: rgb(0x2c2a28), bandana: rgb(0x2a2a2e), stache: rgb(0x8a8378), skin: rgb(0xe0b394), skinD: rgb(0xcb9b7c), boot: rgb(0x1e1a18), belt: rgb(0x1e1a18) },
-      look: { hat: 'none', gun: false, bowtie: rgb(0x2a2a2e), hair: rgb(0x9a948a) }
+      desc: { skin: 0, build: { width: 0.95, belly: 0.1 }, face: { nose: 'small', brows: 0.9 }, hair: { style: 'slick', color: rgb(0x9a948a) }, beard: { style: 'goatee', color: rgb(0x8a8378) },
+        outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe8e4da) }, vest: rgb(0x2a2a2e), pants: { color: rgb(0x34322f) }, boots: rgb(0x1e1a18), belt: rgb(0x1e1a18), bowtie: rgb(0x2a2a2e), glasses: true, gun: false } }
     });
     const N = this.npc;
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };

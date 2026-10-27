@@ -197,6 +197,7 @@ const DRINK = {
     // blend from whatever the arm was doing (sitting at the bar, hanging) to the drinking arm
     if (base && base.w > 0.001) P.armOv[1] = { w: lerp(base.w, 1, w), sw: lerp(base.sw, r.sw, w), yw: lerp(base.yw, r.yw, w), out: lerp(base.out, r.out, w), el: lerp(base.el, r.el, w) };
     else P.armOv[1] = { w, sw: r.sw, yw: r.yw, out: r.out, el: r.el };
+    if (P.hand) P.hand[1].fist = Math.max(P.hand[1].fist, 0.55 * w);
   },
   // after the pose is applied: put the vessel in the hand
   late() {

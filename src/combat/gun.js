@@ -191,6 +191,8 @@ const GUN = {
       P.armOv[0] = { w: this.ovLW, sw: this.ovL.sw, yw: this.ovL.yw, out: this.ovL.out, el: this.ovL.el };
     } else P.armOv[0] = null;
     P.gunInHand = this.inHand;
+    if (this.inHand) P.hand[1].fist = Math.max(P.hand[1].fist, 0.8 * this.ovW);
+    if (this.ovLW > 0.01) P.hand[0].fist = Math.max(P.hand[0].fist, 0.5 * this.ovLW);
   },
   // arm angles that point the right hand at a world point (out = 0: sw/yw give the direction exactly)
   solveAim(P, tgt, low, w) {

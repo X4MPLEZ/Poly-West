@@ -187,6 +187,7 @@ function updateWorld(dt, t) {
 
 function updateCharacterVisual() {
   updateGait();
+  FACE.update(W.ch, GAIT.dt || 0, FACE.playerWant());
   DUST.update(GAIT.dt || 0);
   const g = groundAt(PLAY.pos.x, PLAY.pos.z, PLAY.pos.y);
   W.blob.position.set(PLAY.pos.x, g + 0.04, PLAY.pos.z);

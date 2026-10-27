@@ -112,6 +112,8 @@ function updateGait() {
     g.feet.forEach((F, i) => { restPoint(i, pos, yaw, F.plant); F.yaw = yaw; });
     g.init = true;
   }
+  // the hands start each frame loosely curled; what holds or hits something closes them
+  for (let i = 0; i < 2; i++) { const h = P.hand[i]; h.fist = 0; h.open = 0; h.point = 0; P.wrist[i].x = 0; P.wrist[i].z = 0; }
   // sitting: the seat has the whole pose
   if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }

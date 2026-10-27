@@ -189,6 +189,7 @@ const FALL = {
       o.w = 1; o.yw = 0; o.sw = S.arm[i][0] + wob * 0.5 * (i ? -1 : 1); o.out = S.arm[i][1] + Math.abs(wob) * 0.2; o.el = S.arm[i][2];
     }
     P.gunInHand = false;
+    if (P.hand) for (const h of P.hand) h.open = 0.55;
     this.down = clamp((0.925 - P.pel.y) / 0.75, 0, 1);
   }
 };

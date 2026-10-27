@@ -16,7 +16,9 @@ world/interiors.js
 world/nature.js
 world/chunks.js
 gfx/atlas.js
+char/look.js
 char/rig.js
+char/face.js
 char/gait.js
 gfx/dust.js
 gfx/shaders.js

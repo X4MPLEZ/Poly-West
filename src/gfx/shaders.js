@@ -33,12 +33,22 @@ vec3 albedo(vec3 col, float tIn, vec2 uv, float amt) {
 }`;
 
 const SH = {};
+// (figures are skinned meshes with shapes: the chunks do nothing for everything else)
 SH.litV = `
 attribute float tile;
+#include <morphtarget_pars_vertex>
+#include <skinning_pars_vertex>
 varying vec3 vCol; varying vec3 vN; varying vec3 vW; varying vec2 vUv; varying float vTile;
 void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+  #include <beginnormal_vertex>
+  #include <morphnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  #include <begin_vertex>
+  #include <morphtarget_vertex>
+  #include <skinning_vertex>
+  vec4 w = modelMatrix * vec4(transformed, 1.0);
+  vW = w.xyz; vN = normalize(mat3(modelMatrix) * objectNormal);
   vCol = color; vUv = uv; vTile = tile;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;

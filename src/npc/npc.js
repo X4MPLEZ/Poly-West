@@ -22,7 +22,7 @@ const NPCS = {
 class NPC {
   constructor(o) {
     this.id = o.id; this.name = o.name; this.room = o.room || null;
-    this.ch = buildCharacter(o.colors, o.look);
+    this.ch = buildCharacter(o.desc || o.colors, o.look);
     this.ch.pose.armOv = [null, null];
     this.mat = null;
     o.scene.add(this.ch.root);
@@ -33,6 +33,8 @@ class NPC {
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
     this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
     this.tw = 0; this.leanF = 0; this.lunge = 0; this.hurry = 1;
+    this.handShape = [null, null];   // { fist, open, point } the behaviour wants for a hand (null: by what it holds)
+    this.mood = 'neutral'; this.moodT = 0; this.fear = 0; this.attitude = o.attitude || null;
     this.lean = 0; this.leanT = 0; this.crouch = 0; this.crouchT = 0; this.talkT = 0; this.nod = 0;
     this.body = { cx: this.pos.x, cz: this.pos.z, r: 0.32, npc: this };
     NPCS.bodies.push(this.body);
@@ -46,6 +48,7 @@ class NPC {
   // gone for good (a body taken away): out of the scene and out of every list
   dispose() {
     if (this.ch.root.parent) this.ch.root.parent.remove(this.ch.root);
+    try { this.ch.mesh.geometry.dispose(); this.ch.mesh.skeleton.dispose(); } catch (e) { /* ignore */ }
     const i = NPCS.list.indexOf(this); if (i >= 0) NPCS.list.splice(i, 1);
     const j = NPCS.bodies.indexOf(this.body); if (j >= 0) NPCS.bodies.splice(j, 1);
     const a = ACTORS.list.findIndex((x) => x.id === this.id && x.kind === 'npc'); if (a >= 0) ACTORS.list.splice(a, 1);
@@ -78,7 +81,7 @@ class NPC {
   // he speaks only where you can hear him: in his room (or near him outdoors)
   canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
-  speak(text, dur, mood, keep) { if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
+  speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
   gesture(name) { this.gest = name; this.gestT = 0; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
@@ -202,9 +205,18 @@ class NPC {
       const r = armIK(i, h.p, h.pole), o = h.ov;
       o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
+    // the hands: holding something closes them, fighting makes fists; a shape the behaviour asked for wins
+    for (let i = 0; i < 2; i++) {
+      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i];
+      hs.fist = 0.55 * w; hs.open = 0; hs.point = 0;
+      if (this.fight && this.fight.on) hs.fist = 1;
+      if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
+    }
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);
+    if (this.hp.anim) for (const hs of P.hand) { hs.fist = 0; hs.point = 0; hs.open = this.hp.dead ? 0.7 : 0.4; }
     applyPose(this.ch);
+    FACE.update(this.ch, dt, FACE.npcWant(this));
     const root = this.ch.root;
     root.position.copy(this.pos); root.rotation.y = this.yaw;
     root.visible = !this.room || !!this.room.mesh.visible;

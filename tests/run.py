@@ -952,6 +952,39 @@ async def check_falls(g):
           and 'flat' in r['open']['seq'] and not r['open']['inside'] and r['moves'].get('kick', 0) > 0 and len(r['moves']) >= 2 and r['trauma'] > 0.3)
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_figure(g):
+    """every figure is one skinned mesh (one draw call) built from a look description; faces show feelings
+       (what he says, fear when aimed at, pain, dead), blink, the mouth follows the voice; hands close to fists
+       in a fight; a shot at a hand finds the hand"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true;
+      const meshes = (ch) => { let n = 0; ch.root.traverse((o) => { if (o.isMesh) n++; }); return n; };
+      out.meshes = [meshes(W.ch), meshes(N.ch)]; out.skinned = !!N.ch.mesh.isSkinnedMesh; out.bones = N.ch.parts.length;
+      const I = (ch, k) => +ch.mesh.morphTargetInfluences[ch.mi[k]].toFixed(2);
+      for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      N.mood = 'angry'; N.moodT = G.time + 5; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.angry = I(N.ch, 'browAngry');
+      N.mood = 'amused'; N.moodT = G.time + 5; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.amused = I(N.ch, 'smile');
+      N.moodT = 0; N.fear = G.time + 2; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.fear = I(N.ch, 'browUp');
+      N.fear = 0;
+      // the voice: loudness drives the mouth
+      N.lip = { t0: performance.now() - 100, step: 40, env: new Float32Array(200).fill(0.8) }; for (let k = 0; k < 10; k++) G.stepFrame(1/60); out.talk = I(N.ch, 'mouthOpen'); N.lip = null;
+      // blinking
+      let shut = 0; for (let k = 0; k < 60 * 8; k++) { G.stepFrame(1/60); if (I(N.ch, 'lid') > 0.8) shut++; } out.blinks = shut;
+      // fists in a fight
+      PLAY.pos.set(-8, 0, 2); GAIT.init = false; B.toStreet(); N.pos.set(-7.0, 0, 2);
+      for (let i = 0; i < 4 && !(N.fight && N.fight.on); i++) { PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); FIST.down(false); FIST.up(); for (let k = 0; k < 30; k++) G.stepFrame(1/60); }
+      out.fists = [I(W.ch, 'fistR'), I(N.ch, 'fistR')];
+      // a shot at the hand
+      N.fight.stop(); for (let k = 0; k < 30; k++) G.stepFrame(1/60); N.ch.root.updateMatrixWorld(true);
+      const h = new THREE.Vector3(0, -0.08, 0.0).applyMatrix4(N.ch.p.handR.matrixWorld), o = h.clone().add(new THREE.Vector3(-Math.cos(N.yaw) * 2, 0.05, Math.sin(N.yaw) * 2));
+      const hit = HARM.trace(o, h.clone().sub(o).normalize(), 0, 10); out.handHit = hit && hit.zone;
+      // dead: eyes half shut, no blinking
+      N.hp.die('test', new THREE.Vector3(1, 0, 0), 'back'); for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.dead = I(N.ch, 'lid');
+      B.revive(); B.forget(); G.noRender = false; return out; }''')
+    ok = (r['meshes'][0] == 1 and r['meshes'][1] == 1 and r['skinned'] and r['angry'] > 0.6 and r['amused'] > 0.6 and r['fear'] > 0.6 and r['talk'] > 0.5
+          and r['blinks'] > 0 and r['fists'][0] > 0.9 and r['fists'][1] > 0.9 and r['handHit'] == 'hand' and r['dead'] > 0.6)
+    return ok, json.dumps(r, ensure_ascii=False)
+
 async def check_deepgram(g):
     """listening with Deepgram (stand-ins): the key goes as the socket's protocol, raw PCM goes out, pieces of a
        sentence are put together and sent when the pause comes (speech_final); a rejected key falls back"""
@@ -988,7 +1021,7 @@ async def check_deepgram(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

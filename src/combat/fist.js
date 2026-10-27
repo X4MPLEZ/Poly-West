@@ -412,6 +412,7 @@ const FIST = {
     if (goal) for (const k of ['ty', 'tp', 'pz', 'dy', 'roll']) B[k] = lerp(this.bodyFrom[k] || 0, bodyGoal[k], e);
     else { const k2 = 1 - Math.exp(-dt * 12); for (const k of ['ty', 'tp', 'pz', 'dy', 'roll']) B[k] += (bodyGoal[k] - B[k]) * k2; }
     P.spYaw += B.ty * gw; P.pelYaw += B.ty * 0.4 * gw; P.spRoll += B.roll * gw;
+    for (let i = 0; i < 2; i++) P.hand[i].fist = Math.max(P.hand[i].fist, gw);
     P.spPitch += B.tp * gw; P.pel.z += B.pz * gw; P.pel.y -= B.dy * gw;
     P.hdYaw -= B.ty * 1.15 * gw; P.hdPitch += (0.12 - B.tp * 0.9) * gw; P.hdRoll = (P.hdRoll || 0) - B.roll * gw;   // chin tucked, eyes on the target
     // a kick, a stamp, a knee: the foot leaves the ground and goes where the key says; back to the gait in the recovery
