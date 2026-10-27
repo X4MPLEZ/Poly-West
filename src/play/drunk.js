@@ -288,9 +288,12 @@ const DRUNK = {
     if (w.seat && w.seat()) SIT.warp(w.seat());
     else { const g = (w.go || spots[0].go)(); PLAY.pos.copy(g.p); PLAY.yaw = g.yaw; PLAY.camYaw = g.yaw + Math.PI; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; FALL.startLying(); }
     this.level = 0.3; this.stomach = 0; this.gut = 0;
+    // a few hours are gone (and slept off)
+    const gone = (4 + Math.random() * 3) * 60;
+    TIME.skip(Math.round(gone / 15) * 15); REST.slept(gone); this.level = 0.3; DAYNIGHT.update(0, true);
     const lost = Math.round(INV.money * (0.2 + Math.random() * 0.4));
     INV.money -= lost;
-    this.out.text = w.text; this.out.lost = lost;
+    this.out.text = w.text + ' Es ist ' + TIME.str() + ' Uhr.'; this.out.lost = lost;
   }
 };
 SAVE.part('drunk', () => ({ level: +DRUNK.level.toFixed(3), stomach: +DRUNK.stomach.toFixed(3), gut: +DRUNK.gut.toFixed(3) }), (d) => { DRUNK.level = clamp(+d.level || 0, 0, 0.85); DRUNK.stomach = clamp(+d.stomach || 0, 0, 1); DRUNK.gut = clamp(+d.gut || 0, 0, 1); });

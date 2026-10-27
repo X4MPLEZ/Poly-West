@@ -145,6 +145,8 @@ function walkStairs(mb, R, n, F, C, pos, sx, sz, col, top, tileTop) {
 
 /* the upper floor of a two-storey house: o.walk = floor rects, o.walls = [xa,za,xb,zb, collide, doorPositions],
    o.rails round the stairwell, o.wins = panes {x,z,alongX,w,y,h} */
+// the doors of the rooms on the upper floors (rooms one can rent and sleep in, see ui/sleep.js)
+const ROOM_DOORS = [];
 function upperFloor(mb, U, o) {
   const F = U.floorY, C = U.ceilY, T = 0.08;
   for (const r of o.walk) {
@@ -163,6 +165,7 @@ function upperFloor(mb, U, o) {
     if (w[4]) rColl(U, mx - sx / 2, mx + sx / 2, mz - sz / 2, mz + sz / 2, 4);
     (w[5] || []).forEach((d, k) => {
       const dx = alongX ? d : mx, dz = alongX ? mz : d, a = (q, b) => (alongX ? q : b);
+      ROOM_DOORS.push({ R: U, x: dx, z: dz, alongX, k });
       mb.box(dx, F, dz, a(1.15, T + 0.04), 2.28, a(T + 0.04, 1.15), mulc(o.wain, 1.15), 0);
       mb.box(dx, F, dz, a(0.95, T + 0.08), 2.15, a(T + 0.08, 0.95), o.door || IC.walnut, 3);
       for (const py of [0.3, 1.2]) mb.box(dx, F + py, dz, a(0.7, T + 0.1), 0.75, a(T + 0.1, 0.7), mulc(o.door || IC.walnut, 1.18), 3);

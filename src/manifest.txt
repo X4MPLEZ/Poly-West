@@ -28,6 +28,7 @@ play/input.js
 play/camera.js
 play/drunk.js
 play/fall.js
+play/rest.js
 audio/sfx.js
 audio/samples.js
 audio/voice.js
@@ -49,6 +50,7 @@ audio/ambient.js
 ui/hud.js
 ui/menu.js
 ui/wheel.js
+ui/sleep.js
 ui/micwin.js
 dev/devtools.js
 main.js

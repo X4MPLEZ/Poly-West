@@ -174,6 +174,7 @@ const BARKEEP = {
       ].join('\n'),
       context() {
         const L = DRUNK.level, lines = [];
+        lines.push('Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.');
         lines.push('Der Fremde ist ' + (L < 0.12 ? 'nüchtern' : L < 0.35 ? 'leicht angetrunken' : L < 0.65 ? 'betrunken' : 'sehr betrunken, er lallt und schwankt') + '.');
         lines.push('Er hat ' + money(INV.money) + ' bei sich' + (INV.has('bottle') ? ' und eine Flasche Whiskey in der Tasche' : '') + '.');
         if (SIT.state === 'sit' && SIT.seat && SIT.seat.bar) lines.push('Er sitzt an deinem Tresen.');

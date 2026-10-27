@@ -74,6 +74,9 @@ const POST = {
         dark = 0;
       }
     }
+    // going to sleep and waking up (ui/sleep.js)
+    const S = SLEEP.fx;
+    if (S) { dark = Math.max(dark, S.dark); lid = Math.max(lid, S.lid); }
     this.dark = dark; this.lid = lid;
   },
   render(r, scene, cam) {

@@ -5,7 +5,7 @@
    TIME.onSkip(fn(minutes)) so wounds heal, drink wears off and people move on as if those hours had passed. */
 const TIME = {
   min: 600, RATE: 0.5, frozen: false, skipFns: [], tickFns: [],
-  update(dt) { if (!this.frozen) this.min += dt * this.RATE * (this.speed || 1); for (const f of this.tickFns) f(dt); },
+  update(dt) { if (!this.frozen && !(typeof SLEEP !== 'undefined' && SLEEP.st)) this.min += dt * this.RATE * (this.speed || 1); for (const f of this.tickFns) f(dt); },
   hour() { return (this.min / 60) % 24; },
   day() { return Math.floor(this.min / 1440) + 1; },
   // 0 at full day, 1 deep in the night (follows the sun; see gfx/daynight.js for the light itself)

@@ -704,8 +704,41 @@ async def check_daynight(g):
           and r['night'][3] > 0.95 and r['night'][4] > 0.9 and r['saloonLamps'] >= 2 and r['clock'].endswith('23:00') and r['told'] == 90 and r['after'] == '00:30' and r['until'] == 390 and r['saved'])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_sleep(g):
+    """a room door upstairs offers a bed; the wheel limits the hours, turns in quarter hours; sleeping skips time,
+       sobers up, pays the room once, wakes you at the door; dozing in a chair is short"""
+    await g.js(RESET)
+    r = await g.js('''() => {
+      const out = {}, keepT = TIME.min, keepM = INV.money; INV.money = 1000; REST.need = 3; DRUNK.level = 0.5; SLEEP.rent = null;
+      TIME.min = 1440 + 21 * 60;
+      const it = SLEEP.places.find((p) => p.where === 'hotel');
+      PLAY.pos.set(it.sx, it.y, it.sz); PLAY.yaw = it.faceYaw; PLAY.camYaw = it.faceYaw + Math.PI; GAIT.init = false;
+      for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      INTERACT.update(true); out.offer = INTERACT.acts.map((a) => a.label)[0];
+      INTERACT.use(0); out.open = SLEEP.open; out.max = SLEEP.max; out.first = SLEEP.mins;
+      SLEEP.step(60 * 30); out.capped = SLEEP.mins === SLEEP.max;
+      SLEEP.step(-SLEEP.max); out.min = SLEEP.mins;
+      SLEEP.step(45); SLEEP.step(5); out.quarter = SLEEP.mins % 15 === 0;
+      SLEEP.mins = 600; SLEEP.pos = 600;
+      // keys go to the wheel, not to the game
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q' })); out.noGun = GUN.state === 'holster';
+      const t0 = TIME.min; SLEEP.go();
+      for (let k = 0; k < 60 * 9 && SLEEP.st; k++) G.stepFrame(1/60);
+      out.slept = Math.round(TIME.min - t0); out.clock = TIME.str(); out.sober = +DRUNK.level.toFixed(2); out.need = +REST.need.toFixed(1);
+      out.paid = 1000 - INV.money; out.rent = !!SLEEP.rented('hotel'); out.done = !SLEEP.busy();
+      out.atDoor = Math.hypot(PLAY.pos.x - it.sx, PLAY.pos.z - it.sz) < 0.3;
+      PLAY.yaw = it.faceYaw; INTERACT.update(true); out.again = INTERACT.acts.map((a) => a.label)[0];
+      // daytime, rested: only a short rest is possible
+      REST.need = 0; TIME.min = 3 * 1440 + 13 * 60; out.dayMax = REST.maxMinutes('bed'); out.napMax = REST.maxMinutes('nap');
+      TIME.min = keepT; INV.money = keepM; DRUNK.level = 0; SLEEP.rent = null; REST.need = 2;
+      return out; }''')
+    ok = (r['offer'].startswith('Zimmer mieten') and r['open'] and r['capped'] and r['min'] == 15 and r['quarter'] and r['noGun'] and r['slept'] == 600
+          and r['clock'] == '07:00' and r['sober'] < 0.05 and r['paid'] == 50 and r['rent'] and r['done'] and r['atDoor'] and 'dein Zimmer' in r['again']
+          and r['dayMax'] <= 60 and r['napMax'] <= 60 and r['max'] >= 600)
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

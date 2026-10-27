@@ -48,6 +48,7 @@
     const frameMs = Math.max(0.1, ts - last);
     last = ts;
     if (G.manual || MENU.open) return;
+    if (SLEEP.frozen()) { pollGamepad(onAction); SLEEP.update(Math.min(frameMs / 1000, 0.1)); return; }   // the world waits while the wheel is up
     frame(Math.min(frameMs / 1000, 0.1) * (G.slow ? 0.25 : 1) * (G.timeScale || 1) * (WHEEL.open ? 0.3 : 1), frameMs, ts);
   }
   G.stepFrame = (dt) => frame(dt, dt * 1000, performance.now());
@@ -57,6 +58,7 @@
     G.time += dt;
     G.frameNo++;
     TIME.update(dt);
+    SLEEP.update(Math.min(frameMs / 1000, 0.1));
     pollGamepad(onAction);
     GUN.update(dt);
     FIST.update(dt);
@@ -114,6 +116,8 @@
     HUD.init(toggleHud);
     initGunPad(onAction);
     INTERACT.init();
+    SLEEP.init();
+    REST.init();
     NPCS.init(G.scene);
     SAVE.init();
     DAYNIGHT.init();

@@ -64,6 +64,7 @@ function initInput(app, canvas, onAction) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (TALK.open && TALK.key(e, k)) { e.preventDefault(); return; }
+    if (SLEEP.busy()) return;   // the sleep wheel has its own keys (ui/sleep.js)
     if (SHOP.open) { if (SHOP.key(k)) e.preventDefault(); return; }
     if (k === 'Escape' || k === 'p') { MENU.toggle(); return; }
     if (DRUNK.blocked() && k !== 'F2') return;
@@ -132,6 +133,8 @@ function pollGamepad(onAction) {
   if (!b(12) && prev[12] && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); }
   if (WHEEL.open) { WHEEL.pad(INPUT.padLookX, INPUT.padLookY); INPUT.padLookX = INPUT.padLookY = 0; INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); return; }
   if (MENU.open) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); return; }
+  // the sleep wheel: stick turns it (SLEEP.pad via padX), A sleeps, B goes back
+  if (SLEEP.busy()) { if (SLEEP.open && b(0) && !prev[0]) SLEEP.go(); if (SLEEP.open && b(1) && !prev[1]) SLEEP.close(); INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); INPUT.padY = 0; INPUT.padLookX = INPUT.padLookY = 0; if (!SLEEP.open) INPUT.padX = 0; return; }
   if (b(8) && !prev[8]) onAction('sound');
   if (b(3) && !prev[3]) INTERACT.use(0);
   if (b(1) && !prev[1]) INTERACT.use(1);

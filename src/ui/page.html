@@ -317,6 +317,32 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 .nohud #perf, .nohud #hint, .nohud #name { display: none; }
 @media (max-width: 420px) { #name { display: none; } }
 @media (prefers-reduced-motion: reduce) { #hint, #boot { transition: none; } }
+
+/* the sleep wheel */
+#sleep { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: radial-gradient(circle, rgba(12, 8, 5, 0.35), rgba(12, 8, 5, 0.78)); pointer-events: auto; transition: opacity 0.5s ease; }
+#sleep.going .swBtns, #sleep.going .swHint, #sleep.going .swBody { opacity: 0; transition: opacity 0.4s; }
+#sleep.gone { opacity: 0; pointer-events: none; }
+.swBox { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; }
+.swTitle { font-family: var(--f-display); font-size: 20px; color: var(--bone); letter-spacing: 0.02em; text-align: center; }
+#sleepDial { width: min(330px, 62vmin); height: min(330px, 62vmin); touch-action: none; cursor: grab; }
+#sleepDial:active { cursor: grabbing; }
+.swSvg { width: 100%; height: 100%; display: block; }
+.swNum { font-family: var(--f-display); font-size: 15px; text-anchor: middle; }
+.swIcon { font-size: 12px; text-anchor: middle; fill: #f3e8d6; }
+.swMid text { text-anchor: middle; }
+.swWake { font-family: var(--f-mono); font-size: 19px; font-weight: 600; fill: #e7a640; }
+.swDur { font-family: var(--f-ui); font-size: 9.5px; fill: #bba88c; letter-spacing: 0.05em; }
+.swBody { font-size: 13px; color: var(--dust); text-align: center; }
+.swBtns { display: flex; gap: 10px; margin-top: 2px; }
+.swBtns button { font-family: var(--f-ui); font-weight: 700; font-size: 15px; letter-spacing: 0.04em; padding: 9px 18px; border-radius: 999px; border: 1px solid var(--edge); background: var(--panel); color: var(--bone); min-height: 44px; }
+.swBtns kbd { font-family: var(--f-mono); font-size: 10px; opacity: 0.7; margin-left: 4px; }
+.swBtns .swGo { background: var(--brass); color: var(--ink); border-color: var(--brass); min-width: 120px; }
+.swHint { font-size: 11px; color: var(--dust); opacity: 0.75; }
+.touch .swHint { display: none; }
+#sleep.stuck #sleepDial { animation: swStuck 0.22s ease; }
+@keyframes swStuck { 25% { transform: rotate(-1.5deg); } 75% { transform: rotate(1deg); } }
+.sleeping #hud, .sleeping #prompt, .sleeping #says { visibility: hidden; }
+@media (max-height: 460px) { #sleepDial { width: min(300px, 64vmin); height: min(300px, 64vmin); } .swTitle { font-size: 17px; } .swBox { gap: 3px; } .swBtns button { padding: 6px 16px; min-height: 40px; } }
 </style>
 
 <div id="app">
@@ -392,7 +418,17 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow" role="group" aria-label="Uhrzeit"><span>Uhr</span><button type="button" data-clock="6">6:00</button><button type="button" data-clock="12">12:00</button><button type="button" data-clock="19.5">19:30</button><button type="button" data-clock="0">0:00</button><button type="button" data-clock="+1">+1 Std</button><button id="devFast" type="button" aria-pressed="false" title="Die Uhr läuft 60-mal so schnell">Uhr 60×</button></div>
     </section>
     <div id="devMemBox" hidden></div>
+    </div>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>
+  </div>
+  <div id="sleep" hidden role="dialog" aria-modal="true" aria-labelledby="sleepWhere">
+    <div class="swBox">
+      <b id="sleepWhere" class="swTitle"></b>
+      <div id="sleepDial"></div>
+      <small id="sleepBody" class="swBody"></small>
+      <div class="swBtns"><button id="sleepBack" type="button">Zurück <kbd>Esc</kbd></button><button id="sleepGo" type="button" class="swGo">Schlafen</button></div>
+      <small class="swHint">Rad drehen: ziehen, Mausrad oder ← →</small>
+    </div>
   </div>
   <div id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
     <div class="mPanel">

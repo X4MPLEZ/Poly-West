@@ -64,7 +64,8 @@ const INTERACT = {
     const free = !DRINK.busy() && !SHOP.open && !DRUNK.blocked();
     if (SIT.state === 'sit') {
       best = SIT.seat;
-      if (free) acts = (best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best) : []).concat([{ label: 'Aufstehen', run: () => SIT.stand() }]);
+      if (free) acts = best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best).concat([{ label: 'Aufstehen', run: () => SIT.stand() }])
+        : [{ label: 'Aufstehen', run: () => SIT.stand() }, { label: 'Dösen', run: () => SLEEP.show({ kind: 'nap', seat: best }) }];
     } else if (!force && SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && !this.focus.occ && free) return;   // the search runs every third frame
     else if (SIT.state === 'none' && free && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
       const p = PLAY.pos, room = ROOMSTATE.cur;
