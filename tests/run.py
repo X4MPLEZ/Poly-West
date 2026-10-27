@@ -985,6 +985,32 @@ async def check_figure(g):
           and r['blinks'] > 0 and r['fists'][0] > 0.9 and r['fists'][1] > 0.9 and r['handHit'] == 'hand' and r['dead'] > 0.6)
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_survive(g):
+    """the survival instinct: shot and down, Hank no longer minds his bar (no "behind the bar" line even with you
+       standing in his aisle), says only what a man says for his life, the AI is told so first; a gun on him: a hand
+       up, open; dying: other words again"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, R = B.R, out = {}; B.revive(); B.forget(); G.noRender = true;
+      const said = []; const sp = N.speak; N.speak = function (t, d, m, k) { said.push(t); return sp.call(this, t, d, m, k); };
+      PLAY.pos.copy(rwp(R, 2.0, R.floorY, -6)); GAIT.init = false; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      N.ch.root.updateMatrixWorld(true);
+      const c = new THREE.Vector3(0, 0.25, 0.1).applyMatrix4(N.ch.p.torso.matrixWorld), o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z);
+      for (let i = 0; i < 2 && !N.hp.anim; i++) { const d = c.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50); GUN.hitResult(hit, d, 0); for (let k = 0; k < 20; k++) G.stepFrame(1/60); }
+      for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      N.hp.downFor = 999; out.down = N.hp.down(); out.plight = N.plight(); out.text = TALK.plightText(N).slice(0, 60);
+      // into his aisle: nothing about the bar
+      said.length = 0; PLAY.pos.copy(rwp(R, 5.2, R.floorY, -4.2)); GAIT.init = false; for (let k = 0; k < 60 * 6; k++) G.stepFrame(1/60);
+      out.behind = said.filter((t) => B.LINES.behind.includes(t)).length;
+      // a gun on him
+      B.aimedT = 1; let pw = 0; for (let k = 0; k < 40; k++) { B.aimedT = 1; G.stepFrame(1/60); } pw = N.hp.pleadW;
+      out.plead = +pw.toFixed(2); out.open = +N.ch.mesh.morphTargetInfluences[N.ch.mi.openR].toFixed(2); B.aimedT = 0;
+      out.mercy = said.some((t) => B.LINES.mercy.some((l) => (l[0] || l) === t));
+      // dying
+      N.hp.dying = 30; out.dying = TALK.plightText(N).indexOf('stirbst') > 0;
+      N.speak = sp; B.revive(); B.forget(); G.noRender = false; return out; }''')
+    ok = (r['down'] and r['plight'] >= 2 and 'liegst' in r['text'] and r['behind'] == 0 and r['plead'] > 0.6 and r['open'] > 0.5 and r['mercy'] and r['dying'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 async def check_deepgram(g):
     """listening with Deepgram (stand-ins): the key goes as the socket's protocol, raw PCM goes out, pieces of a
        sentence are put together and sent when the pause comes (speech_final); a rejected key falls back"""
@@ -1021,7 +1047,7 @@ async def check_deepgram(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

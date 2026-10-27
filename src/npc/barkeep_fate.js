@@ -146,6 +146,15 @@ Object.assign(BARKEEP, {
     this.st = 'idle'; this.pickIdle(); this.newT = TIME.min;
     worldEvent('newBarkeep', N.pos.x, N.pos.y, N.pos.z, { by: 'world', who: W.id });
   },
+  // developer tools: the next one takes over now (the one there dies off-screen, buried, the next arrives)
+  devNext() {
+    if (this.whoI >= this.WHO.length - 1) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
+    const N = this.npc;
+    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; }
+    if (this.npc) this.removeBody();
+    this.arrive();
+    TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
+  },
   // called from update while dead or gone
   fate(dt) {
     const away = G.room !== this.R && Math.hypot(PLAY.pos.x - this.R.doorW.x, PLAY.pos.z - this.R.doorW.z) > 25;

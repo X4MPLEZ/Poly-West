@@ -30,6 +30,7 @@ const DEV = {
     for (const b of this.el.querySelectorAll('[data-clock]')) b.addEventListener('click', () => { const v = b.dataset.clock; TIME.skip(v === '+1' ? 60 : TIME.until(+v)); });
     $('devHankStreet').addEventListener('click', () => BARKEEP.toStreet());
     $('devHankHeal').addEventListener('click', () => BARKEEP.revive());
+    $('devHankNext').addEventListener('click', () => BARKEEP.devNext());
     $('devFast').addEventListener('click', () => { TIME.speed = TIME.speed > 1 ? 1 : 60; $('devFast').setAttribute('aria-pressed', TIME.speed > 1 ? 'true' : 'false'); });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));

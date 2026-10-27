@@ -17,6 +17,9 @@ const BARKEEP = {
     broke: 'disgusted', cheers: 'amused', thanks: 'neutral', bye: 'neutral', price: 'neutral', refuse: 'disgusted' },
   /* ready-made lines: each kind is a bag that is used up before a line comes again (and never twice in a row).
      They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
+  // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
+  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
+  WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
     helloNew: ['Howdy, Fremder.', 'Neu in der Stadt? Setz dich.', 'Tag. Der Staub bleibt draußen.', 'Willkommen im Saloon. Was darf’s sein?', 'Komm rein. Hier gibt’s Whiskey und Ruhe.', 'Ein neues Gesicht. Hab ich gern, solange es friedlich bleibt.'],
     helloBack: ['Da bist du ja wieder.', 'Na, wieder Durst?', 'Der Platz an der Theke ist noch frei.', 'Wieder im Lande, Cowboy?', 'Dachte mir, dass du wiederkommst.', ['Das Übliche?', 'neutral']],
@@ -51,6 +54,8 @@ const BARKEEP = {
     itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
     groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
     mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    help: [['Hilfe! Holt den Doc!', 'surprised'], ['Doc… jemand… holt den Doc…', 'sleepy'], ['Ich verblute hier… hilf mir doch…', 'sleepy'], ['Hol Hilfe… bitte…', 'sleepy'], ['Lass mich nicht hier liegen…', 'sleepy']],
+    dying: [['Mir… wird so kalt…', 'sleepy'], ['Sag… sag meiner Schwester…', 'sleepy'], ['Ich will nicht… nicht so…', 'sleepy'], ['Verdammt… nicht hier… nicht heute…', 'sleepy'], ['Gott… vergib mir…', 'sleepy']],
     toDoc: [['Ich geh zum Doc. Du rührst hier nichts an.', 'angry'], ['Verdammt… ich brauch den Doc.', 'angry'], ['Der Laden ist zu. Ich muss zum Arzt.', 'disgusted']],
     brawl: [['Na warte!', 'angry'], ['Das wirst du bereuen!', 'angry'], ['Komm her, du!', 'angry'], ['Du willst Ärger? Bitte!', 'angry'], ['Jetzt reicht’s!', 'angry']],
     taunt: [['Na? Noch einen?', 'angry'], ['Steh auf!', 'angry'], ['Komm schon!', 'angry'], ['Ist das alles?', 'amused']],
@@ -179,8 +184,16 @@ const BARKEEP = {
     if (H.busy()) {
       N.lookTW = 0;
       this.groanT = (this.groanT || 4) - dt;
-      if (this.groanT <= 0 && H.anim && H.anim.holding()) { this.groanT = 5 + Math.random() * 6; if (inside && Math.random() < 0.5) this.shout(this.aimedT > 0.2 ? 'mercy' : 'groan'); }
-      if (this.aimedT > 0.2 && !this.saidMercy && H.anim && H.anim.holding()) { this.saidMercy = true; this.shout('mercy'); }
+      const lv = N.plight(), lying = H.anim && H.anim.holding();
+      // what is on his mind down there: not getting shot again, getting help, and at the end not dying
+      if (this.groanT <= 0 && lying) {
+        this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
+        const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
+        if (inside && Math.random() < 0.65 && !TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', kind === 'groan' ? 0.25 : 0.5)) this.shout(kind);
+      }
+      if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
+      // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
+      if (lying && this.aimedT > 0.2) H.plead = G.time + 0.4;
       if (this.aimedT <= 0) this.saidMercy = false;
       // a pool forms under a bleeding man
       this.poolT = (this.poolT || 0) - dt;
@@ -487,7 +500,9 @@ const BARKEEP = {
   // a ready-made line; not over his own words and not when you are not there to hear it (then it is tried again later
   // by the callers that keep calling, the others let it go)
   say(kind, cool) {
-    const now = G.time;
+    const now = G.time, lv = this.npc.plight();
+    if (lv >= 2 && !this.SURVIVE[kind]) return false;
+    if (lv >= 1 && !this.SURVIVE[kind] && !this.WARY[kind]) return false;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'aimed' || kind === 'behind' || kind === 'shot')) return false;
     this.cool[kind] = now;

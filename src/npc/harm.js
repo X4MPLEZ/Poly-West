@@ -385,6 +385,15 @@ class Vitals {
         P.pelRoll += J.x * 0.25 * J.k; P.spPitch += (J.head ? -0.1 : 0.35) * J.k; P.hdPitch += (J.head ? 0.5 : -0.2) * J.k; P.hdRoll = (P.hdRoll || 0) + J.x * 0.4 * J.k;
         for (let i = 0; i < 2; i++) if (P.armOv[i]) { P.armOv[i].sw += 0.35 * J.k; P.armOv[i].el += 0.4 * J.k; }
       }
+      // pleading from the ground: one hand up towards the gun, open
+      if (!this.dead && this.plead && G.time < this.plead) {
+        this.pleadW = Math.min(1, (this.pleadW || 0) + dt * 4);
+      } else this.pleadW = Math.max(0, (this.pleadW || 0) - dt * 3);
+      if (this.pleadW > 0.01) {
+        const o = P.armOv[1], w = this.pleadW * (this.lowness > 0.5 ? 1 : 0.6);
+        if (o) { o.sw += (1.75 - o.sw) * w; o.out += (0.25 - o.out) * w; o.el += (0.35 - o.el) * w; o.yw += (0.3 - o.yw) * w; }
+        P.hdPitch += 0.25 * w;
+      }
       if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
     this.lowness = 0;
     // the jerk of a hit

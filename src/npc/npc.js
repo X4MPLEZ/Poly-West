@@ -73,6 +73,17 @@ class NPC {
     if (this.path && this.path.length) { const p = this.path.shift(); this.legPass = true; this.goTo(p[0], p[1], undefined, true); }
     else if (this.dest) { const d = this.dest; this.dest = null; this.legPass = false; this.goTo(d[0], d[1], d[2] === null ? undefined : d[2], true); }
   }
+  /* how bad it is for him (the survival instinct): 0 fine, 1 hurt (an open gunshot, lost blood), 2 down and bleeding,
+     3 dying, 4 dead. From 2 on, nothing else matters to him: what he says and what the AI makes him say is about
+     staying alive (npc/talk.js plightText, BARKEEP.say) */
+  plight() {
+    const H = this.hp;
+    if (H.dead) return 4;
+    if (H.dying > 0 || H.blood < 0.3) return 3;
+    if (H.anim && (H.bleed > 0.0008 || H.blood < 0.6)) return 2;
+    if (H.blood < 0.75 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5)) return 1;
+    return 0;
+  }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
@@ -215,6 +226,7 @@ class NPC {
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);
     if (this.hp.anim) for (const hs of P.hand) { hs.fist = 0; hs.point = 0; hs.open = this.hp.dead ? 0.7 : 0.4; }
+    if (this.hp.pleadW > 0.01) P.hand[1].open = Math.max(P.hand[1].open, this.hp.pleadW);
     applyPose(this.ch);
     FACE.update(this.ch, dt, FACE.npcWant(this));
     const root = this.ch.root;

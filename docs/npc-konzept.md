@@ -46,3 +46,10 @@ Das Verhalten der NPCs entsteht aus Regeln, nicht aus festen Drehbüchern. Jeder
 - Welche Taten sind möglich?
 - KI-Sprache oder feste Sätze?
 - Wie lange reicht das Gedächtnis über Sitzungen?
+
+## Später: Tod in der Stadt (Wunsch von Merkel, Oktober 2026)
+- Wird jemand tot gefunden (von einem NPC, der vorbeikommt), wird der **Sheriff** geholt. Er sieht sich den Toten an, fragt Zeugen und den Doc (der weiß, wer bei ihm war und was er erzählt hat) und führt eine **Ermittlung**: Verdächtige, Steckbrief, Festnahme.
+- Der Tote wird von anderen **hinausgetragen** (zwei Männer, Trage oder an Armen und Beinen), zum Bestatter oder zur Kirche.
+- **Beerdigung** an der Kirche zu einer festen Stunde: Leute in Schwarz, der Pfarrer spricht, Sarg ins Grab, das Grab wird zugeschaufelt (`GRAVES` gibt es schon, bisher nur Erdhügel mit Kreuz).
+- **Grabstein** mit Name, Beruf, Lebensdaten und Todesursache („Hank Miller, Barkeeper, erschossen am Tag 3“).
+

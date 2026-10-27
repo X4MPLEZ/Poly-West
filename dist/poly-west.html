@@ -468,7 +468,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
       <div class="devRow"><button id="devMem" type="button" aria-pressed="false">Gedächtnis der Figuren</button><button id="devGlass" type="button">Glas zurück</button></div>
       <div class="devRow" role="group" aria-label="Uhrzeit"><span>Uhr</span><button type="button" data-clock="6">6:00</button><button type="button" data-clock="12">12:00</button><button type="button" data-clock="19.5">19:30</button><button type="button" data-clock="0">0:00</button><button type="button" data-clock="+1">+1 Std</button><button id="devFast" type="button" aria-pressed="false" title="Die Uhr läuft 60-mal so schnell">Uhr 60×</button></div>
-      <div class="devRow" role="group" aria-label="Hank"><span>Hank</span><button id="devHankStreet" type="button" title="Hank mitten auf die Straße holen (zum Prügeln im Freien)">auf die Straße</button><button id="devHankHeal" type="button" title="Alle Wunden weg, steht wieder (auch nach dem Tod)">heilen / beleben</button></div>
+      <div class="devRow" role="group" aria-label="Hank"><span>Hank</span><button id="devHankStreet" type="button" title="Hank mitten auf die Straße holen (zum Prügeln im Freien)">auf die Straße</button><button id="devHankHeal" type="button" title="Alle Wunden weg, steht wieder (auch nach dem Tod)">heilen / beleben</button><button id="devHankNext" type="button" title="Der Nächste übernimmt den Saloon sofort (Hank → Walt → Jeb)">Nachfolger</button></div>
     </section>
     <div id="devMemBox" hidden></div>
     </div>
@@ -3196,51 +3196,77 @@ const RIG = {
    figure costs one draw call. ch.p[name] is the bone (matrix, matrixWorld, children for bandages; .geometry: the
    part alone, for hit tests; .material: the figure's material; .visible = false folds the part away).
    The face and the hands have shapes (morph targets): brows, lids, mouth; fist, open hand, pointing finger. */
-const MORPHS = ['browAngry', 'browSad', 'browUp', 'lid', 'mouthOpen', 'smile', 'frown', 'fistL', 'fistR', 'openL', 'openR', 'pointL', 'pointR'];
-const FACE0 = { browAngry: 0, browSad: 0, browUp: 0, lid: 0, mouthOpen: 0, smile: 0, frown: 0 };
+const MORPHS = ['browAngry', 'browSad', 'browUp', 'browOne', 'lid', 'squint', 'eyeWide', 'pupil', 'lookX', 'lookY', 'mouthOpen', 'mouthO', 'smile', 'frown', 'sneer', 'teeth', 'cheek',
+  'fistL', 'fistR', 'openL', 'openR', 'pointL', 'pointR'];
+// the face's shapes (0..1; pupil, lookX and lookY also run negative: small pupils, looking right / down)
+const FACE0 = { browAngry: 0, browSad: 0, browUp: 0, browOne: 0, lid: 0, squint: 0, eyeWide: 0, pupil: 0, lookX: 0, lookY: 0, mouthOpen: 0, mouthO: 0, smile: 0, frown: 0, sneer: 0, teeth: 0, cheek: 0 };
 
-// the head: origin at the base of the neck, face to +z (front at z = 0.13). e: the face's shape (FACE0 keys, 0..1)
+/* the head: origin at the base of the neck, face to +z (front at z = 0.13). e: the face's shape (FACE0 keys).
+   Everything that moves is a small box: whites, pupils, upper and lower lids, brows, cheeks, the mouth as a dark slot
+   with upper and lower teeth and two lip corners, and the beard, which rides on the upper lip. Every shape builds the
+   same boxes (only sizes and places change), so each one can be a morph target. */
 function buildHead(mb, L, e) {
   const O = L.outfit, skin = LOOK.skinCol(L), skinD = mulc(skin, 0.88), hair = L.hair.color, beard = L.beard.color;
-  const dark = rgb(0x1e1612), white = rgb(0xeee6d8), lip = rgb(0x5a2620), mouthC = rgb(0x2a1210);
+  const dark = rgb(0x1e1612), white = rgb(0xeee6d8), lip = rgb(0x6a2e26), mouthC = rgb(0x2a1210), cheekC = mixc(skin, rgb(0xd07060), 0.18);
   const M = (x, y, z, rz) => new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationZ(rz || 0));
-  // neck, scarf, the head itself, ears
+  // neck, scarf or collar, the head itself, ears
   mb.box(0, -0.03, 0, 0.13, 0.08, 0.13, skin, 0);
   if (O.bandana) { mb.box(0, -0.06, 0, 0.29, 0.09, 0.29, O.bandana, 9, { bottom: true }); mb.box(0, -0.15, 0.135, 0.16, 0.12, 0.03, O.bandana, 9, { bottom: true }); }
-  else mb.box(0, -0.06, 0, 0.2, 0.07, 0.2, O.shirt.color, 9, { bottom: true });   // the collar
+  else mb.box(0, -0.06, 0, 0.2, 0.07, 0.2, O.shirt.color, 9, { bottom: true });
   mb.box(0, 0.035, 0, 0.26, 0.275, 0.26, skin, 0);
   for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, skinD, 0);
-  // eyes: white, a dark pupil, the upper lid coming down over them (lid 1 = shut)
+  // cheeks: pushed up and out by a real smile
+  const ck = e.cheek;
+  for (const s of [-1, 1]) mb.box(s * 0.075, 0.112 + ck * 0.014, 0.131 + ck * 0.004, 0.05, 0.03 + ck * 0.006, 0.006, cheekC, 0);
+  // eyes: whites (taller when wide open), pupils (size from the light, place from where he looks), the upper lid
+  // coming down (lid; blinking), the lower lid coming up (squint)
+  const wide = e.eyeWide, eyH = 0.046 + wide * 0.018, eyB = 0.163 - wide * 0.006;
+  const pS = clamp(1 + e.pupil * 0.3 - wide * 0.22, 0.55, 1.4), px = e.lookX * 0.012, py = e.lookY * 0.008;
   for (const s of [-1, 1]) {
-    mb.box(s * 0.06, 0.163, 0.132, 0.058, 0.046, 0.012, white, 0);
-    mb.box(s * 0.056, 0.168, 0.139, 0.026, 0.034, 0.006, dark, 0);
-    const lh = 0.006 + 0.044 * e.lid;
-    mb.box(s * 0.06, 0.212 - lh, 0.142, 0.066, lh, 0.008, skinD, 0);
+    mb.box(s * 0.06, eyB, 0.132, 0.058 + wide * 0.004, eyH, 0.012, white, 0);
+    mb.box(s * 0.056 + px, eyB + eyH / 2 - 0.017 * pS + py, 0.139, 0.026 * pS, 0.034 * pS, 0.006, dark, 0);
+    const top = eyB + eyH + 0.002, lh = 0.006 + (eyH - 0.004) * clamp(e.lid, 0, 1) * (1 - wide * 0.3);
+    mb.box(s * 0.06, top - lh, 0.142, 0.066, lh, 0.008, skinD, 0);
+    const lo = 0.004 + 0.022 * e.squint;
+    mb.box(s * 0.06, eyB - 0.002, 0.1415, 0.064, lo, 0.007, skinD, 0);
   }
-  // brows: up, frowned down at the inner end (angry), raised at the inner end (sad)
+  // brows: up (and higher still with wide eyes), frowned down at the inner end, raised at the inner end (sad),
+  // one alone up (doubt: his left)
   const bw = 0.078, bh = 0.02 * (L.face.brows || 1);
   for (const s of [-1, 1]) {
-    const y = 0.226 + e.browUp * 0.024 - e.browAngry * 0.012 + e.browSad * 0.006, a = s * (e.browAngry * 0.5 - e.browSad * 0.42);
-    mb.push(M(s * 0.062, y, 0.143, a)); mb.box(0, -bh / 2, 0, bw, bh, 0.016, hair, 0); mb.pop();
+    const one = s > 0 ? e.browOne : 0;
+    const y = 0.226 + e.browUp * 0.022 + wide * 0.012 + one * 0.026 - e.browAngry * 0.014 + e.browSad * 0.006 - e.squint * 0.004;
+    const a = s * (e.browAngry * 0.5 - e.browSad * 0.42 - one * 0.15);
+    mb.push(M(s * (0.062 - e.browAngry * 0.006), y, 0.143, a)); mb.box(0, -bh / 2, 0, bw, bh, 0.016, hair, 0); mb.pop();
   }
-  // nose
+  // nose (wrinkles up with a sneer)
   const nz = L.face.nose === 'big' ? [0.064, 0.074, 0.064] : L.face.nose === 'small' ? [0.042, 0.05, 0.04] : [0.05, 0.062, 0.05];
-  mb.box(0, 0.105, 0.13, nz[0], nz[1], nz[2], skinD, 0);
-  // mouth: a dark slot that opens downwards, teeth showing at the top, lip corners that go up (smile) or down
-  const open = e.mouthOpen, sm = e.smile, fr = e.frown;
-  mb.box(0, 0.058 - open * 0.03, 0.13, 0.082 + sm * 0.016, 0.014 + open * 0.03, 0.012, mouthC, 0);
-  mb.box(0, 0.068 - open * 0.004, 0.126 + Math.min(1, open * 3) * 0.011, 0.06 + sm * 0.01, 0.002 + open * 0.009, 0.003, white, 0);   // (inside the head while shut)
+  mb.box(0, 0.105 + e.sneer * 0.006, 0.13, nz[0], nz[1], nz[2], skinD, 0);
+  /* mouth: a slot that opens down (open), rounds into an O (narrow and tall), stretches flat with bared teeth (teeth),
+     lifts on one side (sneer, his left); upper and lower teeth show when it opens or bares; corners go up or down */
+  const open = clamp(e.mouthOpen + e.mouthO * 0.6 + e.teeth * 0.25, 0, 1.3), oo = e.mouthO, sm = e.smile, fr = e.frown, sn = e.sneer, th = e.teeth;
+  const mw = (0.08 + sm * 0.016 + th * 0.022 - oo * 0.04) * (1 + open * 0.05), mTop = 0.062 + sn * 0.006, mh = 0.012 + open * 0.032 + oo * 0.01;
+  mb.box(sn * 0.006, mTop - mh, 0.13, mw, mh, 0.012, mouthC, 0);
+  const show = clamp(open * 3 + th * 2, 0, 1);
+  mb.box(sn * 0.008, mTop - 0.004 - open * 0.004 - th * 0.004, 0.126 + show * 0.011, mw * 0.78, 0.002 + open * 0.008 + th * 0.006, 0.003, white, 0);   // upper teeth
+  mb.box(0, mTop - mh + 0.001, 0.126 + clamp(th * 2 + open - 0.4, 0, 1) * 0.011, mw * 0.7, 0.002 + th * 0.006 + open * 0.004, 0.003, white, 0);     // lower teeth
   for (const s of [-1, 1]) {
-    mb.push(M(s * (0.05 + sm * 0.012), 0.064 + sm * 0.016 - fr * 0.018 - open * 0.008, 0.137, s * (sm - fr) * 0.65));
-    mb.box(0, -0.007, 0, 0.032, 0.014, 0.01, lip, 0); mb.pop();
+    const up = sm * 0.016 - fr * 0.018 + (s > 0 ? sn * 0.014 : 0) - th * 0.004;
+    mb.push(M(s * (mw / 2 + 0.006 - oo * 0.004), mTop - 0.005 - open * 0.012 + up, 0.137, s * (sm - fr) * 0.6 + (s > 0 ? sn * 0.4 : 0)));
+    mb.box(0, -0.007, 0, 0.03 - oo * 0.012, 0.014, 0.01, lip, 0); mb.pop();
   }
-  // beard
-  const st = L.beard.style;
+  // beard: a moustache sits on the upper lip and goes where the lip goes (up with a smile and a sneer, down at the
+  // ends with a frown); the rest of the beard hangs on the jaw
+  const st = L.beard.style, lipUp = sm * 0.005 + sn * 0.006 + oo * 0.003, sY = 0.082 + lipUp;
   if (st === 'stubble' || st === 'full' || st === 'chops') mb.box(0, -0.0, 0.1295, 0.255, 0.105, 0.004, mixc(skin, beard, 0.45), 0);
-  if (st === 'stache' || st === 'handlebar' || st === 'full' || st === 'stubble') mb.box(0, 0.077, 0.136, st === 'stubble' ? 0.11 : 0.14, st === 'stubble' ? 0.016 : 0.026, 0.016, st === 'stubble' ? mixc(skin, beard, 0.6) : beard, 0);
-  if (st === 'handlebar') for (const s of [-1, 1]) { mb.push(M(s * 0.08, 0.085, 0.138, s * 0.9)); mb.box(0, 0, 0, 0.04, 0.016, 0.014, beard, 0); mb.pop(); }
-  if (st === 'goatee') { mb.box(0, -0.005, 0.132, 0.06, 0.052, 0.03, beard, 0); mb.box(0, 0.077, 0.136, 0.1, 0.02, 0.014, beard, 0); }
-  if (st === 'full') { mb.box(0, -0.035, 0.12, 0.25, 0.075, 0.05, beard, 0); for (const s of [-1, 1]) mb.box(s * 0.122, -0.01, 0.04, 0.03, 0.16, 0.17, beard, 0); }
+  if (st === 'stache' || st === 'handlebar' || st === 'full' || st === 'stubble') {
+    const sw = st === 'stubble' ? 0.11 : 0.14, sh = st === 'stubble' ? 0.014 : 0.024, col = st === 'stubble' ? mixc(skin, beard, 0.6) : beard;
+    mb.box(0, sY, 0.137, sw * 0.5, sh, 0.016, col, 0);
+    for (const s of [-1, 1]) { mb.push(M(s * sw * 0.33, sY + sh / 2 + (s > 0 ? sn * 0.004 : 0), 0.137, s * (sm * 0.25 - fr * 0.3) + (s > 0 ? sn * 0.2 : 0))); mb.box(0, -sh / 2, 0, sw * 0.36, sh, 0.016, col, 0); mb.pop(); }
+  }
+  if (st === 'handlebar') for (const s of [-1, 1]) { mb.push(M(s * 0.092, sY + 0.012 + sm * 0.004 - fr * 0.006, 0.139, s * (0.9 + sm * 0.2 - fr * 0.5))); mb.box(0, 0, 0, 0.04, 0.015, 0.014, beard, 0); mb.pop(); }
+  if (st === 'goatee') { mb.box(0, -0.005 - open * 0.02, 0.132, 0.06, 0.05, 0.03, beard, 0); mb.box(0, sY, 0.137, 0.1, 0.018, 0.014, beard, 0); }
+  if (st === 'full') { mb.box(0, -0.035 - open * 0.018, 0.12, 0.25, 0.072, 0.05, beard, 0); for (const s of [-1, 1]) mb.box(s * 0.122, -0.01, 0.04, 0.03, 0.16, 0.17, beard, 0); }
   if (st === 'chops') for (const s of [-1, 1]) mb.box(s * 0.128, 0.03, 0.05, 0.022, 0.15, 0.13, beard, 0);
   // hair (under a hat only the sides and the back show)
   const hs = L.hair.style;
@@ -3473,55 +3499,79 @@ function applyPose(ch) {
 }
 
 // ==== char/face.js ====
-/* ---------- faces: a few shapes, read from across the room ----------
-   The head has seven shapes (char/rig.js: brows angry / sad / up, lids, mouth open, smile, frown). A feeling is a mix
-   of them (PRESETS); the face eases towards it, blinks now and then, and the mouth follows the voice (the loudness of
-   the sentence being played, audio/voice.js: npc.lip) or, without one, makes talking movements.
-   FACE.update(ch, dt, { mood, k, talk, dead, sleep }) once a frame per figure; FACE.npcWant(npc) and
-   FACE.playerWant() say what each one feels right now. */
+/* ---------- faces: small shapes, read from across the room ----------
+   The head has seventeen shapes (char/rig.js FACE0): brows angry / sad / up / one up, upper lid, lower lid (squint),
+   wide eyes, pupil size, where the pupils look (lookX, lookY), mouth open / round O, smile, frown, sneer, bared
+   teeth, cheeks. A feeling is a mix of them (PRESETS) and has its own speed (surprise is there at once, sadness
+   comes slowly). On top: blinking, the pupils (small in the sun, wide in the dark and in fear), the eyes on what
+   he looks at with small jumps in between, the mouth following the voice (the loudness of the sentence being
+   played, audio/voice.js: npc.lip) with the brows going up on the loud syllables, breathing through pain.
+   FACE.update(ch, dt, want) once a frame per figure; FACE.npcWant(npc) and FACE.playerWant() say what each one
+   feels right now: { mood, k, mood2, k2, talk, dead, sleep, light (0 bright .. 1 dark), look: {x, y} | null } */
 const FACE = {
-  KEYS: ['browAngry', 'browSad', 'browUp', 'lid', 'mouthOpen', 'smile', 'frown'],
+  KEYS: Object.keys(FACE0),
   PRESETS: {
     neutral: {},
-    amused: { smile: 1, browUp: 0.3, lid: 0.18 },
-    happy: { smile: 1, browUp: 0.45 },
-    angry: { browAngry: 1, frown: 0.6, lid: 0.25 },
-    surprised: { browUp: 1, mouthOpen: 0.65 },
-    disgusted: { browAngry: 0.55, frown: 0.85, lid: 0.35 },
-    sleepy: { lid: 0.62, browSad: 0.2 },
-    whisper: { browUp: 0.25, lid: 0.12 },
-    drunk: { lid: 0.45, smile: 0.5, browUp: 0.2 },
-    sad: { browSad: 1, frown: 0.7, lid: 0.25 },
-    fear: { browSad: 0.75, browUp: 0.85, mouthOpen: 0.35, frown: 0.35 },
-    pain: { browSad: 0.55, browAngry: 0.6, lid: 0.7, mouthOpen: 0.35, frown: 1 },
-    dazed: { lid: 0.55, mouthOpen: 0.2, browSad: 0.35 },
-    focus: { browAngry: 0.45, lid: 0.32 },
-    dead: { lid: 0.78, mouthOpen: 0.28 },
-    sleep: { lid: 1 }
+    amused: { smile: 0.9, cheek: 0.8, squint: 0.45, browUp: 0.2 },
+    happy: { smile: 1, cheek: 1, squint: 0.35, mouthOpen: 0.3, browUp: 0.35 },
+    angry: { browAngry: 1, squint: 0.55, teeth: 0.55, frown: 0.35, lid: 0.12 },
+    furious: { browAngry: 1, squint: 0.3, teeth: 1, mouthOpen: 0.35, eyeWide: 0.3, frown: 0.5 },
+    surprised: { browUp: 1, eyeWide: 1, mouthO: 0.8, mouthOpen: 0.25 },
+    disgusted: { browAngry: 0.5, sneer: 1, squint: 0.55, frown: 0.45 },
+    doubt: { browOne: 1, browAngry: 0.25, sneer: 0.35, squint: 0.3 },
+    sleepy: { lid: 0.62, browSad: 0.25, mouthOpen: 0.05 },
+    whisper: { browUp: 0.3, lid: 0.12, mouthO: 0.15 },
+    drunk: { lid: 0.48, smile: 0.45, cheek: 0.3, browUp: 0.25, mouthOpen: 0.1 },
+    sad: { browSad: 1, frown: 0.85, lid: 0.3 },
+    fear: { browSad: 0.75, browUp: 0.85, eyeWide: 0.9, mouthOpen: 0.25, teeth: 0.35, frown: 0.35 },
+    pain: { browSad: 0.55, browAngry: 0.65, lid: 0.35, squint: 1, teeth: 0.85, mouthOpen: 0.15, frown: 0.5, cheek: 0.4 },
+    scream: { browSad: 0.8, eyeWide: 0.6, mouthO: 0.5, mouthOpen: 1, browUp: 0.4 },
+    dazed: { lid: 0.55, mouthOpen: 0.25, browSad: 0.35 },
+    focus: { browAngry: 0.45, squint: 0.6 },
+    dead: { lid: 0.78, mouthOpen: 0.35 },
+    sleep: { lid: 1, mouthOpen: 0.08 }
   },
+  // how quickly a feeling takes over the face (per second); the mouth always follows fast
+  SPEED: { surprised: 22, fear: 18, scream: 20, pain: 16, furious: 14, angry: 10, sad: 3, sleepy: 3, dead: 6 },
   _t: {},
   update(ch, dt, want) {
-    const F = ch.face || (ch.face = { cur: {}, blinkT: 1 + Math.random() * 3, blink: 0 }), T = this._t;
+    const F = ch.face || (ch.face = { cur: {}, blinkT: 1 + Math.random() * 3, blink: 0, sac: { x: 0, y: 0, t: 0 }, talkPrev: 0, beat: 0 }), T = this._t;
     for (const k of this.KEYS) T[k] = 0;
-    // the feeling, at its strength, with a second one on top (pain over anything)
-    const add = (name, k) => { const p = this.PRESETS[name]; if (!p || k <= 0) return; for (const key in p) T[key] = Math.max(T[key], p[key] * k); };
+    const add = (name, k) => { const p = this.PRESETS[name]; if (!p || k <= 0) return; for (const key in p) T[key] = Math.max(T[key], p[key] * Math.min(1, k)); };
     add(want.mood || 'neutral', want.k === undefined ? 1 : want.k);
     if (want.mood2) add(want.mood2, want.k2 === undefined ? 1 : want.k2);
-    // the mouth: the voice opens it; smiling and frowning ease off while it talks
+    const asleep = want.dead || want.sleep, t = G.time;
+    // pain comes in waves with the breath
+    if (T.squint > 0.6 && T.teeth > 0.5) { const w = 0.5 + 0.5 * Math.sin(t * 2.3); T.squint *= 0.8 + w * 0.2; T.teeth *= 0.7 + w * 0.3; }
+    // the voice: the mouth opens with the loudness, rounds a little on the vowels, the brows lift on the loud bits;
+    // a smile or a frown eases off while the mouth is busy
     const talk = clamp(want.talk || 0, 0, 1);
-    if (talk > 0.02) { T.mouthOpen = Math.max(T.mouthOpen, talk * 0.85); T.smile *= 0.7; T.frown *= 0.7; }
-    // blinking: every few seconds, quicker when hurt or tired; never when dead or asleep
-    const asleep = want.dead || want.sleep;
+    if (talk > 0.02 || F.beat > 0.01) {
+      T.mouthOpen = Math.max(T.mouthOpen, talk * 0.8); T.mouthO = Math.max(T.mouthO, talk * 0.3 * (0.5 + 0.5 * Math.sin(t * 9.3)));
+      T.smile *= 0.75; T.frown *= 0.75; T.teeth *= 0.6;
+      if (talk > 0.55 && talk - F.talkPrev > 0.15) F.beat = 1;
+      T.browUp = Math.max(T.browUp, F.beat * 0.35);
+    }
+    F.talkPrev = talk; F.beat = Math.max(0, F.beat - dt * 3);
+    // blinking: every few seconds, sometimes twice; never when dead or asleep
     if (!asleep) {
       F.blinkT -= dt;
       if (F.blinkT <= 0) { F.blink = 0.001; F.blinkT = 1.8 + Math.random() * 3.6; if (Math.random() < 0.15) F.blinkT = 0.25; }
     }
-    if (F.blink > 0) { F.blink += dt; if (F.blink > 0.16) F.blink = 0; }
-    const bl = F.blink > 0 ? Math.sin(Math.PI * F.blink / 0.16) : 0;
-    // ease towards it (the mouth fast, brows a little slower, the lids in between)
-    const C = F.cur, I = ch.mesh.morphTargetInfluences, D = ch.mi;
+    if (F.blink > 0) { F.blink += dt; if (F.blink > 0.15) F.blink = 0; }
+    const bl = F.blink > 0 ? Math.sin(Math.PI * F.blink / 0.15) : 0;
+    // the eyes: on what he looks at, with small jumps now and then; dazed and dead, they drift and stare
+    const S = F.sac; S.t -= dt;
+    if (S.t <= 0) { S.t = want.mood === 'dazed' ? 1.5 : 0.6 + Math.random() * 2.2; S.x = (Math.random() - 0.5) * (want.look ? 0.3 : 0.9); S.y = (Math.random() - 0.5) * 0.5; }
+    const L = want.look;
+    T.lookX = clamp((L ? L.x : 0) + S.x * (want.dead ? 0 : 1), -1, 1); T.lookY = clamp((L ? L.y : 0) + S.y * (want.dead ? 0 : 1), -1, 1);
+    if (want.dead) { T.lookX = 0.35; T.lookY = -0.3; }
+    // the pupils: small in the sun, wide in the dark; fear and drink open them further
+    T.pupil = lerp(-0.6, 0.9, clamp(want.light === undefined ? 0.3 : want.light, 0, 1)) + (want.mood === 'fear' || want.mood === 'surprised' ? 0.35 : 0) + (want.mood === 'drunk' ? 0.3 : 0);
+    // ease towards it
+    const C = F.cur, I = ch.mesh.morphTargetInfluences, D = ch.mi, sp = this.SPEED[want.mood] || 9;
     for (const k of this.KEYS) {
-      const rate = k === 'mouthOpen' ? 28 : k === 'lid' ? 14 : 9;
+      const rate = k === 'mouthOpen' || k === 'mouthO' ? 28 : k === 'lookX' || k === 'lookY' ? 26 : k === 'pupil' ? 1.5 : k === 'lid' ? Math.max(12, sp) : sp;
       const c = C[k] || 0; C[k] = c + (T[k] - c) * (1 - Math.exp(-dt * rate));
       I[D[k]] = k === 'lid' ? Math.max(C[k], bl) : C[k];
     }
@@ -3533,16 +3583,36 @@ const FACE = {
     if (npc.talkT > 0 && !(L && now < L.t0 + L.env.length * L.step + 300)) { const t = G.time; return 0.15 + 0.45 * Math.abs(Math.sin(t * 13)) * (0.5 + 0.5 * Math.abs(Math.sin(t * 4.7))); }
     return 0;
   },
-  _w: { mood: 'neutral', k: 1, mood2: null, k2: 0, talk: 0, dead: false, sleep: false },
+  // how dark it is around someone (0 bright sun .. 1 dark)
+  dark(room) {
+    const day = clamp((DAYNIGHT.sunEl + 4) / 20, 0, 1);
+    return room ? lerp(0.95, 0.6, day) : 1 - day;
+  },
+  // where a point is for the eyes of a figure (pupil offsets -1..1), from its head bone
+  _m: new THREE.Matrix4(), _v: new THREE.Vector3(), _look: { x: 0, y: 0 },
+  lookOf(ch, p) {
+    const v = this._v.copy(p).applyMatrix4(this._m.copy(ch.p.head.matrixWorld).invert());
+    v.y -= 0.19; if (v.z < 0.05) return null;
+    const L = this._look; L.x = clamp(Math.atan2(v.x, v.z) * 2.2, -1, 1); L.y = clamp(Math.atan2(v.y, v.z) * 2.5, -1, 1);
+    return L;
+  },
+  _w: { mood: 'neutral', k: 1, mood2: null, k2: 0, talk: 0, dead: false, sleep: false, light: 0.3, look: null },
   // what a person shows: dead, down, in pain, afraid, fighting, what he last said, and how he feels about you
   npcWant(N) {
-    const W = this._w, H = N.hp; W.mood = 'neutral'; W.k = 1; W.mood2 = null; W.k2 = 0; W.dead = false; W.sleep = false;
+    const W = this._w, H = N.hp; W.mood = 'neutral'; W.k = 1; W.mood2 = null; W.k2 = 0; W.dead = false; W.sleep = false; W.look = null;
+    W.light = this.dark(N.room);
     W.talk = this.talkOf(N);
     if (H.dead) { W.mood = 'dead'; W.dead = true; W.talk = 0; return W; }
-    if (H.anim) { W.mood = H.lowness > 0.5 ? 'dazed' : 'pain'; W.mood2 = 'pain'; W.k2 = clamp(H.pain, 0, 1); return W; }
+    if (N.lookW > 0.2) W.look = this.lookOf(N.ch, N.look);
+    if (H.anim) {
+      // on the ground: dazed from blows; shot and bleeding: pain, and terror when a gun is on him
+      W.mood = H.knocked && H.blood > 0.8 ? 'dazed' : 'pain'; W.mood2 = N.fear && G.time < N.fear ? 'fear' : 'pain'; W.k2 = clamp(H.pain, 0.3, 1);
+      if (H.dying > 0) { W.mood = 'pain'; W.mood2 = 'sad'; W.k2 = 0.8; }
+      return W;
+    }
     if (N.mood && G.time < (N.moodT || 0)) W.mood = N.mood;
     else if (N.fear && G.time < N.fear) W.mood = 'fear';
-    else if (N.fight && N.fight.on) W.mood = 'angry';
+    else if (N.fight && N.fight.on) W.mood = H.daze > 0.4 ? 'pain' : 'angry';
     else if (N.feel && N.feel.mood && G.time - N.feel.t < 25) { W.mood = N.feel.mood; W.k = 0.6; }   // (how the talk left him: talk.js)
     else if (N.attitude) { const f = N.attitude(); W.mood = f > 0.35 ? 'amused' : f < -0.35 ? 'angry' : 'neutral'; W.k = Math.min(1, Math.abs(f)) * 0.5; }
     if (H.pain > 0.25) { W.mood2 = 'pain'; W.k2 = clamp(H.pain - 0.2, 0, 1); }
@@ -3550,17 +3620,22 @@ const FACE = {
     return W;
   },
   playerWant() {
-    const W = this._w; W.mood = 'neutral'; W.k = 1; W.mood2 = null; W.k2 = 0; W.dead = false; W.sleep = false; W.talk = 0;
-    if (PHP.out) { W.mood = 'dead'; W.sleep = true; return W; }
-    if (typeof SLEEP !== 'undefined' && SLEEP.busy && SLEEP.busy() && SLEEP.st === 'sleep') { W.mood = 'sleep'; W.sleep = true; return W; }
-    if (G.time - PHP.lastHit < 0.7 || (FALL.busy() && FALL.down > 0.5)) W.mood = 'pain';
-    else if (FIST.inFight() || FIST.st !== 'idle') W.mood = 'angry';
-    else if (GUN.wantAim) W.mood = 'focus';
-    else if (DRUNK.level > 0.25) { W.mood = 'drunk'; W.k = Math.min(1, DRUNK.level); }
-    else if (PHP.hp < 0.5) { W.mood = 'pain'; W.k = (0.5 - PHP.hp) * 1.4; }
-    if (DRUNK.level > 0.25 && W.mood !== 'drunk') { W.mood2 = 'drunk'; W.k2 = Math.min(0.7, DRUNK.level); }
-    return W;
-  }
+    const Q = this._w; Q.mood = 'neutral'; Q.k = 1; Q.mood2 = null; Q.k2 = 0; Q.dead = false; Q.sleep = false; Q.talk = 0; Q.look = null;
+    Q.light = this.dark(G.room);
+    if (PHP.out) { Q.mood = 'dead'; Q.sleep = true; return Q; }
+    if (typeof SLEEP !== 'undefined' && SLEEP.busy && SLEEP.busy() && SLEEP.st === 'run') { Q.mood = 'sleep'; Q.sleep = true; return Q; }
+    if (G.time - PHP.lastHit < 0.7 || (FALL.busy() && FALL.down > 0.5)) Q.mood = 'pain';
+    else if (FIST.st === 'charge' || (FIST.st !== 'idle' && FIST.heavy)) Q.mood = 'furious';
+    else if (FIST.inFight() || FIST.st !== 'idle') Q.mood = 'angry';
+    else if (GUN.wantAim) Q.mood = 'focus';
+    else if (DRUNK.level > 0.25) { Q.mood = 'drunk'; Q.k = Math.min(1, DRUNK.level); }
+    else if (PHP.hp < 0.5) { Q.mood = 'pain'; Q.k = (0.5 - PHP.hp) * 1.4; }
+    if (DRUNK.level > 0.25 && Q.mood !== 'drunk') { Q.mood2 = 'drunk'; Q.k2 = Math.min(0.7, DRUNK.level); }
+    // the eyes: on whoever is talking to you or close by
+    for (const N of NPCS.list) if (!N.hp.dead && Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 4 && (N.room || null) === (G.room || null)) { Q.look = this.lookOf(W.ch, this._v2.set(N.pos.x, N.pos.y + 1.6, N.pos.z)); break; }
+    return Q;
+  },
+  _v2: new THREE.Vector3()
 };
 
 // ==== char/gait.js ====
@@ -8528,6 +8603,17 @@ class NPC {
     if (this.path && this.path.length) { const p = this.path.shift(); this.legPass = true; this.goTo(p[0], p[1], undefined, true); }
     else if (this.dest) { const d = this.dest; this.dest = null; this.legPass = false; this.goTo(d[0], d[1], d[2] === null ? undefined : d[2], true); }
   }
+  /* how bad it is for him (the survival instinct): 0 fine, 1 hurt (an open gunshot, lost blood), 2 down and bleeding,
+     3 dying, 4 dead. From 2 on, nothing else matters to him: what he says and what the AI makes him say is about
+     staying alive (npc/talk.js plightText, BARKEEP.say) */
+  plight() {
+    const H = this.hp;
+    if (H.dead) return 4;
+    if (H.dying > 0 || H.blood < 0.3) return 3;
+    if (H.anim && (H.bleed > 0.0008 || H.blood < 0.6)) return 2;
+    if (H.blood < 0.75 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5)) return 1;
+    return 0;
+  }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
@@ -8670,6 +8756,7 @@ class NPC {
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);
     if (this.hp.anim) for (const hs of P.hand) { hs.fist = 0; hs.point = 0; hs.open = this.hp.dead ? 0.7 : 0.4; }
+    if (this.hp.pleadW > 0.01) P.hand[1].open = Math.max(P.hand[1].open, this.hp.pleadW);
     applyPose(this.ch);
     FACE.update(this.ch, dt, FACE.npcWant(this));
     const root = this.ch.root;
@@ -9099,6 +9186,15 @@ class Vitals {
         P.pel.x += J.x * 0.09 * J.k; P.pel.z += J.z * 0.09 * J.k; P.pel.y += 0.04 * J.k;
         P.pelRoll += J.x * 0.25 * J.k; P.spPitch += (J.head ? -0.1 : 0.35) * J.k; P.hdPitch += (J.head ? 0.5 : -0.2) * J.k; P.hdRoll = (P.hdRoll || 0) + J.x * 0.4 * J.k;
         for (let i = 0; i < 2; i++) if (P.armOv[i]) { P.armOv[i].sw += 0.35 * J.k; P.armOv[i].el += 0.4 * J.k; }
+      }
+      // pleading from the ground: one hand up towards the gun, open
+      if (!this.dead && this.plead && G.time < this.plead) {
+        this.pleadW = Math.min(1, (this.pleadW || 0) + dt * 4);
+      } else this.pleadW = Math.max(0, (this.pleadW || 0) - dt * 3);
+      if (this.pleadW > 0.01) {
+        const o = P.armOv[1], w = this.pleadW * (this.lowness > 0.5 ? 1 : 0.6);
+        if (o) { o.sw += (1.75 - o.sw) * w; o.out += (0.25 - o.out) * w; o.el += (0.35 - o.el) * w; o.yw += (0.3 - o.yw) * w; }
+        P.hdPitch += 0.25 * w;
       }
       if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
     this.lowness = 0;
@@ -9704,6 +9800,9 @@ const BARKEEP = {
     broke: 'disgusted', cheers: 'amused', thanks: 'neutral', bye: 'neutral', price: 'neutral', refuse: 'disgusted' },
   /* ready-made lines: each kind is a bag that is used up before a line comes again (and never twice in a row).
      They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
+  // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
+  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
+  WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
     helloNew: ['Howdy, Fremder.', 'Neu in der Stadt? Setz dich.', 'Tag. Der Staub bleibt draußen.', 'Willkommen im Saloon. Was darf’s sein?', 'Komm rein. Hier gibt’s Whiskey und Ruhe.', 'Ein neues Gesicht. Hab ich gern, solange es friedlich bleibt.'],
     helloBack: ['Da bist du ja wieder.', 'Na, wieder Durst?', 'Der Platz an der Theke ist noch frei.', 'Wieder im Lande, Cowboy?', 'Dachte mir, dass du wiederkommst.', ['Das Übliche?', 'neutral']],
@@ -9738,6 +9837,8 @@ const BARKEEP = {
     itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
     groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
     mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    help: [['Hilfe! Holt den Doc!', 'surprised'], ['Doc… jemand… holt den Doc…', 'sleepy'], ['Ich verblute hier… hilf mir doch…', 'sleepy'], ['Hol Hilfe… bitte…', 'sleepy'], ['Lass mich nicht hier liegen…', 'sleepy']],
+    dying: [['Mir… wird so kalt…', 'sleepy'], ['Sag… sag meiner Schwester…', 'sleepy'], ['Ich will nicht… nicht so…', 'sleepy'], ['Verdammt… nicht hier… nicht heute…', 'sleepy'], ['Gott… vergib mir…', 'sleepy']],
     toDoc: [['Ich geh zum Doc. Du rührst hier nichts an.', 'angry'], ['Verdammt… ich brauch den Doc.', 'angry'], ['Der Laden ist zu. Ich muss zum Arzt.', 'disgusted']],
     brawl: [['Na warte!', 'angry'], ['Das wirst du bereuen!', 'angry'], ['Komm her, du!', 'angry'], ['Du willst Ärger? Bitte!', 'angry'], ['Jetzt reicht’s!', 'angry']],
     taunt: [['Na? Noch einen?', 'angry'], ['Steh auf!', 'angry'], ['Komm schon!', 'angry'], ['Ist das alles?', 'amused']],
@@ -9866,8 +9967,16 @@ const BARKEEP = {
     if (H.busy()) {
       N.lookTW = 0;
       this.groanT = (this.groanT || 4) - dt;
-      if (this.groanT <= 0 && H.anim && H.anim.holding()) { this.groanT = 5 + Math.random() * 6; if (inside && Math.random() < 0.5) this.shout(this.aimedT > 0.2 ? 'mercy' : 'groan'); }
-      if (this.aimedT > 0.2 && !this.saidMercy && H.anim && H.anim.holding()) { this.saidMercy = true; this.shout('mercy'); }
+      const lv = N.plight(), lying = H.anim && H.anim.holding();
+      // what is on his mind down there: not getting shot again, getting help, and at the end not dying
+      if (this.groanT <= 0 && lying) {
+        this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
+        const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
+        if (inside && Math.random() < 0.65 && !TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', kind === 'groan' ? 0.25 : 0.5)) this.shout(kind);
+      }
+      if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
+      // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
+      if (lying && this.aimedT > 0.2) H.plead = G.time + 0.4;
       if (this.aimedT <= 0) this.saidMercy = false;
       // a pool forms under a bleeding man
       this.poolT = (this.poolT || 0) - dt;
@@ -10174,7 +10283,9 @@ const BARKEEP = {
   // a ready-made line; not over his own words and not when you are not there to hear it (then it is tried again later
   // by the callers that keep calling, the others let it go)
   say(kind, cool) {
-    const now = G.time;
+    const now = G.time, lv = this.npc.plight();
+    if (lv >= 2 && !this.SURVIVE[kind]) return false;
+    if (lv >= 1 && !this.SURVIVE[kind] && !this.WARY[kind]) return false;
     if (cool && (this.cool[kind] || -99) > now - cool) return false;
     if (!this.npc.canBeHeard() || !TALK.mayBark(this.npc, kind === 'aimed' || kind === 'behind' || kind === 'shot')) return false;
     this.cool[kind] = now;
@@ -10675,6 +10786,15 @@ Object.assign(BARKEEP, {
     else this.grudge = 0;
     this.st = 'idle'; this.pickIdle(); this.newT = TIME.min;
     worldEvent('newBarkeep', N.pos.x, N.pos.y, N.pos.z, { by: 'world', who: W.id });
+  },
+  // developer tools: the next one takes over now (the one there dies off-screen, buried, the next arrives)
+  devNext() {
+    if (this.whoI >= this.WHO.length - 1) { TOAST.show(this.who().name + ' ist der Letzte.'); return; }
+    const N = this.npc;
+    if (N && !N.hp.dead) { N.hp.die('Entwickler', null, 'back'); this.killedBy = 'world'; this.cause = 'gestorben'; }
+    if (this.npc) this.removeBody();
+    this.arrive();
+    TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
   },
   // called from update while dead or gone
   fate(dt) {
@@ -11783,6 +11903,14 @@ const TALK = {
      answered here before (so no permission question pops up in the middle of a gunfight), not while a conversation
      is waiting for its answer, and at most every few seconds. Returns false when it does not ask (the caller then
      says a ready-made line); fallback() is said instead when the answer fails or is too slow. */
+  // what his body says before anything else (the survival instinct): put at the top of what he knows
+  plightText(n) {
+    const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
+    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt, du kriegst kaum Luft.' + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr. Du sprichst stockend, mit letzter Kraft: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch.\n';
+    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz, gepresst, unter Schmerzen.\n';
+    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
+    return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
+  },
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
@@ -11796,9 +11924,10 @@ const TALK = {
     const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
-    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
+    const dire = n.plight && n.plight() >= 2;
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
-      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + ang + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
+      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + (dire ? 'jemand, der um sein Leben bangt' : ang) + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
       (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
       ' Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
@@ -11831,7 +11960,7 @@ const TALK = {
   async ask(n, text, onText) {
     // (the last 8 lines are enough to keep the thread; what matters for longer is in his memory)
     const P = n.persona, hist = (n.talkLog || []).slice(-9, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
-    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
       'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';
@@ -13054,6 +13183,7 @@ const DEV = {
     for (const b of this.el.querySelectorAll('[data-clock]')) b.addEventListener('click', () => { const v = b.dataset.clock; TIME.skip(v === '+1' ? 60 : TIME.until(+v)); });
     $('devHankStreet').addEventListener('click', () => BARKEEP.toStreet());
     $('devHankHeal').addEventListener('click', () => BARKEEP.revive());
+    $('devHankNext').addEventListener('click', () => BARKEEP.devNext());
     $('devFast').addEventListener('click', () => { TIME.speed = TIME.speed > 1 ? 1 : 60; $('devFast').setAttribute('aria-pressed', TIME.speed > 1 ? 'true' : 'false'); });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));

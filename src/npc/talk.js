@@ -332,6 +332,14 @@ const TALK = {
      answered here before (so no permission question pops up in the middle of a gunfight), not while a conversation
      is waiting for its answer, and at most every few seconds. Returns false when it does not ask (the caller then
      says a ready-made line); fallback() is said instead when the answer fails or is too slow. */
+  // what his body says before anything else (the survival instinct): put at the top of what he knows
+  plightText(n) {
+    const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
+    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt, du kriegst kaum Luft.' + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr. Du sprichst stockend, mit letzter Kraft: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch.\n';
+    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz, gepresst, unter Schmerzen.\n';
+    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
+    return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
+  },
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
@@ -345,9 +353,10 @@ const TALK = {
     const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
-    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
+    const dire = n.plight && n.plight() >= 2;
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
-      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + ang + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
+      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + (dire ? 'jemand, der um sein Leben bangt' : ang) + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
       (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
       ' Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';
@@ -380,7 +389,7 @@ const TALK = {
   async ask(n, text, onText) {
     // (the last 8 lines are enough to keep the thread; what matters for longer is in his memory)
     const P = n.persona, hist = (n.talkLog || []).slice(-9, -1).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
-    const sys = P.rules, prompt = 'Was gerade los ist:\n' + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
+    const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nBisheriges Gespräch:\n' + hist : '') +
       '\n\nDer Fremde sagt jetzt: "' + text.replace(/"/g, '”') + '"\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + this.ACTIONS.join(', ') + ') und, durch Komma getrennt, EINE Stimmung, ' +
       'in der du das sagst (' + this.MOODS.join(', ') + '), dann deine Worte. Kein JSON, nichts davor. Beispiele: [nod, neutral] Kommt sofort. [shake_head, angry] Nicht in meinem Laden! [laugh, amused] Der war gut.';

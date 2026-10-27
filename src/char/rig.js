@@ -12,51 +12,77 @@ const RIG = {
    figure costs one draw call. ch.p[name] is the bone (matrix, matrixWorld, children for bandages; .geometry: the
    part alone, for hit tests; .material: the figure's material; .visible = false folds the part away).
    The face and the hands have shapes (morph targets): brows, lids, mouth; fist, open hand, pointing finger. */
-const MORPHS = ['browAngry', 'browSad', 'browUp', 'lid', 'mouthOpen', 'smile', 'frown', 'fistL', 'fistR', 'openL', 'openR', 'pointL', 'pointR'];
-const FACE0 = { browAngry: 0, browSad: 0, browUp: 0, lid: 0, mouthOpen: 0, smile: 0, frown: 0 };
+const MORPHS = ['browAngry', 'browSad', 'browUp', 'browOne', 'lid', 'squint', 'eyeWide', 'pupil', 'lookX', 'lookY', 'mouthOpen', 'mouthO', 'smile', 'frown', 'sneer', 'teeth', 'cheek',
+  'fistL', 'fistR', 'openL', 'openR', 'pointL', 'pointR'];
+// the face's shapes (0..1; pupil, lookX and lookY also run negative: small pupils, looking right / down)
+const FACE0 = { browAngry: 0, browSad: 0, browUp: 0, browOne: 0, lid: 0, squint: 0, eyeWide: 0, pupil: 0, lookX: 0, lookY: 0, mouthOpen: 0, mouthO: 0, smile: 0, frown: 0, sneer: 0, teeth: 0, cheek: 0 };
 
-// the head: origin at the base of the neck, face to +z (front at z = 0.13). e: the face's shape (FACE0 keys, 0..1)
+/* the head: origin at the base of the neck, face to +z (front at z = 0.13). e: the face's shape (FACE0 keys).
+   Everything that moves is a small box: whites, pupils, upper and lower lids, brows, cheeks, the mouth as a dark slot
+   with upper and lower teeth and two lip corners, and the beard, which rides on the upper lip. Every shape builds the
+   same boxes (only sizes and places change), so each one can be a morph target. */
 function buildHead(mb, L, e) {
   const O = L.outfit, skin = LOOK.skinCol(L), skinD = mulc(skin, 0.88), hair = L.hair.color, beard = L.beard.color;
-  const dark = rgb(0x1e1612), white = rgb(0xeee6d8), lip = rgb(0x5a2620), mouthC = rgb(0x2a1210);
+  const dark = rgb(0x1e1612), white = rgb(0xeee6d8), lip = rgb(0x6a2e26), mouthC = rgb(0x2a1210), cheekC = mixc(skin, rgb(0xd07060), 0.18);
   const M = (x, y, z, rz) => new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationZ(rz || 0));
-  // neck, scarf, the head itself, ears
+  // neck, scarf or collar, the head itself, ears
   mb.box(0, -0.03, 0, 0.13, 0.08, 0.13, skin, 0);
   if (O.bandana) { mb.box(0, -0.06, 0, 0.29, 0.09, 0.29, O.bandana, 9, { bottom: true }); mb.box(0, -0.15, 0.135, 0.16, 0.12, 0.03, O.bandana, 9, { bottom: true }); }
-  else mb.box(0, -0.06, 0, 0.2, 0.07, 0.2, O.shirt.color, 9, { bottom: true });   // the collar
+  else mb.box(0, -0.06, 0, 0.2, 0.07, 0.2, O.shirt.color, 9, { bottom: true });
   mb.box(0, 0.035, 0, 0.26, 0.275, 0.26, skin, 0);
   for (const s of [-1, 1]) mb.box(s * 0.135, 0.12, 0, 0.02, 0.07, 0.05, skinD, 0);
-  // eyes: white, a dark pupil, the upper lid coming down over them (lid 1 = shut)
+  // cheeks: pushed up and out by a real smile
+  const ck = e.cheek;
+  for (const s of [-1, 1]) mb.box(s * 0.075, 0.112 + ck * 0.014, 0.131 + ck * 0.004, 0.05, 0.03 + ck * 0.006, 0.006, cheekC, 0);
+  // eyes: whites (taller when wide open), pupils (size from the light, place from where he looks), the upper lid
+  // coming down (lid; blinking), the lower lid coming up (squint)
+  const wide = e.eyeWide, eyH = 0.046 + wide * 0.018, eyB = 0.163 - wide * 0.006;
+  const pS = clamp(1 + e.pupil * 0.3 - wide * 0.22, 0.55, 1.4), px = e.lookX * 0.012, py = e.lookY * 0.008;
   for (const s of [-1, 1]) {
-    mb.box(s * 0.06, 0.163, 0.132, 0.058, 0.046, 0.012, white, 0);
-    mb.box(s * 0.056, 0.168, 0.139, 0.026, 0.034, 0.006, dark, 0);
-    const lh = 0.006 + 0.044 * e.lid;
-    mb.box(s * 0.06, 0.212 - lh, 0.142, 0.066, lh, 0.008, skinD, 0);
+    mb.box(s * 0.06, eyB, 0.132, 0.058 + wide * 0.004, eyH, 0.012, white, 0);
+    mb.box(s * 0.056 + px, eyB + eyH / 2 - 0.017 * pS + py, 0.139, 0.026 * pS, 0.034 * pS, 0.006, dark, 0);
+    const top = eyB + eyH + 0.002, lh = 0.006 + (eyH - 0.004) * clamp(e.lid, 0, 1) * (1 - wide * 0.3);
+    mb.box(s * 0.06, top - lh, 0.142, 0.066, lh, 0.008, skinD, 0);
+    const lo = 0.004 + 0.022 * e.squint;
+    mb.box(s * 0.06, eyB - 0.002, 0.1415, 0.064, lo, 0.007, skinD, 0);
   }
-  // brows: up, frowned down at the inner end (angry), raised at the inner end (sad)
+  // brows: up (and higher still with wide eyes), frowned down at the inner end, raised at the inner end (sad),
+  // one alone up (doubt: his left)
   const bw = 0.078, bh = 0.02 * (L.face.brows || 1);
   for (const s of [-1, 1]) {
-    const y = 0.226 + e.browUp * 0.024 - e.browAngry * 0.012 + e.browSad * 0.006, a = s * (e.browAngry * 0.5 - e.browSad * 0.42);
-    mb.push(M(s * 0.062, y, 0.143, a)); mb.box(0, -bh / 2, 0, bw, bh, 0.016, hair, 0); mb.pop();
+    const one = s > 0 ? e.browOne : 0;
+    const y = 0.226 + e.browUp * 0.022 + wide * 0.012 + one * 0.026 - e.browAngry * 0.014 + e.browSad * 0.006 - e.squint * 0.004;
+    const a = s * (e.browAngry * 0.5 - e.browSad * 0.42 - one * 0.15);
+    mb.push(M(s * (0.062 - e.browAngry * 0.006), y, 0.143, a)); mb.box(0, -bh / 2, 0, bw, bh, 0.016, hair, 0); mb.pop();
   }
-  // nose
+  // nose (wrinkles up with a sneer)
   const nz = L.face.nose === 'big' ? [0.064, 0.074, 0.064] : L.face.nose === 'small' ? [0.042, 0.05, 0.04] : [0.05, 0.062, 0.05];
-  mb.box(0, 0.105, 0.13, nz[0], nz[1], nz[2], skinD, 0);
-  // mouth: a dark slot that opens downwards, teeth showing at the top, lip corners that go up (smile) or down
-  const open = e.mouthOpen, sm = e.smile, fr = e.frown;
-  mb.box(0, 0.058 - open * 0.03, 0.13, 0.082 + sm * 0.016, 0.014 + open * 0.03, 0.012, mouthC, 0);
-  mb.box(0, 0.068 - open * 0.004, 0.126 + Math.min(1, open * 3) * 0.011, 0.06 + sm * 0.01, 0.002 + open * 0.009, 0.003, white, 0);   // (inside the head while shut)
+  mb.box(0, 0.105 + e.sneer * 0.006, 0.13, nz[0], nz[1], nz[2], skinD, 0);
+  /* mouth: a slot that opens down (open), rounds into an O (narrow and tall), stretches flat with bared teeth (teeth),
+     lifts on one side (sneer, his left); upper and lower teeth show when it opens or bares; corners go up or down */
+  const open = clamp(e.mouthOpen + e.mouthO * 0.6 + e.teeth * 0.25, 0, 1.3), oo = e.mouthO, sm = e.smile, fr = e.frown, sn = e.sneer, th = e.teeth;
+  const mw = (0.08 + sm * 0.016 + th * 0.022 - oo * 0.04) * (1 + open * 0.05), mTop = 0.062 + sn * 0.006, mh = 0.012 + open * 0.032 + oo * 0.01;
+  mb.box(sn * 0.006, mTop - mh, 0.13, mw, mh, 0.012, mouthC, 0);
+  const show = clamp(open * 3 + th * 2, 0, 1);
+  mb.box(sn * 0.008, mTop - 0.004 - open * 0.004 - th * 0.004, 0.126 + show * 0.011, mw * 0.78, 0.002 + open * 0.008 + th * 0.006, 0.003, white, 0);   // upper teeth
+  mb.box(0, mTop - mh + 0.001, 0.126 + clamp(th * 2 + open - 0.4, 0, 1) * 0.011, mw * 0.7, 0.002 + th * 0.006 + open * 0.004, 0.003, white, 0);     // lower teeth
   for (const s of [-1, 1]) {
-    mb.push(M(s * (0.05 + sm * 0.012), 0.064 + sm * 0.016 - fr * 0.018 - open * 0.008, 0.137, s * (sm - fr) * 0.65));
-    mb.box(0, -0.007, 0, 0.032, 0.014, 0.01, lip, 0); mb.pop();
+    const up = sm * 0.016 - fr * 0.018 + (s > 0 ? sn * 0.014 : 0) - th * 0.004;
+    mb.push(M(s * (mw / 2 + 0.006 - oo * 0.004), mTop - 0.005 - open * 0.012 + up, 0.137, s * (sm - fr) * 0.6 + (s > 0 ? sn * 0.4 : 0)));
+    mb.box(0, -0.007, 0, 0.03 - oo * 0.012, 0.014, 0.01, lip, 0); mb.pop();
   }
-  // beard
-  const st = L.beard.style;
+  // beard: a moustache sits on the upper lip and goes where the lip goes (up with a smile and a sneer, down at the
+  // ends with a frown); the rest of the beard hangs on the jaw
+  const st = L.beard.style, lipUp = sm * 0.005 + sn * 0.006 + oo * 0.003, sY = 0.082 + lipUp;
   if (st === 'stubble' || st === 'full' || st === 'chops') mb.box(0, -0.0, 0.1295, 0.255, 0.105, 0.004, mixc(skin, beard, 0.45), 0);
-  if (st === 'stache' || st === 'handlebar' || st === 'full' || st === 'stubble') mb.box(0, 0.077, 0.136, st === 'stubble' ? 0.11 : 0.14, st === 'stubble' ? 0.016 : 0.026, 0.016, st === 'stubble' ? mixc(skin, beard, 0.6) : beard, 0);
-  if (st === 'handlebar') for (const s of [-1, 1]) { mb.push(M(s * 0.08, 0.085, 0.138, s * 0.9)); mb.box(0, 0, 0, 0.04, 0.016, 0.014, beard, 0); mb.pop(); }
-  if (st === 'goatee') { mb.box(0, -0.005, 0.132, 0.06, 0.052, 0.03, beard, 0); mb.box(0, 0.077, 0.136, 0.1, 0.02, 0.014, beard, 0); }
-  if (st === 'full') { mb.box(0, -0.035, 0.12, 0.25, 0.075, 0.05, beard, 0); for (const s of [-1, 1]) mb.box(s * 0.122, -0.01, 0.04, 0.03, 0.16, 0.17, beard, 0); }
+  if (st === 'stache' || st === 'handlebar' || st === 'full' || st === 'stubble') {
+    const sw = st === 'stubble' ? 0.11 : 0.14, sh = st === 'stubble' ? 0.014 : 0.024, col = st === 'stubble' ? mixc(skin, beard, 0.6) : beard;
+    mb.box(0, sY, 0.137, sw * 0.5, sh, 0.016, col, 0);
+    for (const s of [-1, 1]) { mb.push(M(s * sw * 0.33, sY + sh / 2 + (s > 0 ? sn * 0.004 : 0), 0.137, s * (sm * 0.25 - fr * 0.3) + (s > 0 ? sn * 0.2 : 0))); mb.box(0, -sh / 2, 0, sw * 0.36, sh, 0.016, col, 0); mb.pop(); }
+  }
+  if (st === 'handlebar') for (const s of [-1, 1]) { mb.push(M(s * 0.092, sY + 0.012 + sm * 0.004 - fr * 0.006, 0.139, s * (0.9 + sm * 0.2 - fr * 0.5))); mb.box(0, 0, 0, 0.04, 0.015, 0.014, beard, 0); mb.pop(); }
+  if (st === 'goatee') { mb.box(0, -0.005 - open * 0.02, 0.132, 0.06, 0.05, 0.03, beard, 0); mb.box(0, sY, 0.137, 0.1, 0.018, 0.014, beard, 0); }
+  if (st === 'full') { mb.box(0, -0.035 - open * 0.018, 0.12, 0.25, 0.072, 0.05, beard, 0); for (const s of [-1, 1]) mb.box(s * 0.122, -0.01, 0.04, 0.03, 0.16, 0.17, beard, 0); }
   if (st === 'chops') for (const s of [-1, 1]) mb.box(s * 0.128, 0.03, 0.05, 0.022, 0.15, 0.13, beard, 0);
   // hair (under a hat only the sides and the back show)
   const hs = L.hair.style;
