@@ -56,6 +56,7 @@ npc/doctor.js
 npc/direct.js
 npc/hear.js
 npc/talk.js
+npc/chat.js
 audio/ambient.js
 ui/hud.js
 ui/menu.js

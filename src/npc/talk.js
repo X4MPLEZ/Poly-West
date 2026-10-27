@@ -16,7 +16,7 @@ const TALK = {
   micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99, hearWant: false, quietT: 0,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
-  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door', 'shrug', 'wave', 'beckon', 'point_you', 'fist_shake', 'calm_down', 'scratch_head', 'facepalm', 'cross_arms'],
+  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door', 'shrug', 'wave', 'beckon', 'point_you', 'fist_shake', 'calm_down', 'scratch_head', 'facepalm', 'cross_arms', 'come', 'follow'],
   init() {
     const $ = (id) => document.getElementById(id);
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
@@ -252,7 +252,7 @@ const TALK = {
     text = text.slice(0, 240);
     this.busy = true; const seq = ++this.seq;
     n.talkLog = n.talkLog || [];
-    n.talkLog.push({ who: 'p', text });
+    n.talkLog.push({ who: 'p', text }); this.lastText = text;
     worldEvent('talk', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', to: n.id, text });
     VOICE.stop(n); try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     n.thinking = true; SAY.show(n, '…', 60);

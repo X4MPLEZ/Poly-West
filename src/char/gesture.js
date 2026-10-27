@@ -35,6 +35,8 @@ const GESTURES = {
   wipe_brow: { dur: 1.3, arm: (i, t) => (i === 1 ? { p: [lerp(-0.12, 0.08, clamp((t - 0.35) / 0.6, 0, 1)), 1.74, 0.2], pole: [-1, -0.2, 0], shape: { open: 0.8 }, wrist: { x: -0.5, z: 0 } } : null) },
   facepalm: { dur: 1.8, face: 'sad', head: (t, P) => { P.hdPitch += 0.3 * Math.sin(Math.PI * Math.min(1, t / 1.8)); },
     arm: (i) => (i === 1 ? { p: [0.0, 1.62, 0.24], pole: [-1, -0.5, 0], shape: { open: 1 }, wrist: { x: -0.6, z: 0 } } : null) },
+  // a shove: both palms at your chest, hard
+  shove: { dur: 0.7, face: 'angry', arm: (i, t) => ({ p: [-0.15, 1.32, 0.3 + Math.sin(Math.min(1, t / 0.35) * Math.PI) * 0.3], pole: [-1, -0.6, 0], shape: { open: 1 }, wrist: { x: -1.1, z: 0 } }) },
   // a small hand movement on a word (talking)
   beat: { dur: 0.75, arm: (i, t, n) => (i === n.beatSide ? { p: [-0.17, 1.13 + Math.sin(Math.min(1, t / 0.4) * Math.PI) * 0.04, 0.34], pole: [-1, -0.7, -0.3], shape: { open: 0.8 }, wrist: { x: -0.4, z: 0 } } : null) }
 };
@@ -60,6 +62,27 @@ const GESTURE = {
     if (l.z < 0.2) { l.z = 0.2; l.normalize(); }
     sh[0] = -0.3 + l.x * len; sh[1] = 1.45 + l.y * len; sh[2] = l.z * len;
     return sh;
+  },
+  /* the arm to a hand target, and never through the own trunk: after the IK the elbow and the middle of each bone
+     are tested against the trunk (torso frame, after torsoInverse(P)); if one is inside, the elbow is turned out to
+     the side and the hand brought a little forward, and it is solved again */
+  _pole: new THREE.Vector3(), _tg: new THREE.Vector3(), _q: new THREE.Vector3(),
+  inTrunk(p, hx, hz) { return p.y > -0.3 && p.y < 0.52 && Math.abs(p.x) < hx && p.z > -hz && p.z < hz; },
+  solveArm(i, target, pole, w, belly) {
+    const A = AIK, s = i === 0 ? 1 : -1, hx = 0.25 * (w || 1) + 0.03, hz = 0.13 + (belly || 0) * 0.08 + 0.03;
+    const pl = this._pole.copy(pole), tg = this._tg.copy(target);
+    let r = armIK(i, tg, pl);
+    for (let k = 0; k < 4; k++) {
+      const E = A.E, F = A.F, S = A.S, q = this._q;
+      const bad = this.inTrunk(E, hx, hz) || this.inTrunk(q.copy(E).add(F).multiplyScalar(0.5), hx, hz) || this.inTrunk(q.copy(S).add(E).multiplyScalar(0.5), hx, hz);
+      if (!bad) break;
+      // out to his side and a little forward; the hand off the body to the front
+      pl.lerp(q.set(s, -0.25, 0.35).transformDirection(A.tor), 0.6);
+      const tl = q.copy(tg).applyMatrix4(A.inv); tl.z += 0.04; if (Math.abs(tl.x) < hx) tl.x += s * 0.02;
+      tg.copy(tl).applyMatrix4(A.tor);
+      r = armIK(i, tg, pl);
+    }
+    return r;
   },
   /* a hand target never inside the own body: pushed out of the torso, the belly and the head (in the torso's frame,
      after torsoInverse(P)); hands go round to the front or the side, not through */

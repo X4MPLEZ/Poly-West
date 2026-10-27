@@ -9,6 +9,16 @@
    sleep); a fresh grave by the church. A day later a new barkeeper comes (his brother, then an old friend), who
    knows what happened, and does not like you for it. */
 Object.assign(BARKEEP, {
+  /* how a successor takes the stranger who killed the man before him (picked at random, weighted by the man):
+     angry (no drink for you, cold words), afraid (serves you, shaking, wants you gone), fists, the shotgun, or
+     friendly on the outside with poison in your next drink */
+  TEMPERS: [
+    { id: 'angry', w: 1, grudge: 0.52, att: -0.85, mem: 'Du bist wütend. Du schenkst dem Mörder nichts aus und sagst ihm, was du von ihm hältst; anfassen tust du ihn nicht.' },
+    { id: 'afraid', w: 0.8, grudge: 0.15, att: -0.5, mem: 'Du hast Angst vor dem Mörder. Du bedienst ihn, damit er wieder geht, aber deine Hände zittern, und du sagst so wenig wie möglich.', need: (W) => 1.6 - W.fight.courage },
+    { id: 'fists', w: 0.9, grudge: 0.62, att: -0.8, mem: 'Du willst es ihm mit den Fäusten heimzahlen, sobald er dir nahe kommt.', need: (W) => W.fight.courage + 0.2 },
+    { id: 'shotgun', w: 0.7, grudge: 0.9, att: -0.95, mem: 'Unter der Theke liegt die Schrotflinte. Kommt der Mörder herein, jagst du ihn hinaus oder schießt.', need: (W) => W.fight.courage },
+    { id: 'poison', w: 0.6, grudge: 0.3, att: 0.1, mem: 'Du hast beschlossen, dem Mörder heimlich Gift ins nächste Glas zu tun. Lass dir nichts anmerken: sei freundlich, fast herzlich, und biete ihm ruhig einen Drink an.' }
+  ],
   // the lines of revenge
   REV_LINES: {
     revenge: [['Das ist für neulich!', 'angry'], ['Jetzt zahl ich’s dir heim!', 'angry'], ['Hast du gedacht, ich vergesse das?', 'angry']],
@@ -141,8 +151,14 @@ Object.assign(BARKEEP, {
     this.mem = []; this.recent = []; this.served = 0; this.damage = { holes: 0, glass: 0 }; this.att = 0; this.cool = {}; this.bags = {};
     N.talkLog = [];
     this.remember('Du hast den Saloon übernommen, nachdem ' + prev.name + ' ' + (this.cause || 'gestorben') + ' ist (' + TIME.stamp(this.diedAt) + ').');
-    if (this.killedBy === 'player') { this.remember('Jeder sagt, der Fremde hat ' + prev.name + ' umgebracht. Du hast ihn nie gesehen, aber du weißt, wie er aussieht.'); this.grudge = 0.6; this.att = -0.7; }
-    else this.grudge = 0;
+    if (this.killedBy === 'player') {
+      this.remember('Jeder sagt, der Fremde hat ' + prev.name + ' umgebracht. Du hast ihn nie gesehen, aber du weißt, wie er aussieht.');
+      // how he takes it: not always the same
+      const T = this.TEMPERS, w = T.map((t) => t.w * (t.need ? t.need(W) : 1));
+      let r = Math.random() * w.reduce((a, b) => a + b, 0), i = 0; while (r > w[i] && i < T.length - 1) { r -= w[i]; i++; }
+      const t = T[i]; this.temper = t.id; this.grudge = t.grudge; this.att = t.att; this.remember(t.mem);
+      if (t.id === 'poison') this.poisonNext = true;
+    } else { this.grudge = 0; this.temper = null; }
     this.st = 'idle'; this.pickIdle(); this.newT = TIME.min;
     worldEvent('newBarkeep', N.pos.x, N.pos.y, N.pos.z, { by: 'world', who: W.id });
   },
@@ -154,6 +170,11 @@ Object.assign(BARKEEP, {
     if (this.npc) this.removeBody();
     this.arrive();
     TOAST.show(this.who().name + ' steht jetzt hinter der Theke.');
+  },
+  // what his temper does from moment to moment
+  temperUpdate(dt, inside, dP) {
+    const N = this.npc; if (!N || !this.temper || !inside) return;
+    if (this.temper === 'afraid' && dP < 5) N.fear = G.time + 0.5;
   },
   // called from update while dead or gone
   fate(dt) {

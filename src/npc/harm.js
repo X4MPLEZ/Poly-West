@@ -447,7 +447,10 @@ class Vitals {
         if (this.armUse[i] > 0.15) {
           torsoInverse(P);
           if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
-          const s = i === 0 ? 1 : -1, r = armIK(i, tgt, this._q || (this._q = new THREE.Vector3()).set(s * 0.6, -0.35, -0.85));
+          const s = i === 0 ? 1 : -1, q = this._q || (this._q = new THREE.Vector3());
+          // (the pole is in the character's frame: a wound on the front, the elbow out to the side; on the side, back)
+          if (n.z > 0.45) q.set(s * 1, -0.55, 0.1); else q.set(s * 0.6, -0.35, -0.85);
+          const r = GESTURE.solveArm(i, tgt, q, N.ch.look.build.width, N.ch.look.build.belly);
           const o = P.armOv[i] && P.armOv[i].hurt ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true });
           const wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * 3)));
           o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; busy[i] = true;
@@ -488,12 +491,25 @@ class Vitals {
       if (!w.bandaged || w.heal >= 1 || !w.part || w.bandMesh) continue;
       const part = N.ch.p[w.part]; if (!part) continue;
       const box = part.geometry.boundingBox || (part.geometry.computeBoundingBox(), part.geometry.boundingBox);
-      const mb = new MB(), sx = box.max.x - box.min.x + 0.03, sz = box.max.z - box.min.z + 0.03, h = w.zone === 'chest' || w.zone === 'belly' ? 0.12 : 0.07;
-      mb.box(0, -h / 2, 0, sx, h, sz, rgb(0xeee6d6), 9);
-      if (w.zone === 'shoulder') mb.box(0, -0.02, 0, 0.12, 0.06, sz, rgb(0xeee6d6), 9);
+      // linen wrapped round it a few times, a little crooked, a knot, a pad on the wound with blood come through
+      const mb = new MB(), lin = [rgb(0xeee6d6), rgb(0xe0d6c2), rgb(0xe8dfcc)], blood = rgb(0x8a2a22);
+      const sx = box.max.x - box.min.x, sz = box.max.z - box.min.z, cx = (box.max.x + box.min.x) / 2, cz = (box.max.z + box.min.z) / 2;
+      const trunk = /torso|pelvis/.test(w.part), y0 = w.lp ? w.lp[1] : (box.max.y + box.min.y) / 2;
+      const wrap = (y, h, tilt, col, grow) => { mb.push(new THREE.Matrix4().makeTranslation(trunk ? 0 : cx, y, cz).multiply(new THREE.Matrix4().makeRotationZ(tilt))); mb.box(0, -h / 2, 0, (trunk ? sx : sx) + grow, h, sz + grow, col, 9); mb.pop(); };
+      const n = trunk ? 3 : 3, step = trunk ? 0.045 : 0.03;
+      for (let i = 0; i < n; i++) wrap(y0 + (i - (n - 1) / 2) * step, trunk ? 0.05 : 0.034, (i - 1) * (trunk ? 0.05 : 0.12), lin[i % 3], (trunk ? 0.02 : 0.024) + i * 0.003);
+      if (w.zone === 'chest' || w.zone === 'shoulder') { mb.push(new THREE.Matrix4().makeTranslation(0, trunk ? y0 + 0.08 : y0, 0).multiply(new THREE.Matrix4().makeRotationZ(0.75))); mb.box(0, -0.03, 0, trunk ? sx * 1.1 : sx + 0.03, 0.055, sz + 0.03, lin[1], 9); mb.pop(); }
+      // the knot on the outside, and the pad over the wound itself
+      const kx = trunk ? (w.lp && w.lp[0] > 0 ? 1 : -1) * (sx / 2 + 0.014) : cx + (/L$/.test(w.part) ? 1 : -1) * (sx / 2 + 0.014);
+      mb.box(kx, y0 - 0.018, cz, 0.022, 0.03, 0.03, lin[0], 0); mb.box(kx + Math.sign(kx || 1) * 0.008, y0 - 0.045, cz + 0.01, 0.014, 0.03, 0.012, lin[2], 0);
+      if (w.lp) {
+        const nx = Math.abs(w.lp[0] - cx) > Math.abs(w.lp[2] - cz) * (sx / Math.max(sz, 0.01)) ? Math.sign(w.lp[0] - cx) : 0, nz = nx ? 0 : Math.sign(w.lp[2] - cz || 1);
+        const px = nx ? cx + nx * (sx / 2 + 0.03) : w.lp[0], pz = nz ? cz + nz * (sz / 2 + 0.03) : w.lp[2];
+        mb.box(px, y0 - 0.035, pz, nx ? 0.012 : 0.07, 0.07, nz ? 0.012 : 0.07, lin[0], 0);
+        mb.box(px + nx * 0.004, y0 - 0.018, pz + nz * 0.004, nx ? 0.01 : 0.032, 0.034, nz ? 0.01 : 0.032, mixc(blood, lin[0], 0.25), 0);
+      }
       const m = new THREE.Mesh(mb.build(), N.mat || G.litMat);
-      const lx = w.zone === 'chest' || w.zone === 'belly' || w.zone === 'hip' ? 0 : (box.max.x + box.min.x) / 2, lz = (box.max.z + box.min.z) / 2;
-      m.position.set(lx, w.lp ? w.lp[1] : -0.15, lz); m.frustumCulled = false;
+      m.frustumCulled = false;
       part.add(m); w.bandMesh = m; this.bandages.push(m);
     }
     for (const m of this.bandages) if (m.material !== (N.mat || G.litMat)) m.material = N.mat || G.litMat;

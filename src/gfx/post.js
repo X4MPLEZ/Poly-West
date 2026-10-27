@@ -59,7 +59,7 @@ const POST = {
   update(dt) {
     const L = Math.min(DRUNK.level, 1.05), E = DRUNK.edgeK();
     // the picture follows the level slowly, it creeps in; on the last stretch it keeps swimming further
-    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) + E * 0.45 - this.amt) * (1 - Math.exp(-dt * 1.5));
+    this.amt += (clamp((L - 0.04) / 0.9, 0, 1) + E * 0.45 + (typeof PHP !== 'undefined' ? PHP.sick * 0.55 : 0) - this.amt) * (1 - Math.exp(-dt * 1.5));
     let dark = E * E * 0.55, lid = 0;
     const O = DRUNK.out;
     if (O) {

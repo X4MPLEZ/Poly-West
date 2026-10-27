@@ -8,15 +8,15 @@ const HUD = {
   buttons() {
     const fight = FIST.inFight(), armed = GUN.state !== 'holster';
     const mode = armed ? 'aim' : fight ? 'block' : 'aim';
-    const key = mode + '/' + armed + '/' + GUN.wantAim + '/' + (GUN.ammo < 6 && GUN.reserve > 0) + '/' + !!GUN.reload + '/' + fight;
+    const key = mode + '/' + armed + '/' + GUN.wantAim + '/' + (GUN.ammo < 6 && GUN.reserve > 0) + '/' + !!GUN.reload + '/' + fight + '/' + GUN.reloadThenHolster;
     if (key === this.btnKey) return;
     this.btnKey = key; this.aimMode = mode;
     const ba = this.$('bAim'), bg = this.$('bGun'), br = this.$('bReload'), bt = this.$('bTalk');
     ba.textContent = mode === 'block' ? 'Deckung' : GUN.wantAim ? 'Wegstecken' : 'Zielen';
     ba.classList.toggle('block', mode === 'block');
     bg.hidden = !(fight && !armed);
-    br.hidden = !(armed && ((GUN.ammo < 6 && GUN.reserve > 0) || GUN.reload));
-    document.getElementById('app').classList.toggle('fighting', fight || armed);
+    br.hidden = !(((armed || !fight) && GUN.ammo < 6 && GUN.reserve > 0) || GUN.reload);
+    document.getElementById('app').classList.toggle('fighting', fight || (armed && !GUN.reloadThenHolster));
     void bt;
   },
   /* ---- the fight cue round the cross: you see a blow coming, you see that you caught it, and that now is the moment

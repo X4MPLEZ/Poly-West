@@ -152,6 +152,7 @@ const DRINK = {
     else if (this.st === 'sip') {
       this.st = 'lower';
       DRUNK.drink(this.it.alc);
+      if (this.src === 'glass' && GLASS.obj.poison) PHP.dose(1.0, GLASS.obj.by || null);
       worldEvent('drink', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'player', what: this.src === 'glass' ? GLASS.obj.id : 'bottle' });
       if (this.src === 'glass') { GLASS.obj.left--; if (GLASS.obj.left <= 0) GLASS.mesh.geometry = VESSEL.geo[GLASS.obj.it.vessel + 'false']; }
       else INV.sipFrom('bottle');

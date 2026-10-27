@@ -19,7 +19,7 @@ const BARKEEP = {
      They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
   // a gesture that goes with a kind of line (not always)
-  BARK_GESTURE: { helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
+  BARK_GESTURE: { bump2: 'point_you', bumpFall: 'fist_shake', excuse: 'calm_down', mutter: 'scratch_head', helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
   SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
@@ -56,6 +56,12 @@ const BARKEEP = {
     itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
     groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
     mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    bump1: [['Pass doch auf.', 'neutral'], ['He, langsam, Mister.', 'neutral'], ['Hier wird nicht gerannt.', 'disgusted'], ['Augen auf, Fremder.', 'neutral']],
+    bump2: [['Hast du keine Augen im Kopf?', 'angry'], ['Schon wieder? Noch einmal und du fliegst raus.', 'angry'], ['Rempel woanders.', 'disgusted']],
+    bumpShove: [['Jetzt reicht’s! Weg da!', 'angry'], ['Pfoten weg von mir!', 'angry']],
+    bumpFall: [['Bist du verrückt geworden?!', 'angry'], ['Verdammt! Pass doch auf, du Ochse!', 'angry']],
+    excuse: [['Lässt du mich mal durch?', 'neutral'], ['Platz da, ich muss arbeiten.', 'neutral'], ['Darf ich mal?', 'neutral']],
+    mutter: [['Wo ist denn der verdammte Korkenzieher…', 'whisper'], ['Staub. Überall Staub.', 'whisper'], ['Die Gläser putzen sich nicht von allein…', 'whisper'], ['Zwölf Jahre hinter dieser Theke…', 'whisper'], ['Das Fass ist bald leer… muss nachbestellen.', 'whisper'], ['Hm. Der Whiskey wird auch nicht besser.', 'whisper'], ['Mein Rücken… jeden Tag schlimmer.', 'whisper']],
     help: [['Hilfe! Holt den Doc!', 'surprised'], ['Doc… jemand… holt den Doc…', 'sleepy'], ['Ich verblute hier… hilf mir doch…', 'sleepy'], ['Hol Hilfe… bitte…', 'sleepy'], ['Lass mich nicht hier liegen…', 'sleepy']],
     dying: [['Mir… wird so kalt…', 'sleepy'], ['Sag… sag meiner Schwester…', 'sleepy'], ['Ich will nicht… nicht so…', 'sleepy'], ['Verdammt… nicht hier… nicht heute…', 'sleepy'], ['Gott… vergib mir…', 'sleepy']],
     toDoc: [['Ich geh zum Doc. Du rührst hier nichts an.', 'angry'], ['Verdammt… ich brauch den Doc.', 'angry'], ['Der Laden ist zu. Ich muss zum Arzt.', 'disgusted']],
@@ -175,6 +181,19 @@ const BARKEEP = {
       this.shout(Z.arm !== undefined ? 'hurtArm' : Z.leg !== undefined ? 'hurtLeg' : 'hurt');
       const sit = 'Der Fremde hat dir gerade ' + where + ' geschossen. Es blutet und tut höllisch weh' + (N.hp.down() ? ', du liegst am Boden' : '') + '. ' + (this.grudge > 0.8 ? 'Das vergisst du ihm nie.' : 'Du bist außer dir vor Wut und Angst.');
       setTimeout(() => { if (!N.hp.dead) TALK.remark(N, sit, null, 'angry', 1); }, 1800);
+    }
+  },
+  // walked into: words (getting rougher), and at the fourth time in a short while he goes for you
+  onBump(info) {
+    if (info.excuse) { this.say('excuse', 15); return; }
+    this.feel(info.fell ? -0.3 : info.n >= 2 ? -0.08 : -0.02);
+    if (info.fell) this.remember('Er hat dich umgerannt (' + TIME.stamp() + ').');
+    this.cool.bump1 = this.cool.bump2 = 0;
+    this.say(info.fell ? 'bumpFall' : info.n >= 3 ? 'bumpShove' : info.n === 2 ? 'bump2' : 'bump1');
+    const N = this.npc, W = this.who();
+    if (info.n >= 4 && !info.fell && this.st !== 'brawl' && !N.hp.busy() && W.fight.courage >= 0.5 && GUN.state === 'holster') {
+      this.note('Er hat dich immer wieder angerempelt, bis du zugeschlagen hast.');
+      this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
     }
   },
   // a cry: right now, over anything else he was saying
@@ -352,6 +371,7 @@ const BARKEEP = {
   makeNpc(scene) {
     const W = this.who(), p = this.roomPt(this.X.stand, -6.4, this._v);
     this.npc = new NPC({ attitude: () => this.att, id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, desc: W.desc });
+    this.npc.onBump = (info) => this.onBump(info); this.npc.role = this.who().name + ', der Barkeeper im Saloon (' + this.who().age + ')';
     const N = this.npc;
     N.persona = this.persona();
     N.held = () => this.held();
@@ -424,7 +444,7 @@ const BARKEEP = {
         if (SIT.state === 'sit' && SIT.seat && SIT.seat.bar) lines.push('Er sitzt an deinem Tresen.');
         else if (B.playerAtBar()) lines.push('Er steht an deinem Tresen.'); else lines.push('Er steht im Saloon, ein Stück vom Tresen weg.');
         if (GLASS.obj && GLASS.obj.left > 0) lines.push('Vor ihm steht ein ' + GLASS.obj.it.name + ', noch nicht ausgetrunken.');
-        if (GUN.state !== 'holster') lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
+        if (GUN.state !== 'holster' && !GUN.reloadThenHolster) lines.push(B.aimedT > 0.2 ? 'Er zielt gerade mit dem Revolver auf dich!' : 'Er hat seinen Revolver in der Hand.');
         if (B.served) lines.push('Du hast ihm bisher ' + B.served + ' Getränk(e) eingeschenkt.');
         if (B.aimedT > 0.2 && B.standoff) lines.push('Seit ' + Math.round(G.time - B.standoff.t0) + ' Sekunden hältst du die Hände oben.');
         lines.push('Deine Haltung zu ihm: ' + B.attWord() + '.');
@@ -621,6 +641,7 @@ const BARKEEP = {
     if (this.st === 'toDoc' || this.st === 'atDoc') { this.updDoc(dt); this.placeProps(); return; }
     if (this.st === 'street') { this.updStreet(dt); this.placeProps(); return; }
     if (this.st === 'shotgun') { this.updShotgun(dt, inside); this.placeProps(); return; }
+    this.temperUpdate(dt, inside, dP);
     if (this.st === 'idle' && !handsUp && this.revenge(dt, inside, dP)) { this.placeProps(); return; }
     if (this.st === 'duck') this.updDuck(dt);
     else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }
@@ -653,6 +674,9 @@ const BARKEEP = {
   /* ---- idle: the bar's own small work ---- */
   updIdle(dt, inside) {
     const N = this.npc, t = G.time, atBar = this.playerAtBar();
+    // talking to himself now and then (ready-made lines, so it costs nothing after the first time)
+    this.mutterT = (this.mutterT === undefined ? 40 + Math.random() * 60 : this.mutterT) - dt;
+    if (this.mutterT <= 0) { this.mutterT = 70 + Math.random() * 110; if (inside && !N.talking && !this.cur && !atBar && !TALK.open) this.say('mutter'); }
     // in a conversation: work stops, he faces the stranger; thinking: a hand to the chin
     if (N.talking || N.thinking || N.gest === 'point_door') {
       if (atBar && Math.abs(this.myZ() - this.along(PLAY.pos)) > 0.6) { const p = this.roomPt(this.X.pour + 0.08, this.along(PLAY.pos), this._v); N.goTo(p.x, p.z, this.faceYaw); }
@@ -755,6 +779,8 @@ const BARKEEP = {
         S.tilt = Math.sin(Math.min(1, u * 1.25) * Math.PI) * 1.9;
         N.lookAt(N.toWorld(sp.x, sp.y, sp.z, this._v), 1);
         if (!S.poured && u > 0.15) { S.poured = true; FOLEY.pour(this.pourWorld(this._w), 0.8); }
+        // (a few drops from a little bottle in his apron, his back half to you)
+        if (this.poisonNext && u > 0.6 && !S.poison) { S.poison = true; N.reach(0, 0.12, 1.02, 0.22, 0.8); }
         if (u > 0.55) this.props.glass.geometry = VESSEL.geo[it.vessel + 'true'];
         if (S.t > 1.2) { S.tilt = 0; go('stow'); }
         break;
@@ -772,6 +798,7 @@ const BARKEEP = {
         if (S.t > 0.12 && !S.sent) {
           S.sent = true; this.props.glass.visible = false; S.glassOut = false;
           GLASS.serve(S.o.id, this.C, S.o.to, this.pourWorld(this._w));
+          if (S.poison && GLASS.obj) { GLASS.obj.poison = true; GLASS.obj.by = N; this.poisonNext = false; this.remember('Du hast ihm Gift ins Glas getan (' + TIME.stamp() + '). Jetzt wartest du ab.'); }
         }
         if (S.t > 0.45) { this.cur = null; this.attending = false; this.atBarT = 0.8; }
         break;
@@ -849,7 +876,8 @@ const BARKEEP = {
 };
 // what Hank remembers of you lasts between sessions (until the memories are reset in the settings)
 SAVE.part('hank', () => ({ mem: BARKEEP.mem.slice(-10), served: BARKEEP.served, damage: BARKEEP.damage, att: +BARKEEP.att.toFixed(3), grudge: +BARKEEP.grudge.toFixed(3), body: BARKEEP.npc ? BARKEEP.npc.hp.save() : null,
-  whoI: BARKEEP.whoI, gone: BARKEEP.st === 'gone', diedAt: BARKEEP.diedAt || null, killedBy: BARKEEP.killedBy || null, cause: BARKEEP.cause || null }), (d) => {
+  whoI: BARKEEP.whoI, temper: BARKEEP.temper || null, poisonNext: !!BARKEEP.poisonNext, gone: BARKEEP.st === 'gone', diedAt: BARKEEP.diedAt || null, killedBy: BARKEEP.killedBy || null, cause: BARKEEP.cause || null }), (d) => {
+  if (d) { BARKEEP.temper = d.temper || null; BARKEEP.poisonNext = !!d.poisonNext; }
   if (!d) return;
   // who is behind the bar (a successor, or nobody since the body was taken away)
   BARKEEP.diedAt = d.diedAt || null; BARKEEP.killedBy = d.killedBy || null; BARKEEP.cause = d.cause || null;

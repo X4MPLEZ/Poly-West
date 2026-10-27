@@ -4,7 +4,10 @@
    down (FALL), and at the end you are out cold: the screen goes black and you wake up somewhere else an hour
    later (thrown out onto the street, or at the doctor's). A red rim on the screen shows how bad it is. */
 const PHP = {
-  hp: 1, daze: 0, fx: null, out: null, flash: 0, lastHit: -99,
+  hp: 1, daze: 0, fx: null, out: null, flash: 0, lastHit: -99, poison: 0, poisonT: 0, sick: 0,
+  /* poison (a drink): nothing for a while, then the stomach turns: sick, the view swims, retching, stumbling, life
+     ebbing away; enough of it and you go down, and wake up at the doctor's (who pumps your stomach) */
+  dose(k, by) { if (this.poison <= 0.01) { this.poisonT = 0; this.poisonBy = by; this.poisonSaid = 0; } this.poison = Math.min(2, this.poison + k); },
   init() {
     this.el = document.getElementById('hurtFx');
     TIME.onSkip((m) => { this.hp = Math.min(1, this.hp + m / 60 * 0.25); this.daze = 0; });
@@ -39,11 +42,17 @@ const PHP = {
     if (this.out) return;
     if (SIT.busy()) SIT.cancel();
     if (!FALL.busy()) FALL.start(true, 'back', Math.atan2(o.dir.x, o.dir.z)); else FALL.keep = true;
-    this.out = { t: 0, by: o.by || null, shot: !!o.shot };
+    this.out = { t: 0, by: o.by || null, shot: !!o.shot, poison: !!o.poison };
     GUN.setAim(false); if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; }
     worldEvent('playerOut', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: o.by ? o.by.id : 'world', shot: !!o.shot });
   },
   busy() { return !!this.out; },
+  // a bump or a shove: the body jerks, no harm done
+  bump(dir, k) {
+    const c = Math.cos(PLAY.yaw), sn = Math.sin(PLAY.yaw), lx = dir.x * c - dir.z * sn, lz = dir.x * sn + dir.z * c;
+    this.jerk = { yaw: clamp(-lx * 0.8, -0.6, 0.6), pitch: -0.3 * lz, roll: clamp(lx * 0.5, -0.4, 0.4), head: 0.6, k: 0.5 * k + 0.2 };
+    PLAY.camShake = Math.max(PLAY.camShake, 0.03 * k + 0.01);
+  },
   // the jerk of a blow taken, laid over whatever the body is doing
   pose(P, dt) {
     const J = this.jerk; if (!J || J.k < 0.01) return;
@@ -53,7 +62,21 @@ const PHP = {
   },
   update(dt) {
     this.daze = Math.max(0, this.daze - dt * 0.12);
-    if (!this.out && G.time - this.lastHit > 6) this.hp = Math.min(1, this.hp + dt * 0.012);
+    if (this.poison > 0.01 && !this.out) {
+      this.poisonT += dt;
+      const on = smoothstep(18, 45, this.poisonT);
+      this.sick = on * Math.min(1, this.poison);
+      if (on > 0) {
+        this.hp = Math.max(0, this.hp - dt * 0.014 * this.poison * on);
+        this.retchT = (this.retchT || 3) - dt;
+        if (this.retchT <= 0) { this.retchT = 5 + Math.random() * 7; FOLEY.grunt(PLAY.pos, 0.85, 1.3); PLAY.camShake = Math.max(PLAY.camShake, 0.05); if (Math.random() < 0.5 * this.sick && !FALL.busy() && !SIT.busy()) DRUNK.stumble(PLAY.yaw + (Math.random() - 0.5) * 2, false, 0); }
+        if (this.poisonSaid === 0 && on > 0.2) { this.poisonSaid = 1; TOAST.show('Dir wird speiübel …', 'long'); }
+        if (this.poisonSaid === 1 && this.hp < 0.45) { this.poisonSaid = 2; TOAST.show('Das Getränk … da war etwas drin.', 'long'); }
+        if (this.hp <= 0.06) this.knockout({ dir: { x: Math.sin(PLAY.yaw), z: Math.cos(PLAY.yaw) }, shot: true, poison: true, by: this.poisonBy });
+      }
+      this.poison = Math.max(0, this.poison - dt * 0.002);
+    } else this.sick = Math.max(0, this.sick - dt * 0.2);
+    if (!this.out && G.time - this.lastHit > 6 && this.sick < 0.05) this.hp = Math.min(1, this.hp + dt * 0.012);
     this.flash = Math.max(0, this.flash - dt * 2.5);
     // the red rim: how hurt, plus a flash on each blow
     const k = clamp((1 - this.hp) * 0.75 + this.flash * 0.5, 0, 0.95);
@@ -79,7 +102,11 @@ const PHP = {
     this.hp = O.shot ? 0.5 : 0.35; this.daze = 0;
     let text;
     const doc = typeof DOC !== 'undefined' && DOC.wakeSpot ? DOC.wakeSpot() : null;
-    if (O.shot && doc) { PLAY.pos.copy(doc.p); PLAY.yaw = doc.yaw; text = 'Du kommst beim Doktor zu dir. Verbunden, aber am Leben.'; if (DOC.patientFee) DOC.patientFee(); }
+    if (O.poison) {
+      this.poison = 0; this.sick = 0; this.hp = 0.3;
+      if (typeof BARKEEP !== 'undefined' && BARKEEP.temper === 'poison') { BARKEEP.temper = 'done'; BARKEEP.grudge = 0.3; BARKEEP.remember('Der Mörder ist an deinem Gift zusammengebrochen und lag eine Stunde beim Doc. Fürs Erste bist du zufrieden (' + TIME.stamp() + ').'); }
+    }
+    if (O.shot && doc) { PLAY.pos.copy(doc.p); PLAY.yaw = doc.yaw; text = O.poison ? 'Du kommst beim Doktor zu dir. Er hat dir den Magen ausgepumpt. Jemand hat dich vergiftet.' : 'Du kommst beim Doktor zu dir. Verbunden, aber am Leben.'; if (DOC.patientFee) DOC.patientFee(); }
     else {
       const R = ROOMS.find((r) => r.type === 'saloon'), inSaloon = O.by && O.by.room === R;
       const p = inSaloon ? rwp(R, 1.5, 0, R.z1 + 3.2) : PLAY.pos.clone();

@@ -168,7 +168,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 @keyframes sayIn { from { opacity: 0; } }
 
 /* talking */
-.talking #prompt, .talking #hint, .talking #bUse, .talking #bUse2 { display: none !important; }
+.talking #hint { display: none !important; }
+.talking #prompt { bottom: calc(18% + 74px + env(safe-area-inset-bottom, 0px)); }
+.talking #prompt3 { bottom: calc(18% + 114px + env(safe-area-inset-bottom, 0px)); }
 #prompt3 { position: absolute; left: 50%; bottom: calc(18% + 40px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
 #prompt3 kbd { font-family: var(--f-mono); font-weight: 600; font-size: 12px; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--bone); color: var(--ink); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
 .touch #prompt3 { display: none; }

@@ -21,7 +21,112 @@ const DOC = {
     hurt: [['Aaah! Bist du verrückt?!', 'angry'], ['Verdammt! Ich bin Arzt!', 'angry'], ['Du schießt auf den einzigen Arzt im Umkreis?!', 'angry']],
     refuse: [['Für dich? Nein. Such dir einen anderen Arzt.', 'disgusted'], ['Dich flick ich nicht. Raus.', 'angry']],
     thanks: ['Schon gut.', 'Dafür bin ich da.', 'Bezahlt ist bezahlt.'],
-    bye: ['Pass auf dich auf.', 'Und komm nicht so bald wieder.', 'Bis zum nächsten Loch.']
+    bye: ['Pass auf dich auf.', 'Und komm nicht so bald wieder.', 'Bis zum nächsten Loch.'],
+    coming: [['Ich komme! Geh voraus!', 'surprised'], ['Meine Tasche… los, schnell!', 'surprised'], ['Bin unterwegs!', 'surprised'], ['Verdammt. Ich komme.', 'angry']],
+    comingCalm: [['Ich seh es mir an.', 'neutral'], ['Gut, ich komme mit.', 'neutral'], ['Na schön. Zeig es mir.', 'neutral']],
+    onsite: [['Platz da! Lasst mich ran!', 'angry'], ['Halt still. Ich bin ja da.', 'neutral'], ['Zeig her… ruhig atmen.', 'neutral']],
+    late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
+    fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
+    refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
+    mutter: [['Wo hab ich nur das Laudanum hingestellt…', 'whisper'], ['Boston… hätte ich nur nie…', 'whisper'], ['Drei Schusswunden diese Woche. Drei.', 'whisper'], ['Die Hände… immer die Hände waschen.', 'whisper'], ['Hm. Das Rezept stimmt so nicht.', 'whisper']]
+  },
+  // places he can be called to: words in what you say → a building (room type), or out in the street
+  PLACES: [['saloon', /saloon|bar\b|kneipe|theke|hank|walt|jeb/], ['hotel', /hotel/], ['bank', /bank/], ['sheriff', /sheriff|gefängnis|zelle/], ['livery', /stall|pferd/],
+    ['barber', /barbier|friseur|rasier/], ['gunsmith', /waffen/], ['post', /\bpost/], ['apothecary', /apothek/], ['store', /gemischt|kramladen|laden\b|store/], ['street', /straße|strasse|draußen|vor (dem|der|die)/]],
+  placeOf(text) { const t = (text || '').toLowerCase(); for (const [k, re] of this.PLACES) if (re.test(t)) return k; return null; },
+  // called from a conversation: where to (the place you named, or with you), how urgent (how you said it)
+  callFromTalk(action) {
+    const t = (TALK.lastText || '').toLowerCase(), place = action === 'follow' ? null : this.placeOf(t);
+    const urgent = /verblut|stirbt|sterb|schnell|sofort|notfall|blutet|angeschossen|tot\b|lebt|eilt/.test(t);
+    this.call(place || 'follow', urgent);
+  },
+  /* a call for help: he goes there (runs, if it is urgent), looks for whoever is hurt, patches him up where he lies;
+     nobody there: he was made a fool of, and remembers it (twice, and he no longer believes you easily) */
+  call(place, urgent) {
+    const N = this.npc; if (!N || N.hp.dead || N.hp.busy() || this.st === 'fight') return false;
+    if (this.fooledN >= 2 && this.att < -0.2 && !this.patientNear(PLAY.pos, 30)) { this.say('refuseCall'); return false; }
+    let dest = null, R = null;
+    if (place !== 'follow' && place !== 'street') { R = ROOMS.find((r) => r.type === place && !r.parent); if (R) { const p = rwp(R, 0, R.floorY, R.z1 - 1.6); dest = p; } }
+    this.callJob = { place, R, dest, urgent, t: 0, phase: 'go', P: null, walkT: 0 };
+    this.st = 'call'; this.queue.length = 0; this.cur = null;
+    N.hurry = urgent ? 2.1 : 1.3; N.free(0); N.free(1); N.endGesture && N.endGesture();
+    if (dest) N.walkTo(dest.x, dest.z);
+    return true;
+  },
+  // the one most in need near a point (alive and hurt first, else a body)
+  patientNear(p, r, room) {
+    let best = null, bs = -1;
+    for (const n of NPCS.list) {
+      if (n === this.npc) continue;
+      if (room !== undefined && (n.room || null) !== (room || null)) continue;
+      if (Math.hypot(n.pos.x - p.x, n.pos.z - p.z) > r) continue;
+      // (only who needs him: dead, bleeding, an open gunshot; a bandaged man is done)
+      const H = n.hp, need = H.dead || H.bleed > 0.0005 || H.dying > 0 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.6);
+      const sc = H.dead ? 0.5 : n.plight();
+      if (need && sc > bs) { bs = sc; best = n; }
+    }
+    return best;
+  },
+  updCall(dt) {
+    const J = this.callJob, N = this.npc; J.t += dt;
+    const home = () => { J.phase = 'home'; N.hurry = 1; const s = this.spot('desk'); N.walkTo(s.x, s.z, s.yaw); N.crouchT = 0; N.free(0); N.free(1); };
+    if (J.phase === 'go') {
+      // on the way, or following you: whoever lies hurt close by is the one
+      const P = this.patientNear(N.pos, 7, N.room);
+      if (P) { J.P = P; J.phase = 'to'; this.say('onsite', 20); return; }
+      if (J.place === 'follow' || J.place === 'street') {
+        J.walkT -= dt;
+        if (J.walkT <= 0) { J.walkT = 0.8; const d = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z); if (d > 1.8) N.walkTo(PLAY.pos.x, PLAY.pos.z); else N.stop(Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z)); }
+        if (J.t > 90) J.phase = 'none';
+      } else if (!N.walking()) J.phase = 'look';
+      if (J.t > 120) J.phase = 'none';
+      return;
+    }
+    if (J.phase === 'look') { const P = this.patientNear(N.pos, 14, N.room); if (P) { J.P = P; J.phase = 'to'; this.say('onsite', 20); } else J.phase = 'none'; return; }
+    if (J.phase === 'none') {
+      // made a fool of
+      this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
+      this.remember('Der Fremde hat dich umsonst ' + (J.R ? ({ saloon: 'zum Saloon', hotel: 'zum Hotel', bank: 'zur Bank', sheriff: 'zum Sheriff', livery: 'zum Mietstall', barber: 'zum Barbier', gunsmith: 'zum Waffenhändler', post: 'zur Post', apothecary: 'zur Apotheke', store: 'zum Laden' }[J.place] || 'irgendwohin') : 'durch die Stadt') + ' gerufen. Da war niemand (' + TIME.stamp() + ').');
+      this.say('fooled'); N.gesture('fist_shake'); home(); return;
+    }
+    if (J.phase === 'to') {
+      const P = J.P;
+      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); home(); return; }
+      // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor
+      if (!J.spot) {
+        const e = P.ch.p.torso.matrixWorld.elements, cx = e[12], cz = e[14];
+        let best = null, bd = 1e9;
+        for (let a = 0; a < 8; a++) { const x = cx + Math.cos(a * Math.PI / 4) * 0.72, z = cz + Math.sin(a * Math.PI / 4) * 0.72; if (HARM.blockedAt(x, z, P.pos.y, 0.22)) continue; const d = Math.hypot(x - N.pos.x, z - N.pos.z); if (d < bd) { bd = d; best = [x, z]; } }
+        J.spot = best || [cx, cz]; J.toT = 0;
+      }
+      J.toT += dt;
+      const dS = Math.hypot(N.pos.x - J.spot[0], N.pos.z - J.spot[1]), dP = Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z);
+      if (dS > 0.3 && !(J.toT > 6 && dP < 1.7)) { if (!N.walking() || (J.walkT -= dt) <= 0) { J.walkT = 1.5; N.walkTo(J.spot[0], J.spot[1]); } if (J.toT > 25) J.phase = 'none'; return; }
+      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1;
+      return;
+    }
+    if (J.phase === 'work') {
+      const P = J.P, lying = P.hp.busy();
+      N.crouchT = lying ? 1 : 0;
+      const w = P.hp.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.part && x.lp) || P.hp.wounds[0];
+      const part = w && w.part ? P.ch.p[w.part] : P.ch.p.torso;
+      this._v.set(w && w.lp ? w.lp[0] : 0, w && w.lp ? w.lp[1] : 0.25, w && w.lp ? w.lp[2] : 0.15); part.updateMatrixWorld(); this._v.applyMatrix4(part.matrixWorld);
+      N.faceYaw = Math.atan2(this._v.x - N.pos.x, this._v.z - N.pos.z); N.lookAt(this._v, 1);
+      const l = N.toLocal(this._v, this._w), a = J.t * 5.5, r = J.t > 1.5 ? 0.08 : 0.03;
+      N.reach(0, l.x + 0.06 + Math.cos(a) * r, l.y + Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
+      N.reach(1, l.x - 0.06 - Math.cos(a) * r, l.y - Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
+      if (J.t > 6) {
+        const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, 0.4);
+        if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
+        this.learn(P, 0); this.snip(); this.say('done');
+        this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').');
+        if (P.onHarm) P.onHarm({ type: 'treated' });
+        J.phase = 'after'; J.t = 0; N.free(0); N.free(1); N.crouchT = 0;
+      }
+      return;
+    }
+    if (J.phase === 'after') { if (J.t > 6) home(); return; }
+    if (J.phase === 'home') { if (!N.walking() && N.room === this.R) { this.st = 'idle'; this.callJob = null; this.pickAct(); } else if (!N.walking()) { const s = this.spot('desk'); N.walkTo(s.x, s.z, s.yaw); } }
   },
   pick(kind) { return BARKEEP.pick.call(this, kind); },
   init(scene) {
@@ -34,6 +139,7 @@ const DOC = {
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe8e4da) }, vest: rgb(0x2a2a2e), pants: { color: rgb(0x34322f) }, boots: rgb(0x1e1a18), belt: rgb(0x1e1a18), bowtie: rgb(0x2a2a2e), glasses: true, gun: false } }
     });
     const N = this.npc;
+    N.role = 'Doc Whitfield, der Arzt von Dust Creek (um die sechzig, gebildet, trocken)';
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
     N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
@@ -51,6 +157,7 @@ const DOC = {
   doorPoint() { const d = rwp(this.R, 0, this.R.floorY + 1.4, this.R.z1); return new THREE.Vector3(d.x, d.y, d.z); },
   spot(name) { const s = this.SPOTS[name], p = rwp(this.R, s[0], this.R.floorY, s[1]); return { x: p.x, z: p.z, yaw: this.yawFor(s[2]) }; },
   available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'treat'); },
+  fooledN: 0,
   // where someone who was shot down wakes up: by the couch
   wakeSpot() { if (!this.npc || this.npc.hp.dead) return null; const s = this.spot('patient'); return { p: new THREE.Vector3(s.x, this.R.floorY, s.z), yaw: s.yaw }; },
   patientFee() {
@@ -74,7 +181,7 @@ const DOC = {
   request(patient, done) { if (!this.queue.some((q) => q.npc === patient)) this.queue.push({ npc: patient, done, t: G.time }); },
   treatPlayer() {
     if (this.att < -0.6) { this.say('refuse'); return; }
-    if (PHP.hp > 0.97) { this.say('healthy'); return; }
+    if (PHP.hp > 0.97 && PHP.poison < 0.05) { this.say('healthy'); return; }
     if (INV.money < this.PRICE) { this.say('broke'); return; }
     INV.money -= this.PRICE; TOAST.show('Behandlung (−' + this.PRICE + ' ¢).', 'money');
     this.queue.unshift({ player: true, t: G.time });
@@ -105,6 +212,7 @@ const DOC = {
     if (N.hp.dead) { this.st = 'dead'; return; }
     const inside = G.room === this.R;
     if (N.hp.busy()) return;
+    if (this.st === 'call') { this.updCall(dt); return; }
     if (this.st === 'fight') { const r = N.fight.update(dt); if (r) { this.st = 'idle'; N.walkTo(this.spot('desk').x, this.spot('desk').z, this.spot('desk').yaw); } return; }
     // greet who comes in
     if (inside && !this.wasInside) setTimeout(() => this.say('hello', 90), 900);
@@ -129,6 +237,8 @@ const DOC = {
   },
   updIdle(dt, inside) {
     const N = this.npc, t = G.time;
+    this.mutterT = (this.mutterT === undefined ? 50 + Math.random() * 60 : this.mutterT) - dt;
+    if (this.mutterT <= 0) { this.mutterT = 80 + Math.random() * 120; if (inside && !N.talking && !TALK.open && !N.walking()) this.say('mutter'); }
     // he looks at you when you are close
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (inside && dP < 5) N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 0.9); else N.lookTW = 0;
@@ -182,7 +292,7 @@ const DOC = {
       N.leanT = 0.25;
       if (this.tt > 5.5) {
         if (P) { const n = P.hp.bandageAll(); this.learn(P, n); if (C.done) C.done(P); }
-        else { PHP.hp = 1; PHP.daze = 0; worldEvent('treated', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'doctor' }); this.remember('Du hast ihn behandelt (' + TIME.stamp() + ').'); this.feel(0.05); }
+        else { PHP.hp = 1; PHP.daze = 0; PHP.poison = 0; PHP.sick = 0; worldEvent('treated', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: 'doctor' }); this.remember('Du hast ihn behandelt (' + TIME.stamp() + ').'); this.feel(0.05); }
         this.snip(); this.say('done');
         this.cur = null; this.st = 'idle'; N.free(0); N.free(1); this.actT = 3; this.act = 'stand';
       }
@@ -208,16 +318,19 @@ const DOC = {
         'Wer du bist: um die sechzig, graues Haar, schwarze Weste, Fliege. Studiert in Boston, aus Gründen, über die du nicht sprichst, hier gelandet. Gebildet, ruhig, trocken und ein wenig zynisch. Du hast zu viele Schusswunden gesehen. Du duzt jeden.',
         'Dust Creek hat: den Saloon (Hank ist der Barkeeper), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
         'Eine Behandlung kostet 50 Cent; wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
+        'Sagt dir der Fremde, dass irgendwo jemand verletzt ist, verblutet oder stirbt, und du glaubst ihm: action come (du gehst sofort hin, bei Lebensgefahr rennst du; den Ort nennt er selbst). Sollst du einfach mitkommen: action follow. Wurdest du schon umsonst gerufen, bist du misstrauisch und fragst nach, statt gleich loszulaufen.',
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), verärgert (angry), angewidert (disgusted), überrascht (surprised), müde (sleepy). Flüstern (whisper) nur für echte Geheimnisse.',
-        'action ist genau eines von: none, nod, laugh, shake_head, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken). Nimm die Geste, die zu deinen Worten passt, oft auch none.'
+        'action ist genau eines von: none, nod, laugh, shake_head, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken), come (du gehst zu einem Verletzten), follow (du gehst mit ihm). Nimm die Geste, die zu deinen Worten passt, oft auch none.'
       ].join('\n'),
       context() {
         const lines = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.'];
         lines.push(PHP.hp < 0.6 ? 'Der Fremde ist übel zugerichtet, er blutet und hat Prellungen.' : PHP.hp < 0.95 ? 'Der Fremde hat ein paar Schrammen.' : 'Der Fremde sieht gesund aus.');
-        if (GUN.state !== 'holster') lines.push('Er hat seinen Revolver in der Hand!');
+        if (GUN.state !== 'holster' && !GUN.reloadThenHolster) lines.push('Er hat seinen Revolver in der Hand!');
         const a = D.att; lines.push('Deine Haltung zu ihm: ' + (a < -0.5 ? 'du hältst ihn für einen gefährlichen Schläger' : a < -0.15 ? 'misstrauisch' : a < 0.3 ? 'sachlich' : 'freundlich') + '.');
+        if (D.fooledN) lines.push('Er hat dich schon ' + (D.fooledN === 1 ? 'einmal' : D.fooledN + '-mal') + ' umsonst zu einem angeblich Verletzten gerufen.');
+        if (D.st === 'call') lines.push('Du bist gerade unterwegs zu einem Verletzten.');
         if (D.knows.length) lines.push('Was deine Patienten dir erzählt haben: ' + D.knows.slice(-3).join(' '));
         const body = D.npc.hp.describe(); if (body) lines.push('Dein Körper: ' + body + '.');
         if (D.mem.length) lines.push('Was du dir von ihm gemerkt hast: ' + D.mem.slice(-5).join(' '));
@@ -235,6 +348,11 @@ const DOC = {
       quick(text) {
         const t = text.toLowerCase().replace(/[.!,;:"„“”']/g, ' ').replace(/\s+/g, ' ').trim(), words = t.split(' ').length;
         const line = (kind, action) => { const l = D.pick(kind); return l && { say: l.text, mood: l.mood || D.MOOD[kind], action: action || 'none', quick: true }; };
+        // a call for help (no need to think about that): he comes
+        if (/verblut|angeschossen|stirbt|sterb|blutet|verletzt|notfall|hilfe|schwer verwundet/.test(t) && (D.placeOf(t) || /komm|schnell|mit\b/.test(t))) {
+          if (D.fooledN >= 2 && D.att < -0.2) return line('refuseCall', 'shake_head');
+          return line(/verblut|stirbt|sterb|schnell|notfall/.test(t) ? 'coming' : 'comingCalm', D.placeOf(t) ? 'come' : 'follow');
+        }
         if (words <= 4 && /^(hallo|hi|hey|howdy|servus|moin|tag|guten (tag|abend|morgen))\b/.test(t)) return line('hello', 'nod');
         if (words <= 4 && /^(danke|vielen dank)\b/.test(t)) return line('thanks', 'nod');
         if (words <= 5 && /\b(tschüss|bis dann|bis bald|auf wiedersehen|ich geh)\b/.test(t)) return line('bye', 'nod');
@@ -243,13 +361,13 @@ const DOC = {
       forget() { D.mem = []; D.att = 0; D.knows = []; },
       memory() { return { events: D.mem.slice().concat(D.knows.map((k) => 'Gehört: ' + k)), inPrompt: 5, facts: [['Haltung zu dir', D.att.toFixed(2)]] }; },
       forgetEvent(i) { if (i < D.mem.length) D.mem.splice(i, 1); else D.knows.splice(i - D.mem.length, 1); },
-      act(action) { if (GESTURE.AI.includes(action)) D.npc.gesture(action, action === 'point_door' ? D.doorPoint() : null); }
+      act(action) { if (action === 'come' || action === 'follow') { D.callFromTalk(action); return; } if (GESTURE.AI.includes(action)) D.npc.gesture(action, action === 'point_door' ? D.doorPoint() : null); }
     };
   }
 };
-SAVE.part('doc', () => ({ mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null }), (d) => {
+SAVE.part('doc', () => ({ fooled: DOC.fooledN, mem: DOC.mem.slice(-10), knows: DOC.knows.slice(-6), att: +DOC.att.toFixed(3), body: DOC.npc ? DOC.npc.hp.save() : null }), (d) => {
   if (!d) return;
-  DOC.att = clamp(+d.att || 0, -1, 1);
+  DOC.att = clamp(+d.att || 0, -1, 1); DOC.fooledN = d.fooled | 0;
   DOC.mem = Array.isArray(d.mem) ? d.mem.filter((x) => typeof x === 'string').slice(-10) : [];
   DOC.knows = Array.isArray(d.knows) ? d.knows.filter((x) => typeof x === 'string').slice(-6) : [];
   if (d.body && DOC.npc) { DOC.npc.hp.load(d.body); if (DOC.npc.hp.dead) DOC.st = 'dead'; }

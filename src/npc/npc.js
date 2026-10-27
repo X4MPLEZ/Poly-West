@@ -4,6 +4,18 @@
    anywhere with arm IK (to hold, pour, wipe), crouching and leaning. What the person DOES is decided by its
    behaviour (npc/barkeep.js …); the body only carries it out.
    SAY: speech bubbles over the head. NPCS.bodies: circles the player bumps into (see collide()). */
+// what people say when you walk into them (ready-made: the sound is kept)
+const BUMP = {
+  LINES: {
+    first: ['Pass doch auf.', 'He, langsam.', 'Vorsicht, Mister.', 'Augen auf, Fremder.', 'Na, na.'],
+    second: ['Hast du keine Augen im Kopf?', 'Schon wieder? Was soll das?', 'Noch einmal, und es knallt.'],
+    shove: ['Weg da!', 'Jetzt reicht’s!', 'Pfoten weg!'],
+    fall: ['Bist du verrückt?!', 'Verdammt, was soll das?!', 'Pass doch auf, du Ochse!'],
+    excuse: ['Lässt du mich mal durch?', 'Platz da, Fremder.', 'Darf ich mal?', 'Du stehst im Weg.']
+  },
+  last: {},
+  pick(kind) { const L = this.LINES[kind]; let i = Math.floor(Math.random() * L.length); if (L.length > 1 && i === this.last[kind]) i = (i + 1) % L.length; this.last[kind] = i; return L[i]; }
+};
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
   init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); },
@@ -11,6 +23,7 @@ const NPCS = {
     BARKEEP.update(dt);
     DOC.update(dt);
     TALK.update(dt);
+    CHAT.update(dt);
     for (const n of this.list) n.update(dt);
     HARM.update(dt);
     SAY.update(dt);
@@ -138,7 +151,24 @@ class NPC {
     if (this.solid !== false) {
       [nx, nz] = collide(nx, nz, this.pos.y + 0.1, this.body, 0.28);
       const px = nx - PLAY.pos.x, pz = nz - PLAY.pos.z, pd = Math.hypot(px, pz);
-      if (pd < 0.6 && pd > 1e-4 && !H.down() && Math.abs(PLAY.pos.y - this.pos.y) < 1) { nx = PLAY.pos.x + (px / pd) * 0.6; nz = PLAY.pos.z + (pz / pd) * 0.6; }
+      if (pd < 0.6 && pd > 1e-4 && !H.down() && Math.abs(PLAY.pos.y - this.pos.y) < 1) {
+        nx = PLAY.pos.x + (px / pd) * 0.6; nz = PLAY.pos.z + (pz / pd) * 0.6;
+        // you walked into him: how hard (your speed towards him)
+        const toward = (PLAY.vx * px + PLAY.vz * pz) / pd;
+        if (toward > 0.8 && G.time - (this.bumpT || -9) > 1.0 && !H.busy() && !FALL.busy() && !SIT.busy()) this.bumped(toward, px / pd, pz / pd);
+      }
+      // he walks into you (you stand in his way): a moment, then he asks you to move and steps round you
+      if (this.goal && pd < 0.85 && !H.busy()) {
+        const gx = this.goal.x - this.pos.x, gz = this.goal.z - this.pos.z, gl = Math.hypot(gx, gz) || 1;
+        if ((-px * gx - pz * gz) / (pd * gl) > 0.5) {
+          this.blockT = (this.blockT || 0) + dt;
+          if (this.blockT > 1.0) {
+            const sd = (gx * pz - gz * px) > 0 ? 1 : -1; this.vx += (-gz / gl) * sd * 1.6; this.vz += (gx / gl) * sd * 1.6;
+            if (G.time - (this.excuseT || -99) > 20) { this.excuseT = G.time; this.lookAt(this._hs.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1); if (this.onBump) this.onBump({ excuse: true }); else this.speak(BUMP.pick('excuse'), undefined, 'neutral', true); }
+            this.blockT = 0.4;
+          }
+        } else this.blockT = 0;
+      } else this.blockT = 0;
     }
     if (dt > 0) { this.vx = (nx - this.pos.x) / dt * 0.5 + this.vx * 0.5; this.vz = (nz - this.pos.z) / dt * 0.5 + this.vz * 0.5; }
     this.pos.x = nx; this.pos.z = nz;
@@ -167,6 +197,7 @@ class NPC {
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
     this.updGesture(dt);
+    if (this.shoveAt && G.time > this.shoveAt) this.shoveHit();
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
     this.pose(dt);
   }
@@ -192,6 +223,39 @@ class NPC {
       this.beatSide = Math.random() < 0.5 ? 0 : 1; this.beatT = G.time; this.gesture('beat');
     }
     this.talkPrev = talk;
+  }
+  /* bumped into: the body gives (a jolt, a step back, maybe a stumble or a fall when you came running), the head
+     turns to you, and he says something; again and again and he gets rough (the behaviour decides via onBump) */
+  bumped(v, dx, dz) {
+    const H = this.hp;
+    this.bumpN = G.time - (this.bumpT || -99) < 40 ? (this.bumpN || 0) + 1 : 1; this.bumpT = G.time;
+    const dir = this._hs.set(dx, 0, dz);
+    H.flinchBy(dir, 0.3 + v * 0.15, 'chest', '', true);
+    this.vx += dx * v * 0.7; this.vz += dz * v * 0.7;
+    PLAY.vx *= 0.25; PLAY.vz *= 0.25; PHP.bump(dir, Math.min(1, v / 4));
+    FOLEY.cloth(this.pos, 1.2); FOLEY.grunt(this.pos, 0.85, 0.5);
+    this.lookAt(this._ht.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
+    const fell = v > 4.2 && Math.random() < 0.55;
+    if (fell) H.fall(Math.random() < 0.5 ? 'side' : 'back', dir, Math.random() < 0.5 ? 'L' : 'R', 1.2 + Math.random());
+    worldEvent('bump', this.pos.x, this.pos.y, this.pos.z, { by: 'player', npc: this.id, v, fell, n: this.bumpN });
+    const info = { n: this.bumpN, v, fell };
+    if (this.onBump) this.onBump(info);
+    else this.speak(BUMP.pick(fell ? 'fall' : this.bumpN >= 3 ? 'shove' : this.bumpN === 2 ? 'second' : 'first'), undefined, fell || this.bumpN > 1 ? 'angry' : 'neutral', true);
+    if (!fell && this.bumpN >= 3) this.shove();
+  }
+  // a shove back: both hands at your chest, you stagger
+  shove() {
+    if (this.hp.busy()) return;
+    this.gesture('shove'); this.shoveAt = G.time + 0.26;
+  }
+  shoveHit() {
+    this.shoveAt = 0;
+    if (this.hp.busy()) return;
+    const dx = PLAY.pos.x - this.pos.x, dz = PLAY.pos.z - this.pos.z, d = Math.hypot(dx, dz) || 1;
+    if (d > 1.3) return;
+    PLAY.vx += dx / d * 3.6; PLAY.vz += dz / d * 3.6; PHP.bump(this._hs.set(dx / d, 0, dz / d), 1);
+    FOLEY.cloth(PLAY.pos, 1.4); FOLEY.grunt(this.pos, 0.8, 1);
+    if (DRUNK.level > 0.3 && Math.random() < DRUNK.level) DRUNK.stumble(Math.atan2(dx, dz), true, 0.4);
   }
   footstep() {
     if (Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) > 18) return;
@@ -253,7 +317,7 @@ class NPC {
       else { tgt.copy(this._gp); pole.copy(this._gq); }
       if (!h.cpOk) { h.cp.copy(tgt); h.cpOk = true; } else h.cp.lerp(tgt, 1 - Math.exp(-dt * 12));
       const at = GESTURE.safe(this._hs.copy(h.cp), L.build.width, L.build.belly);
-      const r = armIK(i, at, pole), o = h.ov;
+      const r = GESTURE.solveArm(i, at, pole, L.build.width, L.build.belly), o = h.ov;
       o.w = Wt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
     // the hands: holding something closes them, fighting makes fists; a gesture shapes them; a shape the behaviour asked for wins
