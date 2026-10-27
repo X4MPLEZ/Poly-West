@@ -49,12 +49,15 @@ function initInput(app, canvas, onAction) {
     if ((e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || performance.now() - (INPUT.lastTouch || -1e9) < 1000) return;
     if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
+      // in a fight with the revolver in the holster the right button is the guard; otherwise it draws and aims
+      if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.rmbBlock = true; onAction('fire'); return; }
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
     } else if (e.button === 0) { if (GUN.state === 'holster') FIST.down(true); else GUN.pressFire(); onAction('fire'); }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) FIST.up();
+    if (e.button === 2 && INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); return; }
     if (e.button === 2) { GUN.setAim(false); try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (err) { /* ignore */ } }
   });
   document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === canvas) lookBy(e.movementX, e.movementY, false); });
@@ -139,7 +142,9 @@ function pollGamepad(onAction) {
   if (b(3) && !prev[3]) INTERACT.use(0);
   if (b(1) && !prev[1]) INTERACT.use(1);
   if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
-  if (b(6) !== !!prev[6]) GUN.setAim(b(6));
+  // left trigger: the guard in a fight (revolver holstered), else aim
+  if (b(6) && !prev[6]) { if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.padBlock = true; } else GUN.setAim(true); }
+  if (!b(6) && prev[6]) { if (INPUT.padBlock) { INPUT.padBlock = false; FIST.setBlock(false); } else GUN.setAim(false); }
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
   if (!b(7) && prev[7]) FIST.up();
   if (b(2) && !prev[2]) GUN.pressReload();

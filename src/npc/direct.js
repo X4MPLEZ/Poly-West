@@ -326,6 +326,18 @@ const DIRECT = {
       try { await this.tts(hank, 'Howdy, Fremder. So klinge ich jetzt.', 'neutral'); out.push('ElevenLabs: ok'); VOICE.line(hank, 'Howdy, Fremder. So klinge ich jetzt.'); }
       catch (e) { out.push('ElevenLabs: ' + (e.message || e.code)); }
     } else out.push('ElevenLabs: kein Schlüssel');
+    if ((SETTINGS.v.deepgramKey || '').trim()) out.push('Deepgram: ' + await this.testDeepgram());
     return out.join(' · ');
+  },
+  // a short connection to Deepgram: does it open with this key?
+  testDeepgram() {
+    return new Promise((res) => {
+      let ws, done = false; const end = (t) => { if (done) return; done = true; try { ws.close(); } catch (e) { /* ignore */ } res(t); };
+      try { ws = new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&language=de&encoding=linear16&sample_rate=16000', ['token', SETTINGS.v.deepgramKey.trim()]); }
+      catch (e) { res('keine Verbindung'); return; }
+      ws.onopen = () => end('ok');
+      ws.onclose = (ev) => end(ev.code === 1008 || ev.code === 4001 ? 'Schlüssel abgelehnt' : 'Schlüssel abgelehnt oder keine Verbindung');
+      setTimeout(() => end('keine Antwort'), 6000);
+    });
   }
 };

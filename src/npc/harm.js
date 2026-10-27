@@ -172,9 +172,9 @@ class Vitals {
     if (this.dead) return null;
     const N = this.npc;
     this.lastHit = G.time;
-    const head = o.head, p = o.power || 1;
-    if (o.ground) this.trauma += 0.11 * p; else this.trauma += (head ? 0.035 : 0.02) * p;
-    this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1);
+    const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
+    if (o.ground) this.trauma += 0.11 * p / tough; else this.trauma += (head ? 0.035 : 0.02) * p / tough;
+    this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1) / tough;
     this.pain = Math.min(1.5, this.pain + (head ? 0.25 : 0.18) * p);
     // bruises: one per zone, growing
     const zone = head ? 'head' : 'chest', ex = this.wounds.find((w) => w.kind === 'blow' && w.zone === zone && w.heal < 0.6);
@@ -280,7 +280,7 @@ class Vitals {
       this.dropT = (this.dropT || 0) - dt;
       if (this.dropT <= 0 && this.bleed > 0.0008) { this.dropT = 0.6 + Math.random() * 1.5 / (this.bleed * 600); HARM.drop(N); }
     }
-    this.daze = Math.max(0, this.daze - dt * 0.09);
+    this.daze = Math.max(0, this.daze - dt * (N.fight && N.fight.on ? 0.11 : 0.09));
     this.pain = Math.max(0, this.pain - dt * 0.05);
     this.stunT = Math.max(0, this.stunT - dt);
     const F = this.flinch; F.k *= Math.exp(-dt * (F.punch ? 7 : 4.5));
@@ -432,6 +432,7 @@ class Vitals {
 
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
+  THIN: /^(uArm|fArm|thigh|shin|foot|hat)/, SLACK: 0.06,
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
@@ -451,23 +452,32 @@ const HARM = {
         if (t < near || t > far) continue;
         if (!bestItem || t < bestItem.t) bestItem = { t, npc: N, item: it, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t) };
       }
-      for (const name in N.ch.p) {
-        const part = N.ch.p[name];
-        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
-        const B = g.boundingBox;
-        this._inv.copy(part.matrixWorld).invert();
-        const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
-        let t0 = near, t1 = best ? best.t : far, ok = true;
-        for (const ax of ['x', 'y', 'z']) {
-          const inv = 1 / (ld[ax] || 1e-9);
-          let ta = (B.min[ax] - lo[ax]) * inv, tb = (B.max[ax] - lo[ax]) * inv;
-          if (ta > tb) { const s = ta; ta = tb; tb = s; }
-          t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-          if (t0 > t1) { ok = false; break; }
+      // the exact boxes first; if the bullet missed the whole body only just, the thin parts (arms, hands, legs,
+      // feet, the hat) count a few centimetres wider, so a shot at an arm is not lost by a hair
+      const before = best;
+      for (let pass = 0; pass < 2; pass++) {
+        if (pass === 1 && best !== before) break;
+        for (const name in N.ch.p) {
+          if (pass === 1 && !this.THIN.test(name)) continue;
+          const part = N.ch.p[name];
+          const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+          const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
+          this._inv.copy(part.matrixWorld).invert();
+          const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
+          let t0 = near, t1 = best ? best.t : far, ok = true;
+          for (const ax of ['x', 'y', 'z']) {
+            const inv = 1 / (ld[ax] || 1e-9), sl = ax === 'y' ? m * 0.5 : m;
+            let ta = (B.min[ax] - sl - lo[ax]) * inv, tb = (B.max[ax] + sl - lo[ax]) * inv;
+            if (ta > tb) { const s = ta; ta = tb; tb = s; }
+            t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+            if (t0 > t1) { ok = false; break; }
+          }
+          if (!ok) continue;
+          const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
+          // the point onto the part itself (for the zone, the wound and the stain)
+          local.x = clamp(local.x, B.min.x, B.max.x); local.y = clamp(local.y, B.min.y, B.max.y); local.z = clamp(local.z, B.min.z, B.max.z);
+          best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
         }
-        if (!ok) continue;
-        const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
-        best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0) };
       }
     }
     if (bestItem && (!best || bestItem.t < best.t + 0.06)) return bestItem;

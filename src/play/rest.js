@@ -1,8 +1,7 @@
 /* ---------- tiredness and sleep ----------
    need: the hours of sleep the body asks for. Awake it grows by half an hour per hour (16 hours awake -> 8 hours
-   of sleep), sleeping pays it back an hour per hour. How long one CAN sleep follows from it: what the body needs,
-   plus a little more at night (the night is for sleeping), and a short rest is always possible. A bed allows up to
-   12 hours, a nap in a chair at most 2. Drink makes the sleep longer and heavier.
+   of sleep), sleeping pays it back an hour per hour; it shows on the wheel and in a word when it gets late.
+   A bed allows up to 12 hours at any time; a chair or bench a doze of 2 hours, or at night the whole night.
    What sleep does (sobering up, healing, the town going on) is done by everyone who listens to TIME.onSkip. */
 const REST = {
   need: 2, lastToast: 0,
@@ -21,14 +20,13 @@ const REST = {
       FIST.stamina = 1;
     });
   },
-  // the longest sleep in minutes for a bed ('bed') or a chair ('nap'), starting now
+  // the longest sleep in minutes: in a bed always up to 12 hours; in a chair or on a bench a doze of two hours,
+  // or, in the evening and at night, through the night until the morning
   maxMinutes(kind) {
-    const h = TIME.hour(), night = h >= 20 || h < 4 ? 2.5 : h >= 18 || h < 7 ? 1.25 : 0.5;
-    let hours = this.need + night + Math.min(DRUNK.level, 1) * 4;
-    // in a bed at night one can always sleep through until the morning
-    if (kind === 'bed' && (h >= 20 || h < 5)) hours = Math.max(hours, TIME.until(7.5) / 60);
-    hours = clamp(hours, 1, kind === 'nap' ? 2 : 12);
-    return Math.round(hours * 4) * 15;
+    if (kind === 'bed') return 720;
+    const h = TIME.hour();
+    if (h >= 19 || h < 5) return Math.max(120, Math.round(TIME.until(7) / 15) * 15);
+    return 120;
   },
   // tired, fresh … in words for the wheel
   word() { const n = this.need; return n < 2 ? 'ausgeschlafen' : n < 5 ? 'etwas müde' : n < 9 ? 'müde' : n < 13 ? 'sehr müde' : 'todmüde'; },

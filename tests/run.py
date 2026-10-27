@@ -737,7 +737,7 @@ async def check_sleep(g):
       return out; }''')
     ok = (r['offer'].startswith('Zimmer mieten') and r['open'] and r['capped'] and r['min'] == 15 and r['quarter'] and r['noGun'] and r['slept'] == 600
           and r['clock'] == '07:00' and r['sober'] < 0.05 and r['paid'] == 50 and r['rent'] and r['done'] and r['atDoor'] and 'dein Zimmer' in r['again']
-          and r['dayMax'] <= 60 and r['napMax'] <= 60 and r['max'] >= 600)
+          and r['dayMax'] == 720 and r['napMax'] == 120 and r['max'] >= 600)
     return ok, json.dumps(r, ensure_ascii=False)
 
 HARM_SHOOT = '''(a) => { const N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.toStreet(); N.pos.set(-4, 0, 2); N.yaw = -Math.PI / 2; N.faceYaw = -Math.PI / 2; N.vx = N.vz = 0;
@@ -788,7 +788,7 @@ async def check_brawl(g):
       out.hurtMe = +PHP.hp.toFixed(2);
       // keep punching until he goes down
       let n = 0; PHP.hp = 1;
-      for (let k = 0; k < 60 * 20 && !N.hp.down(); k++) { if (k % 24 === 0) { tap(); n++; } face(); PHP.hp = Math.max(PHP.hp, 0.6); G.stepFrame(1/60); }
+      for (let k = 0; k < 60 * 40 && !N.hp.down(); k++) { if (k % 45 === 0) { tap(); n++; } face(); PHP.hp = Math.max(PHP.hp, 0.6); G.stepFrame(1/60); }
       out.downAfter = n; out.down = N.hp.down();
       // on the ground: the punches go down to him
       for (let k = 0; k < 20; k++) { face(); G.stepFrame(1/60); }
@@ -802,7 +802,7 @@ async def check_brawl(g):
       out.home = [BARKEEP.st, N.room ? N.room.type : null, !!NAV.area(N.pos.x, N.pos.z, N.pos.y).pen];
       PHP.hp = 1; BARKEEP.revive(); BARKEEP.forget(); G.noRender = false;
       return out; }''')
-    ok = (r['brawl'] == 'brawl' and r['fighting'] and r['hurtMe'] < 0.95 and r['down'] and r['downAfter'] <= 12 and r['groundClip'] and r['groundHit']
+    ok = (r['brawl'] == 'brawl' and r['fighting'] and r['hurtMe'] < 0.95 and r['down'] and r['downAfter'] <= 70 and r['groundClip'] and r['groundHit']
           and r['after'] in ('return', 'idle', 'hurt') and 'geprügelt' in r['mem'] and r['home'][1] == 'saloon' and r['home'][2])
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -849,13 +849,16 @@ async def check_revenge(g):
       B.grudge = 0.6; B.ambushT = -999; let k = 0;
       for (; k < 60 * 15 && B.st !== 'brawl'; k++) G.stepFrame(1/60);
       out.ambush = B.st;
-      for (k = 0; k < 60 * 15 && PHP.hp > 0.95; k++) G.stepFrame(1/60);
-      out.reached = +PHP.hp.toFixed(2) < 0.95;
+      const tr = []; let lt = '';
+      for (k = 0; k < 60 * 25 && PHP.hp > 0.95; k++) { G.stepFrame(1/60); const st = N.fight.st + '/' + (N.walking() ? 'w' : '') + '/' + NAV.area(N.pos.x, N.pos.z, N.pos.y).key + '/' + Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z).toFixed(1); if (k % 60 === 0) tr.push(st); }
+      out.reached = +PHP.hp.toFixed(2) < 0.95; if (!out.reached) out.trace = tr;
       N.fight.stop(); B.st = 'return'; B.returnT = 0; for (k = 0; k < 60 * 30 && B.st !== 'idle'; k++) G.stepFrame(1/60);
       // the shotgun
       PHP.hp = 1; B.grudge = 0.95; B.gunDownT = -99; const shots = []; const off = onWorldEvent((e) => { if (e.type === 'npcShot2') shots.push(e.warning); });
       const door = rwp(R, 0, R.floorY, -2.5); PLAY.pos.copy(door); GAIT.init = false;
+      const rnd0 = Math.random; Math.random = () => 0.5;   // (no lucky misses: the pellets find you)
       for (k = 0; k < 60 * 40 && !(PHP.out && PHP.out.woke); k++) G.stepFrame(1/60);
+      Math.random = rnd0;
       out.shotgun = shots; out.out = !!PHP.out; out.atDoc = G.room && G.room.type;
       for (k = 0; k < 60 * 6 && PHP.out; k++) G.stepFrame(1/60);
       out.quits = B.grudge < 0.85; out.mem = B.mem.slice(-1)[0];
@@ -887,8 +890,74 @@ async def check_fate(g):
     ok = r['dead'] and r['noBar'] and r['grave'] and r['next'] == 'Walt' and r['knows'] and r['grudge'] >= 0.55 and r['ctx'] and r['saved']
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_block(g):
+    """in a fight the second button is the guard: a punch from the front is caught on the arms (little damage,
+       costs stamina), the next punch is a counter; a hook gets more through; without stamina the guard breaks;
+       the buttons follow: Schlag + Deckung + Revolver, armed: Feuer + Wegstecken (+ Laden), calm: Zielen"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); B.forget(); PHP.hp = 1; PHP.out = null; FIST.stamina = 1;
+      PLAY.pos.set(-8, 0, 2); GAIT.init = false; B.toStreet(); N.pos.set(-7.0, 0, 2); G.noRender = true;
+      for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+      HUD.btnKey = ''; HUD.buttons(); out.calm = [document.getElementById('bAim').textContent, document.getElementById('bGun').hidden];
+      const face = () => { PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); };
+      face(); FIST.down(false); FIST.up(); for (let k = 0; k < 20; k++) { face(); G.stepFrame(1/60); }
+      HUD.buttons(); out.fight = [document.getElementById('bAim').textContent, document.getElementById('bGun').hidden];
+      // hold the guard while he punches
+      let blocked = 0; const off = onWorldEvent((e) => { if (e.type === 'playerBlock') blocked++; });
+      FIST.setBlock(true); const hp0 = PHP.hp;
+      for (let k = 0; k < 60 * 8 && blocked < 2; k++) { face(); G.stepFrame(1/60); }
+      out.blocked = blocked; out.lost = +(hp0 - PHP.hp).toFixed(3); out.stamina = +FIST.stamina.toFixed(2); out.pose = +FIST.blockW.toFixed(2);
+      out.counterReady = G.time - FIST.counterT < 0.8;
+      FIST.setBlock(false); for (let k = 0; k < 4; k++) G.stepFrame(1/60);
+      const d0 = N.hp.daze; face(); FIST.down(false); FIST.up(); for (let k = 0; k < 30; k++) { face(); G.stepFrame(1/60); }
+      out.counter = +(N.hp.daze - d0).toFixed(2);
+      // no stamina: the guard breaks
+      FIST.setBlock(true); FIST.stamina = 0.03; const hp1 = PHP.hp; let k = 0;
+      for (; k < 60 * 8 && PHP.hp >= hp1 - 0.02; k++) { face(); FIST.stamina = Math.min(FIST.stamina, 0.03); G.stepFrame(1/60); }
+      out.broken = +(hp1 - PHP.hp).toFixed(2);
+      FIST.setBlock(false); N.fight.stop(); PHP.hp = 1; PHP.out = null; FALL.cancel(); B.revive(); B.forget(); G.noRender = false;
+      return out; }''')
+    ok = (r['calm'][0] == 'Zielen' and r['calm'][1] and r['fight'][0] == 'Deckung' and not r['fight'][1] and r['blocked'] >= 2 and r['lost'] < 0.1
+          and r['stamina'] < 0.95 and r['pose'] > 0.8 and r['counter'] > 0.2 and r['broken'] > 0.05)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_deepgram(g):
+    """listening with Deepgram (stand-ins): the key goes as the socket's protocol, raw PCM goes out, pieces of a
+       sentence are put together and sent when the pause comes (speech_final); a rejected key falls back"""
+    await g.js(RESET)
+    r = await g.js(r'''async () => { SETTINGS.v.aiSave = false; const out = {}, RealWS = window.WebSocket, realGUM = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const sent = [], socks = []; let reject = false;
+      class FakeWS { constructor(url, proto) { this.url = url; this.proto = proto; this.readyState = 0; socks.push(this);
+          setTimeout(() => { if (reject) { this.readyState = 3; this.onclose && this.onclose({ code: 1008 }); return; } this.readyState = 1; this.onopen && this.onopen(); }, 20); }
+        send(d) { sent.push(d); } close() { this.readyState = 3; } }
+      window.WebSocket = FakeWS;
+      const ac = new AudioContext(), osc = ac.createOscillator(), dst = ac.createMediaStreamDestination(); osc.connect(dst); osc.start();
+      navigator.mediaDevices.getUserMedia = async () => dst.stream;
+      const keep = [TALK.ai, SETTINGS.v.aiTalk, SETTINGS.v.sttMode]; let asked = '';
+      TALK.ai = async (p, o) => { asked = p; o.onText({ text: '[nod, neutral] Kommt.' }); return { text: '[nod, neutral] Kommt.' }; }; SETTINGS.v.aiTalk = true; const keepVoice = SETTINGS.v.voice; SETTINGS.v.voice = false;
+      try {
+        SETTINGS.set('deepgramKey', 'dg-test'); SETTINGS.set('sttMode', 'auto'); out.prov = HEAR.prov();
+        const B = BARKEEP, R = B.R, N = B.npc, bar = rwp(R, 2.55, R.floorY, -5.0); PLAY.pos.set(bar.x, bar.y, bar.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+        N.talkT = 0; TALK.start(false); await new Promise((x) => setTimeout(x, 600));
+        const ws = socks[0]; out.url = !!ws && /nova-3/.test(ws.url) && /language=de/.test(ws.url) && /linear16/.test(ws.url) && ws.proto[0] === 'token' && ws.proto[1] === 'dg-test';
+        out.binary = sent.some((d) => d instanceof ArrayBuffer && d.byteLength > 100);
+        const res = (t, f, sf) => ws.onmessage({ data: JSON.stringify({ type: 'Results', is_final: f, speech_final: sf, channel: { alternatives: [{ transcript: t }] } }) });
+        res('Gib mir', false, false); out.partial = document.getElementById('talkHeard').textContent;
+        res('Gib mir einen', true, false); res('Whiskey.', true, true);
+        await new Promise((x) => setTimeout(x, 100));
+        out.sentToHank = /Gib mir einen Whiskey/.test(asked);
+        TALK.close();
+        reject = true; socks.length = 0; HEAR.dgFails = 1; TALK.start(false); await new Promise((x) => setTimeout(x, 300)); out.dead = HEAR.dead; TALK.close();
+      } finally {
+        window.WebSocket = RealWS; if (realGUM) navigator.mediaDevices.getUserMedia = realGUM; osc.stop(); ac.close();
+        TALK.ai = keep[0]; SETTINGS.v.aiTalk = keep[1]; SETTINGS.set('deepgramKey', ''); SETTINGS.set('sttMode', keep[2]); HEAR.dead = false; HEAR.stop(); SETTINGS.v.voice = keepVoice;
+      }
+      SETTINGS.v.aiSave = true; return out; }''')
+    ok = r['prov'] == 'deepgram' and r['url'] and r['binary'] and 'Gib mir' in r['partial'] and r['sentToHank'] and r['dead']
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

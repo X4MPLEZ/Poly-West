@@ -1,5 +1,47 @@
 /* ---------- HUD: perf readout, gait info, slow motion, sound toggle, hints ---------- */
 const HUD = {
+  aimMode: 'aim', clockT: 0, vitT: 0,
+  /* the buttons say what they do right now, and only what makes sense now shows:
+     unarmed: Schlag + Zielen (draws); in a fight: Schlag + Deckung + a small revolver button; armed: Feuer +
+     Wegstecken, Laden only when there is room in the cylinder; peaceful things (Reden, Hinsetzen, Bestellen …) in
+     the column of context buttons, never in place of the fist */
+  buttons() {
+    const fight = FIST.inFight(), armed = GUN.state !== 'holster';
+    const mode = armed ? 'aim' : fight ? 'block' : 'aim';
+    const key = mode + '/' + armed + '/' + GUN.wantAim + '/' + (GUN.ammo < 6 && GUN.reserve > 0) + '/' + !!GUN.reload + '/' + fight;
+    if (key === this.btnKey) return;
+    this.btnKey = key; this.aimMode = mode;
+    const ba = this.$('bAim'), bg = this.$('bGun'), br = this.$('bReload'), bt = this.$('bTalk');
+    ba.textContent = mode === 'block' ? 'Deckung' : GUN.wantAim ? 'Wegstecken' : 'Zielen';
+    ba.classList.toggle('block', mode === 'block');
+    bg.hidden = !(fight && !armed);
+    br.hidden = !(armed && ((GUN.ammo < 6 && GUN.reserve > 0) || GUN.reload));
+    document.getElementById('app').classList.toggle('fighting', fight || armed);
+    void bt;
+  },
+  // the clock only shows when it means something: on waking, after hours went by, at the full hour, with the bag open
+  showClock(secs) { this.clockT = Math.max(this.clockT, secs || 5); },
+  // life and stamina under the cross: only in a fight or while hurt
+  vitals(dt) {
+    const show = FIST.inFight() || PHP.hp < 0.995 || FIST.stamina < 0.995;
+    this.vitT = show ? 2.5 : Math.max(0, this.vitT - dt);
+    const el = this.vitEl || (this.vitEl = this.$('vitals'));
+    const on = this.vitT > 0;
+    if (on !== this.vitOn) { this.vitOn = on; el.classList.toggle('on', on); }
+    if (!on) return;
+    const hp = PHP.hp.toFixed(3), st = FIST.stamina.toFixed(3);
+    if (hp !== this.lastHp) { this.lastHp = hp; this.$('vLife').style.transform = `scaleX(${hp})`; el.classList.toggle('lowLife', PHP.hp < 0.3); }
+    if (st !== this.lastSt) { this.lastSt = st; this.$('vStam').style.transform = `scaleX(${st})`; el.classList.toggle('lowStam', FIST.stamina < 0.2); }
+  },
+  tick(dt) {
+    this.buttons(); this.vitals(dt);
+    const h = TIME.hour(), full = Math.floor(h);
+    if (this.lastHour !== undefined && full !== this.lastHour) this.showClock(4);
+    this.lastHour = full;
+    this.clockT = Math.max(0, this.clockT - dt);
+    const on = this.clockT > 0 || WHEEL.open || MENU.open || SLEEP.busy();
+    if (on !== this.clockOn) { this.clockOn = on; this.$('name').classList.toggle('on', on); }
+  },
   init(onHud) {
     const $ = (id) => document.getElementById(id);
     this.$ = $;
@@ -10,9 +52,12 @@ const HUD = {
     this.winT = 0; this.winN = 0; this.lastText = 0; this.costs = [];
     this.fpsEl = $('fps');
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    this.hint(coarse ? 'Unten links ziehen: laufen · sonst wischen: Kamera · Schlag antippen oder halten · Zielen zieht den Revolver · Tasche · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen · Tab Tasche · Esc Menü');
+    this.hint(coarse ? 'Unten links ziehen: laufen · sonst wischen: Kamera · Schlag antippen oder halten · im Kampf Deckung halten · Zielen zieht den Revolver · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Rechtsklick zielen, im Kampf: Deckung · Q Revolver · R laden · E benutzen · Tab Tasche · Esc Menü');
     if (coarse) { document.getElementById('app').classList.add('touch'); GUN.touch = true; }
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
+    // the place and the time at the start, and after every jump in time (sleep, blackout)
+    this.showClock(8);
+    TIME.onSkip(() => this.showClock(7));
   },
   setSlow(on) {
     G.slow = on;
@@ -64,7 +109,11 @@ function initGunPad(onAction) {
   on('bFire', () => { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); });
   const bf = document.getElementById('bFire');
   for (const ev of ['pointerup', 'pointercancel']) bf.addEventListener(ev, () => FIST.up());
-  on('bAim', () => GUN.aimButton());
+  // the second button: the guard while someone fights you (held), otherwise aim (draws the revolver) / put it away
+  on('bAim', () => { if (HUD.aimMode === 'block') FIST.setBlock(true); else GUN.aimButton(); });
+  const ba = document.getElementById('bAim');
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) ba.addEventListener(ev, () => FIST.setBlock(false));
+  on('bGun', () => GUN.toggleHolster());
   on('bReload', () => GUN.pressReload());
 
 }

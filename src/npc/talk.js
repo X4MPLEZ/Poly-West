@@ -53,6 +53,7 @@ const TALK = {
     SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
     SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
     SETTINGS.on('sttMode', () => { HEAR.dead = false; });
+    SETTINGS.on('deepgramKey', () => { HEAR.dead = false; HEAR.dgFails = 0; });
     SETTINGS.on('voiceModel', () => { DIRECT.v3Dead = false; });
     // the built-in voice is the stand-in for ElevenLabs once it is in the browser's storage (then loading it is quick)
     try { if (window.caches) caches.keys().then((k) => { if (k.some((n) => n.startsWith('poly-west-voice-'))) VOICE.backup = true; }).catch(() => {}); } catch (e) { /* none */ }
@@ -124,7 +125,7 @@ const TALK = {
     // the microphone window is connected: just talk (hands free while the strip is open)
     if (MICWIN.connected()) { this.remoteMode(); return; }
     // typing, or a dictation app / keyboard (Wispr Flow, the phone's microphone key) that writes into the line
-    if (this.micOff || SETTINGS.v.sttMode === 'type' || (SETTINGS.v.sttMode === 'eleven' && !HEAR.wanted() && !this.SR)) { this.typeMode(); return; }
+    if (this.micOff || SETTINGS.v.sttMode === 'type' || ((SETTINGS.v.sttMode === 'eleven' || SETTINGS.v.sttMode === 'deepgram') && !HEAR.wanted() && !this.SR)) { this.typeMode(); return; }
     if (!this.busy) this.listen();
   },
   /* ElevenLabs listening: words appear while you speak, a pause sends them; nothing is taken while he speaks */
@@ -142,7 +143,7 @@ const TALK = {
         else if (k === 'closed') setTimeout(() => { if (this.open && HEAR.wanted() && !HEAR.active()) HEAR.start(cb); }, 300);   // the service ended the session: on we go
         else if (k === 'err') {
           this.setState(txt, 'err'); this.mic.setAttribute('aria-pressed', 'false');
-          if (HEAR.dead) { TOAST.show('Zuhören über ElevenLabs: ' + txt + '. Es hört wieder der Browser zu.', 'long'); setTimeout(() => { if (this.open) this.start(); }, 1500); }
+          if (HEAR.dead) { TOAST.show('Zuhören über ' + HEAR.name() + ': ' + txt + '. Es hört wieder der Browser zu.', 'long'); setTimeout(() => { if (this.open) this.start(); }, 1500); }
         }
       },
       muted: () => { const n = this.npc; let synth = false; try { synth = !!(window.speechSynthesis && speechSynthesis.speaking); } catch (e) { /* ignore */ } return !n || this.busy || n.talkT > 0 || VOICE.speaking(n) || synth; }

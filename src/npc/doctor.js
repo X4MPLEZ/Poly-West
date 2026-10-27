@@ -36,7 +36,7 @@ const DOC = {
     const N = this.npc;
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
-    N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35 });
+    N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
     N.onHarm = (info) => this.onHarm(info);
     onWorldEvent((e) => this.event(e));
     // the player at the doctor's: get patched up

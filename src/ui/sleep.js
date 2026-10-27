@@ -127,10 +127,10 @@ const SLEEP = {
     this.max = Math.max(15, REST.maxMinutes(ctx.kind));
     // a guess at what one wants: in the evening until seven in the morning, by day as long as the body allows
     const h = TIME.hour(), toMorning = TIME.until(7);
-    this.mins = ctx.kind === 'nap' ? Math.min(60, this.max) : (h >= 19 || h < 5) ? Math.min(toMorning, this.max) : Math.min(120, this.max);
+    this.mins = ctx.kind === 'nap' ? (this.max > 120 ? this.max : 60) : (h >= 19 || h < 5) ? Math.min(toMorning, this.max) : Math.min(120, this.max);
     this.mins = Math.max(15, Math.round(this.mins / 15) * 15);
     this.pos = this.mins;
-    const where = ctx.kind === 'nap' ? 'Dösen im Sitzen' : (this.rented(ctx.where) ? 'Dein Zimmer im ' : 'Ein Zimmer im ') + this.NAME[ctx.where] + (this.rented(ctx.where) ? '' : ' · ' + this.PRICE[ctx.where] + ' ¢');
+    const where = ctx.kind === 'nap' ? (this.max > 120 ? 'Die Nacht hier verbringen' : 'Dösen im Sitzen') : (this.rented(ctx.where) ? 'Dein Zimmer im ' : 'Ein Zimmer im ') + this.NAME[ctx.where] + (this.rented(ctx.where) ? '' : ' · ' + this.PRICE[ctx.where] + ' ¢');
     document.getElementById('sleepWhere').textContent = where;
     document.getElementById('sleepBody').textContent = 'Du bist ' + REST.word() + ' · höchstens ' + this.dur(this.max);
     this.el.hidden = false; this.el.classList.remove('going', 'gone');
@@ -174,7 +174,7 @@ const SLEEP = {
     this.nowIcon.textContent = hMark >= 6 && hMark < 19.5 ? '☀' : '☾';
     this.tWake.textContent = TIME.str(TIME.min + (this.st ? this.shown : this.mins));
     this.tDur.textContent = this.st ? 'schläft …' : this.dur(this.mins);
-    document.getElementById('sleepGo').textContent = this.ctx && this.ctx.kind === 'nap' ? 'Dösen' : 'Schlafen';
+    document.getElementById('sleepGo').textContent = this.ctx && this.ctx.kind === 'nap' && this.mins <= 120 ? 'Dösen' : 'Schlafen';
   },
   click(hard) {
     GSFX.run(() => { const { g, t } = GSFX.out(0.4); SFX.noiseHit(t, g, { type: 'bandpass', freq: hard ? 900 : 2300 + Math.random() * 300, q: 6, gain: hard ? 0.35 : 0.22, attack: 0.0008, decay: hard ? 0.05 : 0.018 }); });

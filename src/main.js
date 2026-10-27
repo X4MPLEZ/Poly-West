@@ -82,6 +82,7 @@
     AMB.update(dt);
     SAVE.update(dt);
     DAYNIGHT.update(dt);
+    HUD.tick(Math.min(frameMs / 1000, 0.1));
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();

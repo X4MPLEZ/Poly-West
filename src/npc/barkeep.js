@@ -286,7 +286,11 @@ const BARKEEP = {
     for (const m of H.bandages) if (m.parent) m.parent.remove(m);
     for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
     N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
-    if (this.st === 'dead' || this.st === 'hurt') { const p = this.roomPt(this.X.stand, -6.4, this._v); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle(); }
+    // healed and back at his place behind the bar, whatever he was doing
+    if (N.fight.on) N.fight.stop();
+    if (this.props.shotgun) this.props.shotgun.visible = false;
+    this.sg = null; this.fightLog = null; this.abortServe(); this.orders.length = 0;
+    const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.vx = N.vz = 0; N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle();
   },
   helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
@@ -313,15 +317,15 @@ const BARKEEP = {
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
       colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) },
-      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.55 } },
+      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
       colors: { shirt: rgb(0xd8cdb6), vest: rgb(0x5a3a28), jeans: rgb(0x3e3a34), jeansD: rgb(0x34302b), bandana: rgb(0x8a2a22), stache: rgb(0x9a5a2a), skin: rgb(0xe0aa86), skinD: rgb(0xc89070), boot: rgb(0x3a2418), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), hair: rgb(0x8a4a22) },
-      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.6 } },
+      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
       colors: { shirt: rgb(0xcfc6b0), vest: rgb(0x3a3a30), jeans: rgb(0x4a4238), jeansD: rgb(0x3e372e), bandana: rgb(0x3a3a30), stache: rgb(0xb0aaa0), skin: rgb(0xd09a78), skinD: rgb(0xb88464), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xcfc8b4), hair: rgb(0xb0aaa0) },
-      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.5 } }
+      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
   ],
   whoI: 0,
   who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },

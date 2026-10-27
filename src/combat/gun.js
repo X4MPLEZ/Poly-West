@@ -349,6 +349,12 @@ const GUN = {
     xh.style.opacity = String(clamp((this.camW - 0.3) / 0.5, 0, 1) * show);
     xh.style.setProperty('--gap', (2.5 + this.spread * 190).toFixed(1) + 'px');
     xh.classList.toggle('steady', this.steady > 0.85);
+    // over a person the cross turns red (checked a few times a second, from the camera like the bullet)
+    if (this.camW > 0.5 && G.frameNo % 4 === 0) {
+      const cam = G.cam, d = cam.getWorldDirection(this._xd || (this._xd = new THREE.Vector3())), h = HARM.trace(cam.position, d, 0.5, 60);
+      const on = !!(h && h.npc && !h.npc.hp.dead && (h.npc.room || null) === (G.room || null));
+      if (on !== this.onBody) { this.onBody = on; xh.classList.toggle('onBody', on); }
+    } else if (this.camW <= 0.5 && this.onBody) { this.onBody = false; xh.classList.remove('onBody'); }
     const key = this.ammo + '/' + this.reserve + '/' + (this.state === 'holster') + '/' + !!this.reload;
     if (key !== this.lastHudKey) {
       this.lastHudKey = key;
@@ -361,6 +367,6 @@ const GUN = {
       HUD.$('bFire').textContent = this.state === 'holster' ? 'Schlag' : 'Feuer';
     }
     const ba = HUD.$('bAim');
-    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); ba.textContent = this.wantAim ? 'Wegstecken' : 'Zielen'; }
+    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); }   // the label: HUD.buttons
   }
 };

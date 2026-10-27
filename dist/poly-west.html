@@ -78,6 +78,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #xhair i:nth-child(3) { right: var(--gap); } #xhair i:nth-child(4) { left: var(--gap); }
 #xhair b { position: absolute; left: -1px; top: -1px; width: 2px; height: 2px; border-radius: 50%; background: #fff; box-shadow: 0 0 1.5px #000; }
 #xhair.steady i, #xhair.steady b { background: #ffd98a; }
+#xhair.onBody i, #xhair.onBody b { background: #ff6a52; }
 
 /* stamina for punching: a thin bar under the middle of the screen, only while it is not full */
 #stam { position: absolute; left: 50%; top: calc(50% + 70px); width: 90px; height: 4px; margin-left: -45px; border-radius: 2px; background: rgba(22, 15, 10, 0.6); opacity: 0; transition: opacity 0.3s ease; pointer-events: none; overflow: hidden; }
@@ -109,7 +110,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #bAim { width: 64px; height: 64px; right: calc(104px + env(safe-area-inset-right, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; }
 #bAim[aria-pressed="true"] { background: rgba(231, 166, 64, 0.7); color: var(--ink); font-size: 8.8px; letter-spacing: -0.3px; }
 #bReload { width: 52px; height: 52px; right: calc(112px + env(safe-area-inset-right, 0px)); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); font-size: 10.5px; }
-.touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 12px; }
+.touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 58px; }
+.touch #ammo.dim { display: none; }  /* only with the gun out; below the clock pill */
 .touch #hint { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 46%; }
 /* context action: what E does here (touch: a button above the thumb) */
 #prompt { position: absolute; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); pointer-events: none;
@@ -344,6 +346,31 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 @keyframes swStuck { 25% { transform: rotate(-1.5deg); } 75% { transform: rotate(1deg); } }
 .sleeping #hud, .sleeping #prompt, .sleeping #says { visibility: hidden; }
 @media (max-height: 460px) { #sleepDial { width: min(300px, 64vmin); height: min(300px, 64vmin); } .swTitle { font-size: 17px; } .swBox { gap: 3px; } .swBtns button { padding: 6px 16px; min-height: 40px; } }
+
+/* life and stamina: two thin bars under the cross, only in a fight or while hurt */
+#stam { display: none !important; }
+#vitals { position: absolute; left: 50%; top: calc(50% + 64px); width: 104px; margin-left: -52px; display: flex; flex-direction: column; gap: 3px; opacity: 0; transition: opacity 0.35s ease; pointer-events: none; }
+#vitals.on { opacity: 1; }
+#vitals .vb { display: block; height: 4px; border-radius: 2px; background: rgba(22, 15, 10, 0.6); overflow: hidden; box-shadow: 0 0 2px rgba(0, 0, 0, 0.5); }
+#vitals .vb.stam { height: 3px; width: 78%; margin: 0 auto; }
+#vitals i { display: block; height: 100%; transform-origin: left center; transition: transform 0.15s linear; }
+#vitals .life i { background: #d8452f; }
+#vitals .stam i { background: var(--bone); }
+#vitals.lowStam .stam i { background: var(--bad); }
+#vitals.lowLife .life { animation: vPulse 0.9s ease-in-out infinite; }
+@keyframes vPulse { 50% { box-shadow: 0 0 8px rgba(216, 69, 47, 0.9); } }
+/* the place and the time: only when it means something (start, waking, the full hour, bag, menu) */
+#name { opacity: 0; transform: translateY(-6px); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
+#name.on { opacity: 1; transform: none; }
+/* the guard button and the small revolver button in a fight */
+#bAim.block { background: rgba(120, 150, 190, 0.35); border-color: rgba(170, 200, 235, 0.85); }
+#bAim.block.down { background: rgba(170, 200, 235, 0.75); color: var(--ink); }
+#bGun { width: 46px; height: 46px; right: calc(118px + env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); font-size: 9.5px; }
+#bGun[hidden], #bReload[hidden] { display: none; }
+/* the bag up in the top bar, out of the thumbs' way */
+#bBag { width: 40px !important; height: 40px !important; right: calc(16px + env(safe-area-inset-right, 0px)) !important; bottom: auto !important; top: 58px; font-size: 9px !important; }
+/* in a fight or with the gun out, nothing peaceful offers itself */
+.fighting #bTalk, .fighting #prompt3 { display: none !important; }
 </style>
 
 <div id="app">
@@ -374,6 +401,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
     </div>
     <div id="hint"></div>
     <div id="stam" aria-hidden="true"><i></i></div>
+    <div id="vitals" aria-hidden="true"><span class="vb life"><i id="vLife"></i></span><span class="vb stam"><i id="vStam"></i></span></div>
     <div id="prompt" hidden role="status"><span class="pa" id="prompt1"><kbd>E</kbd><span id="promptTxt"></span></span><span class="pa" id="prompt2" hidden><kbd>R</kbd><span id="promptTxt2"></span></span></div>
     <div id="prompt3" class="pa" hidden><kbd>V</kbd><span>Reden</span></div>
     <section id="talk" hidden aria-label="Gespräch">
@@ -402,6 +430,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <button id="bReload" class="pb" type="button">Laden</button>
       <button id="bAim" class="pb" type="button" aria-pressed="false">Zielen</button>
       <button id="bFire" class="pb" type="button">Feuer</button>
+      <button id="bGun" class="pb" type="button" hidden aria-label="Revolver ziehen">Revolver</button>
       <button id="bUse" class="pb" type="button" hidden></button>
       <button id="bUse2" class="pb" type="button" hidden></button>
       <button id="bBag" class="pb" type="button" aria-label="Tasche">Tasche</button>
@@ -758,7 +787,8 @@ const SETTINGS = {
     { key: 'claudeKey', label: 'KI-Schlüssel: Claude, Groq oder OpenAI (wird am Anfang erkannt)', type: 'secret', def: '', own: true },
     { key: 'aiModel', label: 'KI-Modell (leer = passendes wird genommen)', type: 'text', def: '', own: true },
     { key: 'elevenKey', label: 'ElevenLabs-Schlüssel (elevenlabs.io)', type: 'secret', def: '', own: true },
-    { key: 'sttMode', label: 'Spracheingabe', type: 'choice', def: 'auto', own: true, options: [['auto', 'Automatisch'], ['eleven', 'ElevenLabs'], ['browser', 'Browser'], ['type', 'Tippen / Diktier-App']] },
+    { key: 'deepgramKey', label: 'Deepgram-Schlüssel (deepgram.com, nur Zuhören)', type: 'secret', def: '', own: true },
+    { key: 'sttMode', label: 'Spracheingabe', type: 'choice', def: 'auto', own: true, options: [['auto', 'Automatisch'], ['eleven', 'ElevenLabs'], ['deepgram', 'Deepgram'], ['browser', 'Browser'], ['type', 'Tippen / Diktier-App']] },
     { key: 'voiceModel', label: 'ElevenLabs-Stimme', type: 'choice', def: 'flash', own: true, options: [['flash', 'Schnell'], ['v3', 'Ausdrucksstark (v3)']] },
     { label: 'Hanks Stimme aussuchen', type: 'voices', own: true },
     { key: 'elevenVoice', label: 'Hanks Stimme: Voice-ID (leer = passende wird gesucht)', type: 'text', def: '', own: true },
@@ -4225,6 +4255,7 @@ function updatePlayer(dt) {
   if (aiming) target = Math.min(target, WALK * 0.8);
   const punching = FIST.st !== 'idle';
   if (punching) target = Math.min(target, WALK * 0.5);
+  if (FIST.blocking) target = Math.min(target, WALK * 0.5);
   if (DRINK.busy()) target = Math.min(target, WALK * 0.55);
   target *= DRUNK.maxSpeed();
   const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
@@ -4236,6 +4267,11 @@ function updatePlayer(dt) {
   if (punching && FIST.faceYaw !== null) {
     let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * (22 - 15 * Math.min(DRUNK.level, 1))));   // drunk: turns into the punch slowly, no snapping
+  } else if (FIST.blockW > 0.3 && FIST.opponent()) {
+    // blocking: the guard stays towards the one you fight, whichever way you step
+    const O = FIST.opponent(), ty = Math.atan2(O.pos.x - PLAY.pos.x, O.pos.z - PLAY.pos.z);
+    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+    PLAY.yaw += d * (1 - Math.exp(-dt * 12));
   } else if (aiming) {
     // aiming: the body turns side-on to the target, right shoulder forward
     const ty = PLAY.camYaw + Math.PI + 0.35;
@@ -4368,12 +4404,15 @@ function initInput(app, canvas, onAction) {
     if ((e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) || performance.now() - (INPUT.lastTouch || -1e9) < 1000) return;
     if (SIT.busy() || DEV.fly || MENU.open || SHOP.open || WHEEL.open || DRINK.busy() || DRUNK.blocked()) return;
     if (e.button === 2) {
+      // in a fight with the revolver in the holster the right button is the guard; otherwise it draws and aims
+      if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.rmbBlock = true; onAction('fire'); return; }
       GUN.setAim(true); onAction('aim');
       try { const r = canvas.requestPointerLock && canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* not allowed here */ }
     } else if (e.button === 0) { if (GUN.state === 'holster') FIST.down(true); else GUN.pressFire(); onAction('fire'); }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) FIST.up();
+    if (e.button === 2 && INPUT.rmbBlock) { INPUT.rmbBlock = false; FIST.setBlock(false); return; }
     if (e.button === 2) { GUN.setAim(false); try { if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (err) { /* ignore */ } }
   });
   document.addEventListener('mousemove', (e) => { if (document.pointerLockElement === canvas) lookBy(e.movementX, e.movementY, false); });
@@ -4458,7 +4497,9 @@ function pollGamepad(onAction) {
   if (b(3) && !prev[3]) INTERACT.use(0);
   if (b(1) && !prev[1]) INTERACT.use(1);
   if (SIT.busy()) { INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b); if (INPUT.padX || INPUT.padY) onAction('move'); return; }
-  if (b(6) !== !!prev[6]) GUN.setAim(b(6));
+  // left trigger: the guard in a fight (revolver holstered), else aim
+  if (b(6) && !prev[6]) { if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.padBlock = true; } else GUN.setAim(true); }
+  if (!b(6) && prev[6]) { if (INPUT.padBlock) { INPUT.padBlock = false; FIST.setBlock(false); } else GUN.setAim(false); }
   if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
   if (!b(7) && prev[7]) FIST.up();
   if (b(2) && !prev[2]) GUN.pressReload();
@@ -5080,9 +5121,8 @@ const FALL = {
 // ==== play/rest.js ====
 /* ---------- tiredness and sleep ----------
    need: the hours of sleep the body asks for. Awake it grows by half an hour per hour (16 hours awake -> 8 hours
-   of sleep), sleeping pays it back an hour per hour. How long one CAN sleep follows from it: what the body needs,
-   plus a little more at night (the night is for sleeping), and a short rest is always possible. A bed allows up to
-   12 hours, a nap in a chair at most 2. Drink makes the sleep longer and heavier.
+   of sleep), sleeping pays it back an hour per hour; it shows on the wheel and in a word when it gets late.
+   A bed allows up to 12 hours at any time; a chair or bench a doze of 2 hours, or at night the whole night.
    What sleep does (sobering up, healing, the town going on) is done by everyone who listens to TIME.onSkip. */
 const REST = {
   need: 2, lastToast: 0,
@@ -5101,14 +5141,13 @@ const REST = {
       FIST.stamina = 1;
     });
   },
-  // the longest sleep in minutes for a bed ('bed') or a chair ('nap'), starting now
+  // the longest sleep in minutes: in a bed always up to 12 hours; in a chair or on a bench a doze of two hours,
+  // or, in the evening and at night, through the night until the morning
   maxMinutes(kind) {
-    const h = TIME.hour(), night = h >= 20 || h < 4 ? 2.5 : h >= 18 || h < 7 ? 1.25 : 0.5;
-    let hours = this.need + night + Math.min(DRUNK.level, 1) * 4;
-    // in a bed at night one can always sleep through until the morning
-    if (kind === 'bed' && (h >= 20 || h < 5)) hours = Math.max(hours, TIME.until(7.5) / 60);
-    hours = clamp(hours, 1, kind === 'nap' ? 2 : 12);
-    return Math.round(hours * 4) * 15;
+    if (kind === 'bed') return 720;
+    const h = TIME.hour();
+    if (h >= 19 || h < 5) return Math.max(120, Math.round(TIME.until(7) / 15) * 15);
+    return 120;
   },
   // tired, fresh … in words for the wheel
   word() { const n = this.need; return n < 2 ? 'ausgeschlafen' : n < 5 ? 'etwas müde' : n < 9 ? 'müde' : n < 13 ? 'sehr müde' : 'todmüde'; },
@@ -5134,7 +5173,7 @@ const PHP = {
     const p = o.power || 1;
     this.lastHit = G.time;
     this.hp = Math.max(0, this.hp - (o.shot ? 0.45 : (o.head ? 0.13 : 0.09)) * p * (o.heavy ? 1.5 : 1));
-    this.daze += (o.head ? 0.32 : 0.15) * p * (o.heavy ? 1.6 : 1);
+    if (!o.chip) this.daze += (o.head ? 0.32 : 0.15) * p * (o.heavy ? 1.6 : 1);
     this.flash = 1;
     // the body jerks away from the blow (PHP.pose)
     const c = Math.cos(PLAY.yaw), sn = Math.sin(PLAY.yaw), lx = o.dir.x * c - o.dir.z * sn, lz = o.dir.x * sn + o.dir.z * c;
@@ -6448,6 +6487,12 @@ const GUN = {
     xh.style.opacity = String(clamp((this.camW - 0.3) / 0.5, 0, 1) * show);
     xh.style.setProperty('--gap', (2.5 + this.spread * 190).toFixed(1) + 'px');
     xh.classList.toggle('steady', this.steady > 0.85);
+    // over a person the cross turns red (checked a few times a second, from the camera like the bullet)
+    if (this.camW > 0.5 && G.frameNo % 4 === 0) {
+      const cam = G.cam, d = cam.getWorldDirection(this._xd || (this._xd = new THREE.Vector3())), h = HARM.trace(cam.position, d, 0.5, 60);
+      const on = !!(h && h.npc && !h.npc.hp.dead && (h.npc.room || null) === (G.room || null));
+      if (on !== this.onBody) { this.onBody = on; xh.classList.toggle('onBody', on); }
+    } else if (this.camW <= 0.5 && this.onBody) { this.onBody = false; xh.classList.remove('onBody'); }
     const key = this.ammo + '/' + this.reserve + '/' + (this.state === 'holster') + '/' + !!this.reload;
     if (key !== this.lastHudKey) {
       this.lastHudKey = key;
@@ -6460,7 +6505,7 @@ const GUN = {
       HUD.$('bFire').textContent = this.state === 'holster' ? 'Schlag' : 'Feuer';
     }
     const ba = HUD.$('bAim');
-    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); ba.textContent = this.wantAim ? 'Wegstecken' : 'Zielen'; }
+    if (this.lastAimHud !== this.wantAim) { this.lastAimHud = this.wantAim; ba.setAttribute('aria-pressed', this.wantAim ? 'true' : 'false'); }   // the label: HUD.buttons
   }
 };
 
@@ -6739,9 +6784,26 @@ const FIST = {
   st: 'idle', clip: null, clipName: '', k: 0, t: 0, side: 1, combo: 0, lastPunch: -9, stamina: 1, rest: 0, fight: 0, gw: 0, heavy: false, weak: false,
   holding: false, downT: 0, moved: 0, mouse: false, queued: false, charge: 0, faceYaw: null, hitDone: false, landed: false,
   fists: null, from: null, body: { ty: 0, tp: 0, pz: 0, dy: 0, roll: 0 }, bodyFrom: null, trail: [], trailT: 0,
-  active() { return this.st !== 'idle' || this.fight > 0; },
+  active() { return this.st !== 'idle' || this.fight > 0 || this.blockW > 0.02; },
+  /* ---- the block: hold the guard tight in front of the face; blows from the front are caught on the arms (costs
+     stamina, a hook still gets some through, with no stamina left the guard breaks); straight after a caught blow
+     your next punch is a counter (harder, cannot be blocked) ---- */
+  blockWant: false, blocking: false, blockW: 0, counterT: -9,
+  setBlock(on) { this.blockWant = !!on; },
+  // somebody is fighting you (or you have just thrown a punch): the second button is the block, not the aim
+  inFight() {
+    if (this.fight > 0) return true;
+    for (const N of NPCS.list) if (N.fight && N.fight.on && !N.hp.dead && Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 8) return true;
+    return false;
+  },
+  // the one you are fighting (to face while blocking)
+  opponent() {
+    let best = null, bd = 6;
+    for (const N of NPCS.list) { if (N.hp.dead || N.hp.down()) continue; const d = Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); if (d < bd && ((N.fight && N.fight.on) || d < 2.5)) { bd = d; best = N; } }
+    return best;
+  },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked() || PHP.busy()) return; this.blockWant = false; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;
@@ -6792,7 +6854,8 @@ const FIST = {
   // the guard rides on the upper body, so twisting and leaning never bring the face into the fists
   guardOf(i) {
     const m = i === 1 ? 1 : -1;
-    const f = new THREE.Vector3(GUARD_T.fist[0] * m, GUARD_T.fist[1], GUARD_T.fist[2]), pl = new THREE.Vector3(GUARD_T.pole[0] * m, GUARD_T.pole[1], GUARD_T.pole[2]);
+    const b = this.blockW || 0;
+    const f = new THREE.Vector3(lerp(GUARD_T.fist[0], -0.08, b) * m, lerp(GUARD_T.fist[1], 0.64, b), lerp(GUARD_T.fist[2], 0.2, b)), pl = new THREE.Vector3(lerp(GUARD_T.pole[0], -0.15, b) * m, GUARD_T.pole[1], lerp(GUARD_T.pole[2], 0.55, b));
     // drunk: the guard sags, drifts apart and wobbles
     const L = Math.min(DRUNK.level, 1);
     if (L > 0.05) { f.x += m * 0.1 * L; f.y -= 0.2 * L + Math.sin(G.time * 2.1 + i * 2) * 0.05 * L; f.z -= 0.08 * L; }
@@ -6872,8 +6935,11 @@ const FIST = {
     if (this.st === 'idle') this.faceYaw = null;   // the punch direction is forgotten once the punch is over
     // a drunk miss keeps turning him for a moment after the punch
     if (this.spin && this.st === 'idle') { const d = this.spin * (1 - Math.exp(-dt * 5)); PLAY.yaw += d; this.spin -= d; if (Math.abs(this.spin) < 0.01) this.spin = 0; }
+    this.blocking = this.blockWant && GUN.state === 'holster' && (this.st === 'idle' || this.st === 'recover') && !FALL.busy() && !SIT.busy() && !PHP.busy() && this.stamina > 0.02;
+    this.blockW += ((this.blocking ? 1 : 0) - this.blockW) * (1 - Math.exp(-dt * 16));
+    if (this.blocking) this.fight = Math.max(this.fight, 1);
     this.rest -= dt;
-    if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * 0.4);
+    if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * (this.blocking ? 0.12 : 0.4));
     this.fight = Math.max(0, this.fight - dt);
     if (GUN.state !== 'holster') { this.fight = 0; this.st = 'idle'; this.clip = null; }
     this.gw += ((this.active() ? 1 : 0) - this.gw) * (1 - Math.exp(-dt * 10));
@@ -6898,7 +6964,8 @@ const FIST = {
     const kind = this.clipName, ground = kind === 'ground' || kind === 'groundH', reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : ground ? 0.95 : 1.02;
     const yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw);
     const fistY = PLAY.pos.y + (ground ? 0.45 : kind === 'overhand' ? 1.45 : 1.48);
-    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25);
+    const counter = G.time - this.counterT < 0.8;
+    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25) * (counter ? 1.35 : 1);
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
@@ -6906,6 +6973,7 @@ const FIST = {
       if (ground ? !T.down : T.down) continue;
       if (!ground && (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35))) continue;
       if (Math.abs(wrapA(Math.atan2(dx, dz) - yaw)) > 0.95) continue;
+      if (T.npc && T.npc.fight && T.npc.fight.dodging()) continue;   // he slipped it
       if (d < hd) { hd = d; hit = T; }
     }
     if (!hit) return;
@@ -6928,8 +6996,8 @@ const FIST = {
     } else if (hit.kind === 'npc') {
       const N = hit.npc, dir = new THREE.Vector3(fx, 0, fz);
       // a light blow from the front into a raised guard is caught on the arms
-      if (!ground && !big && N.fight && N.fight.blocking(yaw) && Math.random() < 0.3 + N.fight.skill * 0.3) {
-        FSFX.block(p); N.hp.flinchBy(dir, 0.25, 'arm', '', true); N.fight.gotHit();
+      if (!ground && !big && !counter && N.fight && N.fight.blocking(yaw) && Math.random() < (kind === 'hook' ? 0.5 : 1) * (0.35 + N.fight.skill * 0.45)) {
+        FSFX.block(p); N.hp.flinchBy(dir, 0.25, 'arm', '', true); N.fight.gotHit(true); this.stamina = Math.max(0, this.stamina - 0.06);
         worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: 'npc', npc: N.id, kind, blocked: true });
         return;
       }
@@ -6938,6 +7006,7 @@ const FIST = {
       FSFX.flesh(p, power, big || kind === 'hook', head);
       if (head && Math.random() < (ground ? 0.5 : 0.25)) HARM.bloodFx(p, dir, 0.3, N);
       if (N.fight) N.fight.gotHit();
+      if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.1); }
       if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
@@ -6971,7 +7040,7 @@ const FIST = {
     if (!this.fists) this.snapFrom();
     const pi = this.side === 1 ? 1 : 0, m = this.side;                 // punching arm (index 1 = right) and mirror sign
     const V = (a, mm) => new THREE.Vector3(a[0] * mm, a[1], a[2]);
-    let goal = null, e = 1, bodyGoal = { ty: 0.1, tp: 0.06, pz: 0, dy: 0.05, roll: 0 };
+    let goal = null, e = 1, bodyGoal = { ty: 0.1, tp: 0.06 + this.blockW * 0.16, pz: 0, dy: 0.05 + this.blockW * 0.07, roll: 0 };
     if (this.st === 'charge') {
       e = EASE.out(clamp(this.t / 0.35, 0, 1));
       goal = { fist: V(CHARGE_R.fist, m), pole: V(CHARGE_R.pole, m) };
@@ -7299,7 +7368,7 @@ const INTERACT = {
     if (SIT.state === 'sit') {
       best = SIT.seat;
       if (free) acts = best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best).concat([{ label: 'Aufstehen', run: () => SIT.stand() }])
-        : [{ label: 'Aufstehen', run: () => SIT.stand() }, { label: 'Dösen', run: () => SLEEP.show({ kind: 'nap', seat: best }) }];
+        : [{ label: 'Aufstehen', run: () => SIT.stand() }, { label: TIME.hour() >= 19 || TIME.hour() < 5 ? 'Hier übernachten' : 'Dösen', run: () => SLEEP.show({ kind: 'nap', seat: best }) }];
     } else if (!force && SIT.state === 'none' && G.frameNo % 3 !== 0 && this.focus && !this.focus.occ && free) return;   // the search runs every third frame
     else if (SIT.state === 'none' && free && !GUN.aiming() && FIST.st === 'idle' && !(GUN.state === 'draw' || GUN.state === 'holstering')) {
       const p = PLAY.pos, room = ROOMSTATE.cur;
@@ -8281,9 +8350,9 @@ class Vitals {
     if (this.dead) return null;
     const N = this.npc;
     this.lastHit = G.time;
-    const head = o.head, p = o.power || 1;
-    if (o.ground) this.trauma += 0.11 * p; else this.trauma += (head ? 0.035 : 0.02) * p;
-    this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1);
+    const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
+    if (o.ground) this.trauma += 0.11 * p / tough; else this.trauma += (head ? 0.035 : 0.02) * p / tough;
+    this.daze += (o.ground ? 0.35 : head ? 0.3 : 0.12) * p * (o.heavy ? 1.6 : 1) / tough;
     this.pain = Math.min(1.5, this.pain + (head ? 0.25 : 0.18) * p);
     // bruises: one per zone, growing
     const zone = head ? 'head' : 'chest', ex = this.wounds.find((w) => w.kind === 'blow' && w.zone === zone && w.heal < 0.6);
@@ -8389,7 +8458,7 @@ class Vitals {
       this.dropT = (this.dropT || 0) - dt;
       if (this.dropT <= 0 && this.bleed > 0.0008) { this.dropT = 0.6 + Math.random() * 1.5 / (this.bleed * 600); HARM.drop(N); }
     }
-    this.daze = Math.max(0, this.daze - dt * 0.09);
+    this.daze = Math.max(0, this.daze - dt * (N.fight && N.fight.on ? 0.11 : 0.09));
     this.pain = Math.max(0, this.pain - dt * 0.05);
     this.stunT = Math.max(0, this.stunT - dt);
     const F = this.flinch; F.k *= Math.exp(-dt * (F.punch ? 7 : 4.5));
@@ -8541,6 +8610,7 @@ class Vitals {
 
 /* ---- the shared part: finding the zone a ray hits, blood, sounds ---- */
 const HARM = {
+  THIN: /^(uArm|fArm|thigh|shin|foot|hat)/, SLACK: 0.06,
   _inv: new THREE.Matrix4(), _o: new THREE.Vector3(), _d: new THREE.Vector3(), _p: new THREE.Vector3(), _q: new THREE.Vector3(),
   // the first hit of a ray (o, unit d) on any person or anything a person holds: { t, npc, zone, side, part, local, point, item }
   trace(o, d, near, far) {
@@ -8560,23 +8630,32 @@ const HARM = {
         if (t < near || t > far) continue;
         if (!bestItem || t < bestItem.t) bestItem = { t, npc: N, item: it, point: new THREE.Vector3(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t) };
       }
-      for (const name in N.ch.p) {
-        const part = N.ch.p[name];
-        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
-        const B = g.boundingBox;
-        this._inv.copy(part.matrixWorld).invert();
-        const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
-        let t0 = near, t1 = best ? best.t : far, ok = true;
-        for (const ax of ['x', 'y', 'z']) {
-          const inv = 1 / (ld[ax] || 1e-9);
-          let ta = (B.min[ax] - lo[ax]) * inv, tb = (B.max[ax] - lo[ax]) * inv;
-          if (ta > tb) { const s = ta; ta = tb; tb = s; }
-          t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-          if (t0 > t1) { ok = false; break; }
+      // the exact boxes first; if the bullet missed the whole body only just, the thin parts (arms, hands, legs,
+      // feet, the hat) count a few centimetres wider, so a shot at an arm is not lost by a hair
+      const before = best;
+      for (let pass = 0; pass < 2; pass++) {
+        if (pass === 1 && best !== before) break;
+        for (const name in N.ch.p) {
+          if (pass === 1 && !this.THIN.test(name)) continue;
+          const part = N.ch.p[name];
+          const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+          const B = g.boundingBox, m = pass === 1 ? this.SLACK : 0;
+          this._inv.copy(part.matrixWorld).invert();
+          const lo = this._o.copy(o).applyMatrix4(this._inv), ld = this._d.copy(d).transformDirection(this._inv);
+          let t0 = near, t1 = best ? best.t : far, ok = true;
+          for (const ax of ['x', 'y', 'z']) {
+            const inv = 1 / (ld[ax] || 1e-9), sl = ax === 'y' ? m * 0.5 : m;
+            let ta = (B.min[ax] - sl - lo[ax]) * inv, tb = (B.max[ax] + sl - lo[ax]) * inv;
+            if (ta > tb) { const s = ta; ta = tb; tb = s; }
+            t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+            if (t0 > t1) { ok = false; break; }
+          }
+          if (!ok) continue;
+          const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
+          // the point onto the part itself (for the zone, the wound and the stain)
+          local.x = clamp(local.x, B.min.x, B.max.x); local.y = clamp(local.y, B.min.y, B.max.y); local.z = clamp(local.z, B.min.z, B.max.z);
+          best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0), near: pass === 1 };
         }
-        if (!ok) continue;
-        const local = new THREE.Vector3(lo.x + ld.x * t0, lo.y + ld.y * t0, lo.z + ld.z * t0);
-        best = { t: t0, npc: N, part: name, local, point: new THREE.Vector3(o.x + d.x * t0, o.y + d.y * t0, o.z + d.z * t0) };
       }
     }
     if (bestItem && (!best || bestItem.t < best.t + 0.06)) return bestItem;
@@ -8760,16 +8839,32 @@ const NPC_PUNCH = {
 };
 class Brawler {
   constructor(npc, o) {
-    this.npc = npc; Object.assign(this, { courage: 0.6, power: 1, skill: 0.5, reach: 1.02 }, o || {});
+    this.npc = npc; Object.assign(this, { courage: 0.6, power: 1, skill: 0.5, reach: 1.02, toughness: 1 }, o || {});
+    this.slipT = 0;
     this.on = false; this.st = 'guard'; this.t = 0; this.cool = 1; this.clip = null; this.circle = 0; this.since = 0; this.gw = 0;
     this._v = new THREE.Vector3(); this._f = new THREE.Vector3(); this._a = new THREE.Vector3();
   }
   start() { if (this.on) return; this.on = true; this.st = 'guard'; this.cool = 0.5 + Math.random() * 0.5; this.since = 0; this.lastHitBy = G.time; this.circleDir = Math.random() < 0.5 ? 1 : -1; this.hits = 0; this.landed = 0; }
   stop() { this.on = false; this.clip = null; this.st = 'guard'; const N = this.npc; N.tw = 0; N.leanF = 0; N.lunge = 0; N.hurry = 1; N.free(0); N.free(1); }
+  // he has just slipped a punch (it goes past him)
+  dodging() { return this.on && this.slipT > 0; }
+  // a step out of the way: back out of reach (from a big wind-up), or back and to the side
+  slip(face, back) {
+    const N = this.npc, side = Math.random() < 0.5 ? 1 : -1, fx = Math.sin(face), fz = Math.cos(face);
+    this.slipT = 0.38; this.slipSide = side;
+    const b = back ? 3.2 : 1.6, sd = back ? 0.4 : 2.0;
+    N.vx += -fx * b + fz * side * sd; N.vz += -fz * b - fx * side * sd;
+    FSFX.cloth();
+  }
   // his guard is up and he faces the way the blow comes from
   blocking(yawOfBlow) { if (!this.on || this.st !== 'guard' || this.npc.hp.stunT > 0) return false; const N = this.npc; return Math.abs(wrapA(N.yaw - (yawOfBlow + Math.PI))) < 0.7; }
   // hit: a punch on its way is cut off; often he answers at once (a counter), sometimes he needs a moment
-  gotHit() { this.lastHitBy = G.time; if (this.clip && this.st !== 'back') { this.st = 'back'; this.t = 0; } this.cool = Math.random() < 0.45 + this.skill * 0.3 ? Math.min(this.cool, 0.35) : Math.max(this.cool, 0.6); }
+  gotHit(blocked) {
+    this.lastHitBy = G.time;
+    if (blocked) { this.cool = Math.min(this.cool, 0.25); return; }   // caught it on the arms: straight back at you
+    if (this.clip && this.st !== 'back') { this.st = 'back'; this.t = 0; }
+    this.cool = Math.random() < 0.45 + this.skill * 0.3 ? Math.min(this.cool, 0.3) : Math.max(this.cool, 0.55);
+  }
   // returns 'won' when the player is out, 'gave up', 'calm' when it is over, else null
   update(dt) {
     const N = this.npc, H = N.hp;
@@ -8788,6 +8883,18 @@ class Brawler {
     // the player is down: wait over him
     if (FALL.busy()) { N.stop(); this.clip = null; this.guard(dt, 0.6); return null; }
     this.cool -= dt * (H.stunT > 0 ? 0.4 : 1);
+    this.slipT = Math.max(0, this.slipT - dt);
+    // he reads your fists: a big wind-up he steps away from (or punches into), a punch he sometimes slips
+    if (!this.clip && H.stunT <= 0 && d < this.reach + 0.9) {
+      if (FIST.st === 'charge' && !this.sawCharge) {
+        this.sawCharge = true; const r = Math.random();
+        if (r < 0.3 + this.skill * 0.3) this.slip(face, true);
+        else if (r < 0.55 + this.skill * 0.25 && d < this.reach + 0.3) this.throwPunch('jab', 0.12);
+      }
+      if (FIST.st !== 'charge') this.sawCharge = false;
+      if (FIST.lastPunch !== this.seenPunch && (FIST.st === 'windup' || FIST.st === 'strike')) { this.seenPunch = FIST.lastPunch; if (Math.random() < this.skill * 0.3) this.slip(face, false); }
+    }
+    if (this.slipT > 0) { N.leanF += (-0.14 - N.leanF) * (1 - Math.exp(-dt * 14)); N.tw += (this.slipSide * 0.35 - N.tw) * (1 - Math.exp(-dt * 14)); this.guard(dt, 1); return null; }
     if (!this.clip) {
       // keep punching distance, circle a little
       const want = 0.9;
@@ -8797,7 +8904,10 @@ class Brawler {
         // not in the same part of the room (behind the bar, say): round by the way
         this.areaT = (this.areaT || 0) - 1;
         if (this.areaT <= 0) { this.areaT = 15; this.apart = NAV.area(N.pos.x, N.pos.z, N.pos.y).key !== NAV.area(P.x, P.z, P.y).key; }
-        if (d > 2.5 || this.apart) { if (!N.walking() || (this.walkT = (this.walkT || 0) + 1) % 30 === 0) N.walkTo(N.pos.x + dx * k, N.pos.z + dz * k, face); }
+        // (in another part of the room he walks towards you yourself: a point short of you might lie behind the bar)
+        // (on the way round, only the end point follows you: re-routing from halfway would send him back to the start of the route)
+        if (this.apart) { if (N.walking() && N.legPass) N.dest = [P.x, P.z, face]; else if (!N.walking() || (this.walkT = (this.walkT || 0) + 1) % 45 === 0) N.walkTo(P.x, P.z, face); }
+        else if (d > 2.5) { if (!N.walking() || (this.walkT = (this.walkT || 0) + 1) % 30 === 0) N.walkTo(N.pos.x + dx * k, N.pos.z + dz * k, face); }
         else N.goTo(N.pos.x + dx * k, N.pos.z + dz * k, face);
       } else {
         this.circle += dt; if (this.circle > 2 + Math.random()) { this.circle = 0; this.circleDir = -this.circleDir; }
@@ -8816,10 +8926,13 @@ class Brawler {
     // knees a little bent, weight on the balls of the feet
     N.crouchT = Math.max(N.crouchT, 0.12);
   }
-  throwPunch() {
+  throwPunch(force, wind) {
     const r = Math.random(), names = this.npc.hp.armUse[1] < 0.5 ? ['jab', 'body'] : this.npc.hp.armUse[0] < 0.5 ? ['cross', 'hook'] : ['jab', 'jab', 'cross', 'hook', 'body'];
-    const name = names[Math.floor(r * names.length)];
+    let name = force || this.nextName || names[Math.floor(r * names.length)];
+    if ((name === 'cross' || name === 'hook') && this.npc.hp.armUse[1] < 0.5) name = 'jab';
+    this.nextName = null;
     this.clip = NPC_PUNCH[name]; this.clipName = name; this.st = 'wind'; this.t = 0; this.done = false;
+    this.windK = wind ? wind / this.clip.wind : 1;
     this.npc.stop();
   }
   punch(dt, d, face) {
@@ -8828,10 +8941,11 @@ class Brawler {
     const V = (a) => this._a.set(a[0] * m, a[1], a[2]);
     let e;
     if (this.st === 'wind') {
-      e = smoothstep(0, 1, this.t / C.wind);
+      const W = C.wind * (this.windK || 1);
+      e = smoothstep(0, 1, this.t / W);
       const f = V(C.from); N.reach(i, f.x, f.y, f.z);
       N.tw = lerp(0, C.tw[0] * m, e); N.leanF = lerp(0.08, C.lean[0], e);
-      if (this.t >= C.wind) { this.st = 'strike'; this.t = 0; N.vx += Math.sin(face) * 1.2; N.vz += Math.cos(face) * 1.2; FSFX.whoosh(this.clipName === 'hook'); }
+      if (this.t >= W) { this.st = 'strike'; this.t = 0; N.vx += Math.sin(face) * 1.2; N.vz += Math.cos(face) * 1.2; FSFX.whoosh(this.clipName === 'hook'); }
     } else if (this.st === 'strike') {
       e = 1 - Math.pow(1 - Math.min(1, this.t / C.strike), 3);
       const a = V(C.from).clone(), b = V(C.to).clone();
@@ -8849,7 +8963,12 @@ class Brawler {
       e = smoothstep(0, 1, this.t / C.back);
       N.tw = lerp(C.tw[1] * m, 0, e); N.leanF = lerp(C.lean[1], 0.08, e); N.lunge = 0.12 * (1 - e);
       N.reach(i, i ? -0.19 : 0.19, 1.5, 0.36);
-      if (this.t >= C.back) { this.clip = null; this.st = 'guard'; this.cool = (0.7 + Math.random() * 1.1) * (1.3 - this.skill * 0.6); }
+      if (this.t >= C.back) {
+        this.clip = null; this.st = 'guard';
+        // a jab is often followed straight away by the other hand
+        if (this.clipName === 'jab' && Math.random() < 0.35 + this.skill * 0.3) { this.nextName = Math.random() < 0.7 ? 'cross' : 'hook'; this.cool = 0.05; }
+        else this.cool = (0.45 + Math.random() * 0.8) * (1.25 - this.skill * 0.5);
+      }
     }
     // the other hand keeps its guard
     N.reach(o, o === 0 ? 0.19 : -0.19, 1.52, 0.33);
@@ -8862,9 +8981,24 @@ class Brawler {
     const fx = Math.sin(face), fz = Math.cos(face);
     const a = Math.abs(wrapA(Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z) - N.yaw));
     if (d > this.reach + 0.38 || a > 0.75) { worldEvent('npcMiss', N.pos.x, N.pos.y, N.pos.z, { by: N.id }); return; }
-    this.landedNow = true; this.landed++;
     const heavy = this.clipName === 'hook', head = !C.low;
     const p = new THREE.Vector3(PLAY.pos.x - fx * 0.25, PLAY.pos.y + (head ? 1.55 : 1.15), PLAY.pos.z - fz * 0.25);
+    // your guard: caught on the arms if you face him (a hook still gets a little through); no stamina, no guard
+    const facing = Math.abs(wrapA(Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) - PLAY.yaw)) < 1.1;
+    if (FIST.blocking && facing) {
+      const cost = 0.13 * C.power * this.power * (heavy ? 1.5 : 1);
+      if (FIST.stamina > cost) {
+        FIST.stamina -= cost; FIST.rest = 0.5; FIST.counterT = G.time;
+        FSFX.block(p); FX.impactStar(p, 0.16);
+        PHP.hit({ power: C.power * this.power * (heavy ? 0.3 : 0.1), head: false, chip: true, dir: { x: fx, z: fz }, by: N });
+        N.hp.flinchBy(this._f.set(-fx, 0, -fz), 0.3, 'arm', '', true);
+        this.cool += 0.15;
+        worldEvent('playerBlock', p.x, p.y, p.z, { by: 'player', npc: N.id });
+        return;
+      }
+      FIST.stamina = 0; FIST.blockWant = false; TOAST.show('Deckung durchbrochen!');
+    }
+    this.landedNow = true; this.landed++;
     FX.impactStar(p, heavy ? 0.4 : 0.24);
     FSFX.flesh(p, C.power * this.power, heavy, head);
     G.hitStop = heavy ? 0.09 : 0.05;
@@ -9163,7 +9297,11 @@ const BARKEEP = {
     for (const m of H.bandages) if (m.parent) m.parent.remove(m);
     for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
     N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
-    if (this.st === 'dead' || this.st === 'hurt') { const p = this.roomPt(this.X.stand, -6.4, this._v); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle(); }
+    // healed and back at his place behind the bar, whatever he was doing
+    if (N.fight.on) N.fight.stop();
+    if (this.props.shotgun) this.props.shotgun.visible = false;
+    this.sg = null; this.fightLog = null; this.abortServe(); this.orders.length = 0;
+    const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.vx = N.vz = 0; N.room = this.R; N.yaw = this.faceYaw; this.st = 'idle'; this.pickIdle();
   },
   helloKind() { return this.att < -0.25 ? 'helloAngry' : this.served || this.mem.length ? 'helloBack' : 'helloNew'; },
   init(scene) {
@@ -9190,15 +9328,15 @@ const BARKEEP = {
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
       colors: { shirt: rgb(0xe9e3d3), vest: rgb(0x2c303a), jeans: rgb(0x3b3532), jeansD: rgb(0x322c29), bandana: rgb(0xe9e3d3), stache: rgb(0x231812), skin: rgb(0xdca482), skinD: rgb(0xc78c6c), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), hair: rgb(0x231812) },
-      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.55 } },
+      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
       colors: { shirt: rgb(0xd8cdb6), vest: rgb(0x5a3a28), jeans: rgb(0x3e3a34), jeansD: rgb(0x34302b), bandana: rgb(0x8a2a22), stache: rgb(0x9a5a2a), skin: rgb(0xe0aa86), skinD: rgb(0xc89070), boot: rgb(0x3a2418), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), hair: rgb(0x8a4a22) },
-      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.6 } },
+      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
       colors: { shirt: rgb(0xcfc6b0), vest: rgb(0x3a3a30), jeans: rgb(0x4a4238), jeansD: rgb(0x3e372e), bandana: rgb(0x3a3a30), stache: rgb(0xb0aaa0), skin: rgb(0xd09a78), skinD: rgb(0xb88464), boot: rgb(0x2a1d15), belt: rgb(0x2a1d15) },
       look: { hat: 'none', gun: false, apron: rgb(0xcfc8b4), hair: rgb(0xb0aaa0) },
-      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.5 } }
+      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
   ],
   whoI: 0,
   who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },
@@ -9924,7 +10062,7 @@ const DOC = {
     const N = this.npc;
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
-    N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35 });
+    N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
     N.onHarm = (info) => this.onHarm(info);
     onWorldEvent((e) => this.event(e));
     // the player at the doctor's: get patched up
@@ -10463,12 +10601,26 @@ const DIRECT = {
       try { await this.tts(hank, 'Howdy, Fremder. So klinge ich jetzt.', 'neutral'); out.push('ElevenLabs: ok'); VOICE.line(hank, 'Howdy, Fremder. So klinge ich jetzt.'); }
       catch (e) { out.push('ElevenLabs: ' + (e.message || e.code)); }
     } else out.push('ElevenLabs: kein Schlüssel');
+    if ((SETTINGS.v.deepgramKey || '').trim()) out.push('Deepgram: ' + await this.testDeepgram());
     return out.join(' · ');
+  },
+  // a short connection to Deepgram: does it open with this key?
+  testDeepgram() {
+    return new Promise((res) => {
+      let ws, done = false; const end = (t) => { if (done) return; done = true; try { ws.close(); } catch (e) { /* ignore */ } res(t); };
+      try { ws = new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&language=de&encoding=linear16&sample_rate=16000', ['token', SETTINGS.v.deepgramKey.trim()]); }
+      catch (e) { res('keine Verbindung'); return; }
+      ws.onopen = () => end('ok');
+      ws.onclose = (ev) => end(ev.code === 1008 || ev.code === 4001 ? 'Schlüssel abgelehnt' : 'Schlüssel abgelehnt oder keine Verbindung');
+      setTimeout(() => end('keine Antwort'), 6000);
+    });
   }
 };
 
 // ==== npc/hear.js ====
-/* ---------- listening with ElevenLabs (own page with an ElevenLabs key) ----------
+/* ---------- listening with ElevenLabs or Deepgram (own page with a key) ----------
+   Deepgram (Nova-3, German): the key goes in as the WebSocket's protocol ('token', key), the microphone as raw 16 kHz
+   PCM; words come back while you speak (interim results), and when you pause (endpointing) the sentence is done.
    Speech to text with "Scribe v2 Realtime": the microphone goes as 16 kHz PCM over a WebSocket, the words come back
    while you speak (partial_transcript), and when you pause the service ends the sentence itself (commit by voice
    activity) -> committed_transcript -> sent to the person you talk to. Much better German than the browser's own
@@ -10478,12 +10630,18 @@ const DIRECT = {
 const HEAR = {
   st: 'off', ws: null, stream: null, ctx: null, proc: null, sink: null, why: '', dead: false, terms: true,
   TERMS: ['Hank', 'Whiskey', 'Saloon', 'Dust Creek', 'Sheriff', 'Howdy', 'Cowboy', 'Revolver', 'Bourbon'],
-  // which way you speak: ElevenLabs when chosen (or "automatic" with an ElevenLabs key), else null (the old ways)
-  wanted() {
-    const m = SETTINGS.v.sttMode || 'auto';
-    if (m !== 'auto' && m !== 'eleven') return false;
-    return !this.dead && !!(SETTINGS.v.elevenKey || '').trim() && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof WebSocket !== 'undefined';
+  // which service listens: the one chosen, or "automatic": ElevenLabs if its key is there, else Deepgram; null: none (the old ways)
+  prov() {
+    const m = SETTINGS.v.sttMode || 'auto', el = !!(SETTINGS.v.elevenKey || '').trim(), dg = !!(SETTINGS.v.deepgramKey || '').trim();
+    if (m === 'eleven') return el ? 'eleven' : null;
+    if (m === 'deepgram') return dg ? 'deepgram' : null;
+    if (m !== 'auto') return null;
+    return el ? 'eleven' : dg ? 'deepgram' : null;
   },
+  wanted() {
+    return !this.dead && !!this.prov() && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof WebSocket !== 'undefined';
+  },
+  name() { return this.prov() === 'deepgram' ? 'Deepgram' : 'ElevenLabs'; },
   active() { return this.st === 'open' || this.st === 'connecting'; },
   // cb: { partial(text), final(text), state(kind, text), muted() }
   async start(cb) {
@@ -10493,6 +10651,7 @@ const HEAR = {
     try {
       if (!this.stream) this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     } catch (e) { this.fail('Mikrofon nicht erlaubt', true); return; }
+    if (this.prov() === 'deepgram') { this.startDeepgram(); return; }
     let token;
     try {
       const r = await fetch('https://api.elevenlabs.io/v1/single-use-token/realtime_scribe', { method: 'POST', headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
@@ -10522,6 +10681,36 @@ const HEAR = {
     ws.onclose = () => { if (this.ws === ws && this.st !== 'off' && this.st !== 'failed') { this.st = 'closed'; this.cb.state('closed', ''); } };
     ws.onerror = () => { if (this.ws === ws && !started) this.fail('Verbindung zum Zuhören fehlgeschlagen', false); };
   },
+  /* Deepgram: one socket, the key as its protocol; the words of a sentence come in pieces (is_final), the sentence
+     ends with speech_final (a pause) or UtteranceEnd */
+  startDeepgram() {
+    const q = ['model=nova-3', 'language=de', 'encoding=linear16', 'sample_rate=16000', 'channels=1', 'interim_results=true', 'punctuate=true', 'smart_format=true', 'endpointing=600', 'utterance_end_ms=1200', 'vad_events=true'];
+    let ws;
+    try { ws = this.ws = new WebSocket('wss://api.deepgram.com/v1/listen?' + q.join('&'), ['token', SETTINGS.v.deepgramKey.trim()]); }
+    catch (e) { this.fail('Deepgram: keine Verbindung', false); return; }
+    ws.binaryType = 'arraybuffer';
+    let opened = false, done = '', heard = false;
+    const flush = () => { const t = done.trim(); done = ''; if (t.length > 1) this.cb.final(t); };
+    ws.onopen = () => { if (this.ws !== ws) return; opened = true; this.st = 'open'; this.audio(); this.cb.state('listen', ''); this.dgFails = 0;
+      // while nothing is sent (he speaks, you are quiet) the line has to be kept alive
+      this.keep = setInterval(() => { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'KeepAlive' })); } catch (e) { /* closed */ } }, 4000); };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'Results') {
+        const t = ((m.channel && m.channel.alternatives && m.channel.alternatives[0] && m.channel.alternatives[0].transcript) || '').trim();
+        if (m.is_final) { if (t) { done += (done ? ' ' : '') + t; heard = true; } if (m.speech_final && heard) { heard = false; flush(); } else if (done) this.cb.partial(done); }
+        else if (t) this.cb.partial((done ? done + ' ' : '') + t);
+      } else if (m.type === 'UtteranceEnd') { if (done) { heard = false; flush(); } }
+    };
+    ws.onclose = (ev) => {
+      clearInterval(this.keep);
+      if (this.ws !== ws) return;
+      // closed before it ever opened: the key (or its rights) is the likely reason
+      if (!opened) { this.dgFails = (this.dgFails || 0) + 1; this.fail(ev.code === 1008 || ev.code === 4001 || this.dgFails > 1 ? 'Deepgram-Schlüssel abgelehnt' : 'Deepgram: keine Verbindung', this.dgFails > 1); return; }
+      if (this.st !== 'off' && this.st !== 'failed') { if (done) flush(); this.st = 'closed'; this.cb.state('closed', ''); }
+    };
+    ws.onerror = () => { /* onclose follows and tells what happened */ };
+  },
   // the microphone, made 16 kHz 16-bit and sent in pieces of about a tenth of a second
   audio() {
     if (this.ctx) return;
@@ -10539,6 +10728,7 @@ const HEAR = {
         for (let k = a; k < b; k++) s += inp[k];
         out[i] = Math.max(-32768, Math.min(32767, (s / Math.max(1, b - a)) * 32767));
       }
+      if (this.prov() === 'deepgram') { try { this.ws.send(out.buffer); } catch (err) { /* closed */ } return; }
       const by = new Uint8Array(out.buffer); let bin = '';
       for (let i = 0; i < by.length; i += 0x8000) bin += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000));
       try { this.ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: btoa(bin), commit: false, sample_rate: 16000 })); } catch (err) { /* closed */ }
@@ -10553,8 +10743,8 @@ const HEAR = {
   },
   // keep: leave the microphone open (a quick reconnect); otherwise everything is let go
   stop(keep) {
-    const ws = this.ws; this.ws = null;
-    if (ws) { try { ws.onclose = null; ws.close(); } catch (e) { /* ignore */ } }
+    const ws = this.ws; this.ws = null; clearInterval(this.keep);
+    if (ws) { try { ws.onclose = null; if (ws.readyState === 1 && this.prov() === 'deepgram') ws.send(JSON.stringify({ type: 'CloseStream' })); ws.close(); } catch (e) { /* ignore */ } }
     if (this.proc) { try { this.proc.disconnect(); this.proc.onaudioprocess = null; } catch (e) { /* ignore */ } this.proc = null; }
     if (this.ctx) { try { this.ctx.close(); } catch (e) { /* ignore */ } this.ctx = null; }
     if (!keep && this.stream) { for (const t of this.stream.getTracks()) t.stop(); this.stream = null; this.backToSpeaker(); }
@@ -10626,6 +10816,7 @@ const TALK = {
     SETTINGS.on('claudeKey', () => { this.lastErr = ''; pick(); });
     SETTINGS.on('elevenKey', () => { DIRECT.elevenDead = false; VOICE.toldEleven = false; HEAR.dead = false; HEAR.terms = true; });
     SETTINGS.on('sttMode', () => { HEAR.dead = false; });
+    SETTINGS.on('deepgramKey', () => { HEAR.dead = false; HEAR.dgFails = 0; });
     SETTINGS.on('voiceModel', () => { DIRECT.v3Dead = false; });
     // the built-in voice is the stand-in for ElevenLabs once it is in the browser's storage (then loading it is quick)
     try { if (window.caches) caches.keys().then((k) => { if (k.some((n) => n.startsWith('poly-west-voice-'))) VOICE.backup = true; }).catch(() => {}); } catch (e) { /* none */ }
@@ -10697,7 +10888,7 @@ const TALK = {
     // the microphone window is connected: just talk (hands free while the strip is open)
     if (MICWIN.connected()) { this.remoteMode(); return; }
     // typing, or a dictation app / keyboard (Wispr Flow, the phone's microphone key) that writes into the line
-    if (this.micOff || SETTINGS.v.sttMode === 'type' || (SETTINGS.v.sttMode === 'eleven' && !HEAR.wanted() && !this.SR)) { this.typeMode(); return; }
+    if (this.micOff || SETTINGS.v.sttMode === 'type' || ((SETTINGS.v.sttMode === 'eleven' || SETTINGS.v.sttMode === 'deepgram') && !HEAR.wanted() && !this.SR)) { this.typeMode(); return; }
     if (!this.busy) this.listen();
   },
   /* ElevenLabs listening: words appear while you speak, a pause sends them; nothing is taken while he speaks */
@@ -10715,7 +10906,7 @@ const TALK = {
         else if (k === 'closed') setTimeout(() => { if (this.open && HEAR.wanted() && !HEAR.active()) HEAR.start(cb); }, 300);   // the service ended the session: on we go
         else if (k === 'err') {
           this.setState(txt, 'err'); this.mic.setAttribute('aria-pressed', 'false');
-          if (HEAR.dead) { TOAST.show('Zuhören über ElevenLabs: ' + txt + '. Es hört wieder der Browser zu.', 'long'); setTimeout(() => { if (this.open) this.start(); }, 1500); }
+          if (HEAR.dead) { TOAST.show('Zuhören über ' + HEAR.name() + ': ' + txt + '. Es hört wieder der Browser zu.', 'long'); setTimeout(() => { if (this.open) this.start(); }, 1500); }
         }
       },
       muted: () => { const n = this.npc; let synth = false; try { synth = !!(window.speechSynthesis && speechSynthesis.speaking); } catch (e) { /* ignore */ } return !n || this.busy || n.talkT > 0 || VOICE.speaking(n) || synth; }
@@ -11437,6 +11628,48 @@ const AMB = {
 // ==== ui/hud.js ====
 /* ---------- HUD: perf readout, gait info, slow motion, sound toggle, hints ---------- */
 const HUD = {
+  aimMode: 'aim', clockT: 0, vitT: 0,
+  /* the buttons say what they do right now, and only what makes sense now shows:
+     unarmed: Schlag + Zielen (draws); in a fight: Schlag + Deckung + a small revolver button; armed: Feuer +
+     Wegstecken, Laden only when there is room in the cylinder; peaceful things (Reden, Hinsetzen, Bestellen …) in
+     the column of context buttons, never in place of the fist */
+  buttons() {
+    const fight = FIST.inFight(), armed = GUN.state !== 'holster';
+    const mode = armed ? 'aim' : fight ? 'block' : 'aim';
+    const key = mode + '/' + armed + '/' + GUN.wantAim + '/' + (GUN.ammo < 6 && GUN.reserve > 0) + '/' + !!GUN.reload + '/' + fight;
+    if (key === this.btnKey) return;
+    this.btnKey = key; this.aimMode = mode;
+    const ba = this.$('bAim'), bg = this.$('bGun'), br = this.$('bReload'), bt = this.$('bTalk');
+    ba.textContent = mode === 'block' ? 'Deckung' : GUN.wantAim ? 'Wegstecken' : 'Zielen';
+    ba.classList.toggle('block', mode === 'block');
+    bg.hidden = !(fight && !armed);
+    br.hidden = !(armed && ((GUN.ammo < 6 && GUN.reserve > 0) || GUN.reload));
+    document.getElementById('app').classList.toggle('fighting', fight || armed);
+    void bt;
+  },
+  // the clock only shows when it means something: on waking, after hours went by, at the full hour, with the bag open
+  showClock(secs) { this.clockT = Math.max(this.clockT, secs || 5); },
+  // life and stamina under the cross: only in a fight or while hurt
+  vitals(dt) {
+    const show = FIST.inFight() || PHP.hp < 0.995 || FIST.stamina < 0.995;
+    this.vitT = show ? 2.5 : Math.max(0, this.vitT - dt);
+    const el = this.vitEl || (this.vitEl = this.$('vitals'));
+    const on = this.vitT > 0;
+    if (on !== this.vitOn) { this.vitOn = on; el.classList.toggle('on', on); }
+    if (!on) return;
+    const hp = PHP.hp.toFixed(3), st = FIST.stamina.toFixed(3);
+    if (hp !== this.lastHp) { this.lastHp = hp; this.$('vLife').style.transform = `scaleX(${hp})`; el.classList.toggle('lowLife', PHP.hp < 0.3); }
+    if (st !== this.lastSt) { this.lastSt = st; this.$('vStam').style.transform = `scaleX(${st})`; el.classList.toggle('lowStam', FIST.stamina < 0.2); }
+  },
+  tick(dt) {
+    this.buttons(); this.vitals(dt);
+    const h = TIME.hour(), full = Math.floor(h);
+    if (this.lastHour !== undefined && full !== this.lastHour) this.showClock(4);
+    this.lastHour = full;
+    this.clockT = Math.max(0, this.clockT - dt);
+    const on = this.clockT > 0 || WHEEL.open || MENU.open || SLEEP.busy();
+    if (on !== this.clockOn) { this.clockOn = on; this.$('name').classList.toggle('on', on); }
+  },
   init(onHud) {
     const $ = (id) => document.getElementById(id);
     this.$ = $;
@@ -11447,9 +11680,12 @@ const HUD = {
     this.winT = 0; this.winN = 0; this.lastText = 0; this.costs = [];
     this.fpsEl = $('fps');
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    this.hint(coarse ? 'Unten links ziehen: laufen · sonst wischen: Kamera · Schlag antippen oder halten · Zielen zieht den Revolver · Tasche · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Q Revolver · Rechtsklick zielen · R laden · E benutzen · Tab Tasche · Esc Menü');
+    this.hint(coarse ? 'Unten links ziehen: laufen · sonst wischen: Kamera · Schlag antippen oder halten · im Kampf Deckung halten · Zielen zieht den Revolver · ☰ Menü' : 'WASD gehen · Shift rennen · Maus: Kamera · Linksklick schlagen, halten: Overhand · Rechtsklick zielen, im Kampf: Deckung · Q Revolver · R laden · E benutzen · Tab Tasche · Esc Menü');
     if (coarse) { document.getElementById('app').classList.add('touch'); GUN.touch = true; }
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
+    // the place and the time at the start, and after every jump in time (sleep, blackout)
+    this.showClock(8);
+    TIME.onSkip(() => this.showClock(7));
   },
   setSlow(on) {
     G.slow = on;
@@ -11501,7 +11737,11 @@ function initGunPad(onAction) {
   on('bFire', () => { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); });
   const bf = document.getElementById('bFire');
   for (const ev of ['pointerup', 'pointercancel']) bf.addEventListener(ev, () => FIST.up());
-  on('bAim', () => GUN.aimButton());
+  // the second button: the guard while someone fights you (held), otherwise aim (draws the revolver) / put it away
+  on('bAim', () => { if (HUD.aimMode === 'block') FIST.setBlock(true); else GUN.aimButton(); });
+  const ba = document.getElementById('bAim');
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) ba.addEventListener(ev, () => FIST.setBlock(false));
+  on('bGun', () => GUN.toggleHolster());
   on('bReload', () => GUN.pressReload());
 
 }
@@ -11875,10 +12115,10 @@ const SLEEP = {
     this.max = Math.max(15, REST.maxMinutes(ctx.kind));
     // a guess at what one wants: in the evening until seven in the morning, by day as long as the body allows
     const h = TIME.hour(), toMorning = TIME.until(7);
-    this.mins = ctx.kind === 'nap' ? Math.min(60, this.max) : (h >= 19 || h < 5) ? Math.min(toMorning, this.max) : Math.min(120, this.max);
+    this.mins = ctx.kind === 'nap' ? (this.max > 120 ? this.max : 60) : (h >= 19 || h < 5) ? Math.min(toMorning, this.max) : Math.min(120, this.max);
     this.mins = Math.max(15, Math.round(this.mins / 15) * 15);
     this.pos = this.mins;
-    const where = ctx.kind === 'nap' ? 'Dösen im Sitzen' : (this.rented(ctx.where) ? 'Dein Zimmer im ' : 'Ein Zimmer im ') + this.NAME[ctx.where] + (this.rented(ctx.where) ? '' : ' · ' + this.PRICE[ctx.where] + ' ¢');
+    const where = ctx.kind === 'nap' ? (this.max > 120 ? 'Die Nacht hier verbringen' : 'Dösen im Sitzen') : (this.rented(ctx.where) ? 'Dein Zimmer im ' : 'Ein Zimmer im ') + this.NAME[ctx.where] + (this.rented(ctx.where) ? '' : ' · ' + this.PRICE[ctx.where] + ' ¢');
     document.getElementById('sleepWhere').textContent = where;
     document.getElementById('sleepBody').textContent = 'Du bist ' + REST.word() + ' · höchstens ' + this.dur(this.max);
     this.el.hidden = false; this.el.classList.remove('going', 'gone');
@@ -11922,7 +12162,7 @@ const SLEEP = {
     this.nowIcon.textContent = hMark >= 6 && hMark < 19.5 ? '☀' : '☾';
     this.tWake.textContent = TIME.str(TIME.min + (this.st ? this.shown : this.mins));
     this.tDur.textContent = this.st ? 'schläft …' : this.dur(this.mins);
-    document.getElementById('sleepGo').textContent = this.ctx && this.ctx.kind === 'nap' ? 'Dösen' : 'Schlafen';
+    document.getElementById('sleepGo').textContent = this.ctx && this.ctx.kind === 'nap' && this.mins <= 120 ? 'Dösen' : 'Schlafen';
   },
   click(hard) {
     GSFX.run(() => { const { g, t } = GSFX.out(0.4); SFX.noiseHit(t, g, { type: 'bandpass', freq: hard ? 900 : 2300 + Math.random() * 300, q: 6, gain: hard ? 0.35 : 0.22, attack: 0.0008, decay: hard ? 0.05 : 0.018 }); });
@@ -12366,6 +12606,7 @@ const DEV = {
     AMB.update(dt);
     SAVE.update(dt);
     DAYNIGHT.update(dt);
+    HUD.tick(Math.min(frameMs / 1000, 0.1));
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();

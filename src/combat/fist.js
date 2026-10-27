@@ -86,9 +86,26 @@ const FIST = {
   st: 'idle', clip: null, clipName: '', k: 0, t: 0, side: 1, combo: 0, lastPunch: -9, stamina: 1, rest: 0, fight: 0, gw: 0, heavy: false, weak: false,
   holding: false, downT: 0, moved: 0, mouse: false, queued: false, charge: 0, faceYaw: null, hitDone: false, landed: false,
   fists: null, from: null, body: { ty: 0, tp: 0, pz: 0, dy: 0, roll: 0 }, bodyFrom: null, trail: [], trailT: 0,
-  active() { return this.st !== 'idle' || this.fight > 0; },
+  active() { return this.st !== 'idle' || this.fight > 0 || this.blockW > 0.02; },
+  /* ---- the block: hold the guard tight in front of the face; blows from the front are caught on the arms (costs
+     stamina, a hook still gets some through, with no stamina left the guard breaks); straight after a caught blow
+     your next punch is a counter (harder, cannot be blocked) ---- */
+  blockWant: false, blocking: false, blockW: 0, counterT: -9,
+  setBlock(on) { this.blockWant = !!on; },
+  // somebody is fighting you (or you have just thrown a punch): the second button is the block, not the aim
+  inFight() {
+    if (this.fight > 0) return true;
+    for (const N of NPCS.list) if (N.fight && N.fight.on && !N.hp.dead && Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 8) return true;
+    return false;
+  },
+  // the one you are fighting (to face while blocking)
+  opponent() {
+    let best = null, bd = 6;
+    for (const N of NPCS.list) { if (N.hp.dead || N.hp.down()) continue; const d = Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); if (d < bd && ((N.fight && N.fight.on) || d < 2.5)) { bd = d; best = N; } }
+    return best;
+  },
   /* ---- input ---- */
-  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
+  down(mouse) { if (SIT.busy() || DRINK.busy() || DRUNK.blocked() || PHP.busy()) return; this.blockWant = false; this.holding = true; this.downT = G.time; this.moved = 0; this.mouse = !!mouse; },
   up() {
     if (!this.holding) return;
     this.holding = false;
@@ -139,7 +156,8 @@ const FIST = {
   // the guard rides on the upper body, so twisting and leaning never bring the face into the fists
   guardOf(i) {
     const m = i === 1 ? 1 : -1;
-    const f = new THREE.Vector3(GUARD_T.fist[0] * m, GUARD_T.fist[1], GUARD_T.fist[2]), pl = new THREE.Vector3(GUARD_T.pole[0] * m, GUARD_T.pole[1], GUARD_T.pole[2]);
+    const b = this.blockW || 0;
+    const f = new THREE.Vector3(lerp(GUARD_T.fist[0], -0.08, b) * m, lerp(GUARD_T.fist[1], 0.64, b), lerp(GUARD_T.fist[2], 0.2, b)), pl = new THREE.Vector3(lerp(GUARD_T.pole[0], -0.15, b) * m, GUARD_T.pole[1], lerp(GUARD_T.pole[2], 0.55, b));
     // drunk: the guard sags, drifts apart and wobbles
     const L = Math.min(DRUNK.level, 1);
     if (L > 0.05) { f.x += m * 0.1 * L; f.y -= 0.2 * L + Math.sin(G.time * 2.1 + i * 2) * 0.05 * L; f.z -= 0.08 * L; }
@@ -219,8 +237,11 @@ const FIST = {
     if (this.st === 'idle') this.faceYaw = null;   // the punch direction is forgotten once the punch is over
     // a drunk miss keeps turning him for a moment after the punch
     if (this.spin && this.st === 'idle') { const d = this.spin * (1 - Math.exp(-dt * 5)); PLAY.yaw += d; this.spin -= d; if (Math.abs(this.spin) < 0.01) this.spin = 0; }
+    this.blocking = this.blockWant && GUN.state === 'holster' && (this.st === 'idle' || this.st === 'recover') && !FALL.busy() && !SIT.busy() && !PHP.busy() && this.stamina > 0.02;
+    this.blockW += ((this.blocking ? 1 : 0) - this.blockW) * (1 - Math.exp(-dt * 16));
+    if (this.blocking) this.fight = Math.max(this.fight, 1);
     this.rest -= dt;
-    if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * 0.4);
+    if (this.rest <= 0) this.stamina = Math.min(1, this.stamina + dt * (this.blocking ? 0.12 : 0.4));
     this.fight = Math.max(0, this.fight - dt);
     if (GUN.state !== 'holster') { this.fight = 0; this.st = 'idle'; this.clip = null; }
     this.gw += ((this.active() ? 1 : 0) - this.gw) * (1 - Math.exp(-dt * 10));
@@ -245,7 +266,8 @@ const FIST = {
     const kind = this.clipName, ground = kind === 'ground' || kind === 'groundH', reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : ground ? 0.95 : 1.02;
     const yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw);
     const fistY = PLAY.pos.y + (ground ? 0.45 : kind === 'overhand' ? 1.45 : 1.48);
-    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25);
+    const counter = G.time - this.counterT < 0.8;
+    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25) * (counter ? 1.35 : 1);
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
@@ -253,6 +275,7 @@ const FIST = {
       if (ground ? !T.down : T.down) continue;
       if (!ground && (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35))) continue;
       if (Math.abs(wrapA(Math.atan2(dx, dz) - yaw)) > 0.95) continue;
+      if (T.npc && T.npc.fight && T.npc.fight.dodging()) continue;   // he slipped it
       if (d < hd) { hd = d; hit = T; }
     }
     if (!hit) return;
@@ -275,8 +298,8 @@ const FIST = {
     } else if (hit.kind === 'npc') {
       const N = hit.npc, dir = new THREE.Vector3(fx, 0, fz);
       // a light blow from the front into a raised guard is caught on the arms
-      if (!ground && !big && N.fight && N.fight.blocking(yaw) && Math.random() < 0.3 + N.fight.skill * 0.3) {
-        FSFX.block(p); N.hp.flinchBy(dir, 0.25, 'arm', '', true); N.fight.gotHit();
+      if (!ground && !big && !counter && N.fight && N.fight.blocking(yaw) && Math.random() < (kind === 'hook' ? 0.5 : 1) * (0.35 + N.fight.skill * 0.45)) {
+        FSFX.block(p); N.hp.flinchBy(dir, 0.25, 'arm', '', true); N.fight.gotHit(true); this.stamina = Math.max(0, this.stamina - 0.06);
         worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: 'npc', npc: N.id, kind, blocked: true });
         return;
       }
@@ -285,6 +308,7 @@ const FIST = {
       FSFX.flesh(p, power, big || kind === 'hook', head);
       if (head && Math.random() < (ground ? 0.5 : 0.25)) HARM.bloodFx(p, dir, 0.3, N);
       if (N.fight) N.fight.gotHit();
+      if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.1); }
       if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
@@ -318,7 +342,7 @@ const FIST = {
     if (!this.fists) this.snapFrom();
     const pi = this.side === 1 ? 1 : 0, m = this.side;                 // punching arm (index 1 = right) and mirror sign
     const V = (a, mm) => new THREE.Vector3(a[0] * mm, a[1], a[2]);
-    let goal = null, e = 1, bodyGoal = { ty: 0.1, tp: 0.06, pz: 0, dy: 0.05, roll: 0 };
+    let goal = null, e = 1, bodyGoal = { ty: 0.1, tp: 0.06 + this.blockW * 0.16, pz: 0, dy: 0.05 + this.blockW * 0.07, roll: 0 };
     if (this.st === 'charge') {
       e = EASE.out(clamp(this.t / 0.35, 0, 1));
       goal = { fist: V(CHARGE_R.fist, m), pole: V(CHARGE_R.pole, m) };

@@ -1,4 +1,6 @@
-/* ---------- listening with ElevenLabs (own page with an ElevenLabs key) ----------
+/* ---------- listening with ElevenLabs or Deepgram (own page with a key) ----------
+   Deepgram (Nova-3, German): the key goes in as the WebSocket's protocol ('token', key), the microphone as raw 16 kHz
+   PCM; words come back while you speak (interim results), and when you pause (endpointing) the sentence is done.
    Speech to text with "Scribe v2 Realtime": the microphone goes as 16 kHz PCM over a WebSocket, the words come back
    while you speak (partial_transcript), and when you pause the service ends the sentence itself (commit by voice
    activity) -> committed_transcript -> sent to the person you talk to. Much better German than the browser's own
@@ -8,12 +10,18 @@
 const HEAR = {
   st: 'off', ws: null, stream: null, ctx: null, proc: null, sink: null, why: '', dead: false, terms: true,
   TERMS: ['Hank', 'Whiskey', 'Saloon', 'Dust Creek', 'Sheriff', 'Howdy', 'Cowboy', 'Revolver', 'Bourbon'],
-  // which way you speak: ElevenLabs when chosen (or "automatic" with an ElevenLabs key), else null (the old ways)
-  wanted() {
-    const m = SETTINGS.v.sttMode || 'auto';
-    if (m !== 'auto' && m !== 'eleven') return false;
-    return !this.dead && !!(SETTINGS.v.elevenKey || '').trim() && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof WebSocket !== 'undefined';
+  // which service listens: the one chosen, or "automatic": ElevenLabs if its key is there, else Deepgram; null: none (the old ways)
+  prov() {
+    const m = SETTINGS.v.sttMode || 'auto', el = !!(SETTINGS.v.elevenKey || '').trim(), dg = !!(SETTINGS.v.deepgramKey || '').trim();
+    if (m === 'eleven') return el ? 'eleven' : null;
+    if (m === 'deepgram') return dg ? 'deepgram' : null;
+    if (m !== 'auto') return null;
+    return el ? 'eleven' : dg ? 'deepgram' : null;
   },
+  wanted() {
+    return !this.dead && !!this.prov() && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof WebSocket !== 'undefined';
+  },
+  name() { return this.prov() === 'deepgram' ? 'Deepgram' : 'ElevenLabs'; },
   active() { return this.st === 'open' || this.st === 'connecting'; },
   // cb: { partial(text), final(text), state(kind, text), muted() }
   async start(cb) {
@@ -23,6 +31,7 @@ const HEAR = {
     try {
       if (!this.stream) this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     } catch (e) { this.fail('Mikrofon nicht erlaubt', true); return; }
+    if (this.prov() === 'deepgram') { this.startDeepgram(); return; }
     let token;
     try {
       const r = await fetch('https://api.elevenlabs.io/v1/single-use-token/realtime_scribe', { method: 'POST', headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
@@ -52,6 +61,36 @@ const HEAR = {
     ws.onclose = () => { if (this.ws === ws && this.st !== 'off' && this.st !== 'failed') { this.st = 'closed'; this.cb.state('closed', ''); } };
     ws.onerror = () => { if (this.ws === ws && !started) this.fail('Verbindung zum Zuhören fehlgeschlagen', false); };
   },
+  /* Deepgram: one socket, the key as its protocol; the words of a sentence come in pieces (is_final), the sentence
+     ends with speech_final (a pause) or UtteranceEnd */
+  startDeepgram() {
+    const q = ['model=nova-3', 'language=de', 'encoding=linear16', 'sample_rate=16000', 'channels=1', 'interim_results=true', 'punctuate=true', 'smart_format=true', 'endpointing=600', 'utterance_end_ms=1200', 'vad_events=true'];
+    let ws;
+    try { ws = this.ws = new WebSocket('wss://api.deepgram.com/v1/listen?' + q.join('&'), ['token', SETTINGS.v.deepgramKey.trim()]); }
+    catch (e) { this.fail('Deepgram: keine Verbindung', false); return; }
+    ws.binaryType = 'arraybuffer';
+    let opened = false, done = '', heard = false;
+    const flush = () => { const t = done.trim(); done = ''; if (t.length > 1) this.cb.final(t); };
+    ws.onopen = () => { if (this.ws !== ws) return; opened = true; this.st = 'open'; this.audio(); this.cb.state('listen', ''); this.dgFails = 0;
+      // while nothing is sent (he speaks, you are quiet) the line has to be kept alive
+      this.keep = setInterval(() => { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'KeepAlive' })); } catch (e) { /* closed */ } }, 4000); };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'Results') {
+        const t = ((m.channel && m.channel.alternatives && m.channel.alternatives[0] && m.channel.alternatives[0].transcript) || '').trim();
+        if (m.is_final) { if (t) { done += (done ? ' ' : '') + t; heard = true; } if (m.speech_final && heard) { heard = false; flush(); } else if (done) this.cb.partial(done); }
+        else if (t) this.cb.partial((done ? done + ' ' : '') + t);
+      } else if (m.type === 'UtteranceEnd') { if (done) { heard = false; flush(); } }
+    };
+    ws.onclose = (ev) => {
+      clearInterval(this.keep);
+      if (this.ws !== ws) return;
+      // closed before it ever opened: the key (or its rights) is the likely reason
+      if (!opened) { this.dgFails = (this.dgFails || 0) + 1; this.fail(ev.code === 1008 || ev.code === 4001 || this.dgFails > 1 ? 'Deepgram-Schlüssel abgelehnt' : 'Deepgram: keine Verbindung', this.dgFails > 1); return; }
+      if (this.st !== 'off' && this.st !== 'failed') { if (done) flush(); this.st = 'closed'; this.cb.state('closed', ''); }
+    };
+    ws.onerror = () => { /* onclose follows and tells what happened */ };
+  },
   // the microphone, made 16 kHz 16-bit and sent in pieces of about a tenth of a second
   audio() {
     if (this.ctx) return;
@@ -69,6 +108,7 @@ const HEAR = {
         for (let k = a; k < b; k++) s += inp[k];
         out[i] = Math.max(-32768, Math.min(32767, (s / Math.max(1, b - a)) * 32767));
       }
+      if (this.prov() === 'deepgram') { try { this.ws.send(out.buffer); } catch (err) { /* closed */ } return; }
       const by = new Uint8Array(out.buffer); let bin = '';
       for (let i = 0; i < by.length; i += 0x8000) bin += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000));
       try { this.ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: btoa(bin), commit: false, sample_rate: 16000 })); } catch (err) { /* closed */ }
@@ -83,8 +123,8 @@ const HEAR = {
   },
   // keep: leave the microphone open (a quick reconnect); otherwise everything is let go
   stop(keep) {
-    const ws = this.ws; this.ws = null;
-    if (ws) { try { ws.onclose = null; ws.close(); } catch (e) { /* ignore */ } }
+    const ws = this.ws; this.ws = null; clearInterval(this.keep);
+    if (ws) { try { ws.onclose = null; if (ws.readyState === 1 && this.prov() === 'deepgram') ws.send(JSON.stringify({ type: 'CloseStream' })); ws.close(); } catch (e) { /* ignore */ } }
     if (this.proc) { try { this.proc.disconnect(); this.proc.onaudioprocess = null; } catch (e) { /* ignore */ } this.proc = null; }
     if (this.ctx) { try { this.ctx.close(); } catch (e) { /* ignore */ } this.ctx = null; }
     if (!keep && this.stream) { for (const t of this.stream.getTracks()) t.stop(); this.stream = null; this.backToSpeaker(); }

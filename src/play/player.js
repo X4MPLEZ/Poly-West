@@ -96,6 +96,7 @@ function updatePlayer(dt) {
   if (aiming) target = Math.min(target, WALK * 0.8);
   const punching = FIST.st !== 'idle';
   if (punching) target = Math.min(target, WALK * 0.5);
+  if (FIST.blocking) target = Math.min(target, WALK * 0.5);
   if (DRINK.busy()) target = Math.min(target, WALK * 0.55);
   target *= DRUNK.maxSpeed();
   const a = 1 - Math.exp(-dt * (target > PLAY.speed ? 6.5 : 9));
@@ -107,6 +108,11 @@ function updatePlayer(dt) {
   if (punching && FIST.faceYaw !== null) {
     let d = FIST.faceYaw - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
     PLAY.yaw += d * (1 - Math.exp(-dt * (22 - 15 * Math.min(DRUNK.level, 1))));   // drunk: turns into the punch slowly, no snapping
+  } else if (FIST.blockW > 0.3 && FIST.opponent()) {
+    // blocking: the guard stays towards the one you fight, whichever way you step
+    const O = FIST.opponent(), ty = Math.atan2(O.pos.x - PLAY.pos.x, O.pos.z - PLAY.pos.z);
+    let d = ty - PLAY.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+    PLAY.yaw += d * (1 - Math.exp(-dt * 12));
   } else if (aiming) {
     // aiming: the body turns side-on to the target, right shoulder forward
     const ty = PLAY.camYaw + Math.PI + 0.35;

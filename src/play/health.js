@@ -15,7 +15,7 @@ const PHP = {
     const p = o.power || 1;
     this.lastHit = G.time;
     this.hp = Math.max(0, this.hp - (o.shot ? 0.45 : (o.head ? 0.13 : 0.09)) * p * (o.heavy ? 1.5 : 1));
-    this.daze += (o.head ? 0.32 : 0.15) * p * (o.heavy ? 1.6 : 1);
+    if (!o.chip) this.daze += (o.head ? 0.32 : 0.15) * p * (o.heavy ? 1.6 : 1);
     this.flash = 1;
     // the body jerks away from the blow (PHP.pose)
     const c = Math.cos(PLAY.yaw), sn = Math.sin(PLAY.yaw), lx = o.dir.x * c - o.dir.z * sn, lz = o.dir.x * sn + o.dir.z * c;
