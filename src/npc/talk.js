@@ -335,9 +335,11 @@ const TALK = {
   // what his body says before anything else (the survival instinct): put at the top of what he knows
   plightText(n) {
     const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
-    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt, du kriegst kaum Luft.' + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr. Du sprichst stockend, mit letzter Kraft: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch.\n';
-    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz, gepresst, unter Schmerzen.\n';
-    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
+    const H = n.hp, bw = H && H.wounds.filter((w) => w.b && !w.bandaged).sort((a, b) => b.b - a.b)[0];
+    const bleed = bw && H.bleed > 0.0006 ? ' Du verblutest gerade: aus der Wunde ' + zoneIn(bw.zone, bw.side) + (bw.art && !bw.field ? ' pumpt das Blut stoßweise heraus und hört nicht auf' : ' läuft das Blut und hört nicht auf') + '. Das spürst du, das sagst du auch: dass du verblutest, dass jemand draufdrücken oder den Doc holen muss.' : '';
+    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt und schwindlig.' + bleed + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch. Ein kurzer, ganzer Satz, leise und mit letzter Kraft, aber verständlich.\n';
+    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + bleed + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz und unter Schmerzen, aber in ganzen Sätzen.\n';
+    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + bleed + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
     return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
   },
   /* curiosity: he asks you something, once (key), when you are close and nothing else is going on: what happened to
@@ -376,7 +378,7 @@ const TALK = {
     let failed = false;
     const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown() && fallback) fallback(); };
     const timer = setTimeout(() => { if (!F.shown()) { ctl.abort(); fail(); } }, 7000);
-    this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
+    this.callAI(sys, prompt, { modelTier: 'default', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
       const raw = r && r.text;
       if (!raw || !raw.trim() || seq !== this.seq) { fail(); return; }
       const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -394,7 +396,10 @@ const TALK = {
   },
   /* the person's unchanging part (who he is, how he talks) goes apart from what changes: with an own key it is sent
      as the system part (Claude keeps it ready between calls, cheaper and faster); through claude.ai as one text */
+  // how everybody speaks (at the end of every prompt that makes someone talk)
+  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich.',
   callAI(sys, prompt, opt) {
+    prompt += this.LANG;
     if (this.via === 'key') return this.ai(prompt, Object.assign({ system: sys }, opt));
     return this.ai(sys + '\n\n' + prompt, opt);
   },
@@ -410,7 +415,7 @@ const TALK = {
       // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)
       const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
       try {
-        const r = await this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 120, onText: ({ text: t }) => onText(t) });
+        const r = await this.callAI(sys, prompt, { modelTier: 'default', cache: false, signal: ctl.signal, maxTokens: 120, onText: ({ text: t }) => onText(t) });
         this.aiOk = this.aiEver = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
       } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
     };

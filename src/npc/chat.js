@@ -20,7 +20,12 @@ const GOSSIP = {
     return out;
   },
   // what someone heard from another, for his memory (the other's own words, so nothing is twisted on the way)
-  told(from, f) { return from.name + ' hat dir erzählt (über den Fremden, aus seiner Sicht): „' + f.replace(/ \(Tag \d+, \w+\)\.?$/, '.') + '“ (' + TIME.stamp() + ').'; }
+  // (turned round to the one who tells it: "Er hat dir … geschossen" → "Hank sagt, der Fremde hat ihm … geschossen")
+  told(from, f) {
+    const t = f.replace(/ \(Tag \d+, \w+\)\.?$/, '').replace(/\.$/, '').replace(/^Er /, 'der Fremde ').replace(/^Der Fremde /, 'der Fremde ')
+      .replace(/\bdir\b/g, 'ihm').replace(/\bdich\b/g, 'ihn').replace(/\bdu\b/g, 'er').replace(/\bdein(e|en|em|er|es)?\b/g, (m, e) => 'sein' + (e || ''));
+    return from.name + ' hat dir erzählt, ' + t + ' (' + TIME.stamp() + ').';
+  }
 };
 const CHAT = {
   t: 3, run: null, cool: new Map(),
@@ -80,7 +85,7 @@ const CHAT = {
       (T ? T.prompt + ' ' : news.length ? a.name + ' erzählt ' + b.name + ' etwas über den Fremden, das er erlebt hat: „' + news[0] + '“ ' + b.name + ' ist neugierig und fragt nach. ' : '') +
       'Sie reden kurz miteinander, nicht mit dem Fremden (der kann zuhören). Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
       'Jede Zeile höchstens 12 Wörter, einfaches Deutsch, kein Markdown. Format je Zeile genau: Name: [stimmung] Text. Stimmungen: neutral, amused, angry, surprised, disgusted, sleepy, whisper.';
-    TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'quick', cache: false, maxTokens: 160 }).then((r) => {
+    TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'default', cache: false, maxTokens: 160 }).then((r) => {
       if (this.run !== R) return;
       const out = [];
       for (const line of String(r && r.text || '').split('\n')) {

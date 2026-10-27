@@ -154,7 +154,7 @@ const DOC = {
     if (!R) return;
     const s = this.SPOTS.desk, p = rwp(R, s[0], R.floorY, s[1]);
     this.npc = new NPC({
-      id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.05,
+      id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.3,
       desc: { skin: 0, build: { width: 0.95, belly: 0.1 }, face: { nose: 'small', brows: 0.9 }, hair: { style: 'slick', color: rgb(0x9a948a) }, beard: { style: 'goatee', color: rgb(0x8a8378) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe8e4da) }, vest: rgb(0x2a2a2e), pants: { color: rgb(0x34322f) }, boots: rgb(0x1e1a18), belt: rgb(0x1e1a18), bowtie: rgb(0x2a2a2e), glasses: true, gun: false } }
     });

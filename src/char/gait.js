@@ -74,13 +74,17 @@ function poseBody(P, o) {
 }
 
 /* ---------- live gait: feet planted in the world ---------- */
-const GAIT = {
-  init: false, phase: 0, moving: false, s: 0, k: 0, duty: 0.6, freq: 0, cycleLen: 1,
-  yawPrev: null, yawRate: 0, vPrev: 0, acc: 0, idleT: 0, look: 0, lookTo: 0, lookNext: 3,
-  hatY: 0, hatV: 0, pelYPrev: null, pelVPrev: 0, lastT: null,
-  feet: [0, 1].map(() => ({ plant: new THREE.Vector3(), yaw: 0, swing: false, idle: false, from: new THREE.Vector3(), fromYaw: 0,
-    to: new THREE.Vector3(), toYaw: 0, t: 0, pitch: 0, p0: 0, gp: new THREE.Vector3(), cur: new THREE.Vector3(), curYaw: 0 }))
-};
+// one walker's gait state (the player's is GAIT; every NPC has its own: npc.js), so everybody walks and runs alike
+function makeGait() {
+  return {
+    init: false, phase: 0, moving: false, s: 0, k: 0, duty: 0.6, freq: 0, cycleLen: 1,
+    yawPrev: null, yawRate: 0, vPrev: 0, acc: 0, idleT: 0, look: 0, lookTo: 0, lookNext: 3,
+    hatY: 0, hatV: 0, pelYPrev: null, pelVPrev: 0, lastT: null,
+    feet: [0, 1].map(() => ({ plant: new THREE.Vector3(), yaw: 0, swing: false, idle: false, from: new THREE.Vector3(), fromYaw: 0,
+      to: new THREE.Vector3(), toYaw: 0, t: 0, pitch: 0, p0: 0, gp: new THREE.Vector3(), cur: new THREE.Vector3(), curYaw: 0 }))
+  };
+}
+const GAIT = makeGait();
 const _gv = new THREE.Vector3();
 function wrapA(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 function restPoint(i, pos, yaw, out) {
@@ -89,20 +93,25 @@ function restPoint(i, pos, yaw, out) {
   out.y = groundAt(out.x, out.z, pos.y);
   return out;
 }
-function beginSwing(F, idle, pos, yaw) {
+function beginSwing(F, idle, pos, yaw, g, o) {
   F.swing = true; F.idle = idle; F.t = 0; F.p0 = F.pitch;
   F.from.copy(F.plant); F.fromYaw = F.yaw;
   const dx = F.plant.x - pos.x, dz = F.plant.z - pos.z, c = Math.cos(-yaw), s = Math.sin(-yaw);
   F.relX = dx * c + dz * s; F.relZ = -dx * s + dz * c;
-  if (!idle) SFX.scuff(GAIT.s, GAIT.k);
+  if (!idle && o && o.scuff) o.scuff(g);
   F.to.copy(F.plant); F.toYaw = F.yaw;
 }
-function landFoot(F, hard) {
+function landFoot(F, hard, g, o) {
   F.swing = false; F.idle = false; F.t = 0;
   F.plant.copy(F.to); F.yaw = F.toYaw;
-  if (hard > 0) DUST.burst(F.plant, F.yaw, hard);
-  SFX.step(GAIT.s, GAIT.k, F === GAIT.feet[0] ? 1 : -1, onPlanks(F.plant.x, F.plant.z, F.plant.y));
+  if (o && o.land) o.land(F, hard, g);
 }
+// the player's feet: dust and the step sound
+const PLAYER_FEET = {
+  scuff: (g) => SFX.scuff(g.s, g.k),
+  land: (F, hard, g) => { if (hard > 0) DUST.burst(F.plant, F.yaw, hard); SFX.step(g.s, g.k, F === g.feet[0] ? 1 : -1, onPlanks(F.plant.x, F.plant.z, F.plant.y)); },
+  post: (P) => DRUNK.pose(P)
+};
 
 function updateGait() {
   const g = GAIT, ch = W.ch, P = ch.pose, pos = PLAY.pos, yaw = PLAY.yaw;
@@ -118,7 +127,27 @@ function updateGait() {
   if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof AID !== 'undefined' && AID.owns()) { AID.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
-  const sp = Math.hypot(PLAY.vx, PLAY.vz);
+  gaitStep(g, P, pos, yaw, PLAY.vx, PLAY.vz, dt, G.time, PLAYER_FEET);
+  // hat: a small spring that lags behind the head's vertical motion
+  if (dt > 0) {
+    const vy = g.pelYPrev === null ? 0 : (P.pel.y - g.pelYPrev) / dt;
+    const ay = (vy - g.pelVPrev) / dt;
+    g.pelYPrev = P.pel.y; g.pelVPrev = vy;
+    g.hatV += (-300 * g.hatY - 16 * g.hatV - clamp(ay, -60, 60) * 0.35) * dt;
+    g.hatY = clamp(g.hatY + g.hatV * dt, -0.025, 0.025);
+  }
+  P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
+  PLAY.phase = g.phase * TAU;
+  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
+  if (typeof PHP !== 'undefined') PHP.pose(P, dt);
+  applyPose(ch);
+}
+
+/* one step of the gait for any walker: g its state, P its pose, where it is, which way it faces, how it moves;
+   o: { scuff(g), land(F, hard, g) (sounds, dust), post(P) (after the body), rate(g) (step-rate factor: a limp) } */
+function gaitStep(g, P, pos, yaw, vx, vz, dt, time, o) {
+  if (!g.init) { g.feet.forEach((F, i) => { restPoint(i, pos, yaw, F.plant); F.yaw = yaw; }); g.init = true; }
+  const sp = Math.hypot(vx, vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));
   const s = g.s;
   const gp = gaitParams(Math.max(s, 0.3));
@@ -130,6 +159,7 @@ function updateGait() {
     g.acc += (clamp((sp - g.vPrev) / dt, -20, 20) - g.acc) * (1 - Math.exp(-dt * 5));
   }
   g.yawPrev = yaw; g.vPrev = sp;
+  const prate = o && o.rate ? o.rate(g) : 1;
 
   const wasMoving = g.moving;
   g.moving = s > (wasMoving ? 0.2 : 0.35);
@@ -138,13 +168,13 @@ function updateGait() {
     let i = g.feet[0].swing ? 0 : g.feet[1].swing ? 1 : -1, lc;
     if (i >= 0) { lc = duty + g.feet[i].t * (1 - duty); g.feet[i].idle = false; }
     else {
-      const v0 = (g.feet[0].plant.x - pos.x) * PLAY.vx + (g.feet[0].plant.z - pos.z) * PLAY.vz;
-      const v1 = (g.feet[1].plant.x - pos.x) * PLAY.vx + (g.feet[1].plant.z - pos.z) * PLAY.vz;
+      const v0 = (g.feet[0].plant.x - pos.x) * vx + (g.feet[0].plant.z - pos.z) * vz;
+      const v1 = (g.feet[1].plant.x - pos.x) * vx + (g.feet[1].plant.z - pos.z) * vz;
       i = v0 < v1 ? 0 : 1; lc = duty + 0.001;
     }
     g.phase = ((lc - i * 0.5) % 1 + 1) % 1;
   }
-  if (g.moving) g.phase = (g.phase + freq * dt) % 1;
+  if (g.moving) g.phase = (g.phase + freq * dt * prate) % 1;
 
   const vl = Math.max(sp, 0.01);
   const cy = Math.cos(-yaw), sy = Math.sin(-yaw), cY = Math.cos(yaw), sY = Math.sin(yaw);
@@ -155,7 +185,7 @@ function updateGait() {
     if (g.moving) {
       const inSwing = local >= duty;
       const rate = freq / (1 - duty);
-      if (inSwing && !F.swing) beginSwing(F, false, pos, yaw);
+      if (inSwing && !F.swing) beginSwing(F, false, pos, yaw, g, o);
       if (F.swing) {
         F.idle = false;
         if (inSwing) {
@@ -167,7 +197,7 @@ function updateGait() {
         // the swinging foot travels in body space: from where it left the ground to a spot just ahead of the hip
         const ahead = duty * gp.cycleLen * lerp(0.5, 0.4, k);
         const lat = lerp(0.12, 0.07, k) * sideS;
-        const vdx = PLAY.vx / vl, vdz = PLAY.vz / vl;
+        const vdx = vx / vl, vdz = vz / vl;
         // steps sideways and backwards are shorter than steps forward
         const lvx = vdx * cy + vdz * sy, lvz = -vdx * sy + vdz * cy;
         let tlx = sp > 0.05 ? lat + lvx * ahead * 0.55 : lat;
@@ -185,7 +215,7 @@ function updateGait() {
         F.toYaw = yaw;
         F.curYaw = F.fromYaw + wrapA(yaw - F.fromYaw) * sh.e;
         lift = sh.lift; pitch = sh.pitch;
-        if (F.t >= 1 || (!inSwing && F.t > 0.85)) { F.to.copy(F.gp); landFoot(F, s > 0.8 ? lerp(1, 4, k) : 0); }
+        if (F.t >= 1 || (!inSwing && F.t > 0.85)) { F.to.copy(F.gp); landFoot(F, s > 0.8 ? lerp(1, 4, k) : 0, g, o); }
       } else {
         F.gp.copy(F.plant); F.curYaw = F.yaw;
         pitch = stancePitch(Math.min(local / duty, 1), k);
@@ -198,7 +228,7 @@ function updateGait() {
       if (F.swing) {
         restPoint(i, pos, yaw, F.to); F.toYaw = yaw;
         F.t = Math.min(1, F.t + dt / (F.idle ? 0.24 : 0.16));
-        if (F.t >= 1) landFoot(F, 0);
+        if (F.t >= 1) landFoot(F, 0, g, o);
       }
       if (F.swing) {
         const e = F.t * F.t * (3 - 2 * F.t);
@@ -223,7 +253,7 @@ function updateGait() {
       const e = Math.hypot(F.plant.x - _gv.x, F.plant.z - _gv.z) + Math.abs(wrapA(yaw - F.yaw)) * 0.25;
       if (e > err) { err = e; worst = i; }
     });
-    if (err > 0.13 && g.idleT > 0.05) { beginSwing(g.feet[worst], true, pos, yaw); g.idleT = 0.0; }
+    if (err > 0.13 && g.idleT > 0.05) { beginSwing(g.feet[worst], true, pos, yaw, g, o); g.idleT = 0.0; }
   } else if (g.moving) g.idleT = 0;
 
   // a planted foot left far behind (sharp turn, reversal, strafing) takes a quick catch-up step at once,
@@ -232,7 +262,7 @@ function updateGait() {
     const F = g.feet[i];
     if (F.swing) continue;
     const sideS = i === 0 ? 1 : -1, hx = pos.x + sideS * RIG.hipX * cY, hz = pos.z - sideS * RIG.hipX * sY;
-    if (Math.hypot(F.plant.x - hx, F.plant.z - hz) > 0.6) { beginSwing(F, !g.moving, pos, yaw); g.idleT = 0; }
+    if (Math.hypot(F.plant.x - hx, F.plant.z - hz) > 0.6) { beginSwing(F, !g.moving, pos, yaw, g, o); g.idleT = 0; }
   }
   // feet into character space
   for (let i = 0; i < 2; i++) {
@@ -243,19 +273,19 @@ function updateGait() {
     P.ftPitch[i] = F.pitch;
   }
   // look around when standing, look into turns when moving
-  if (!g.moving && g.idleT > 2.5) {
+  if (!g.moving && g.idleT > 2.5 && !(o && o.noIdleLook)) {
     g.lookNext -= dt;
     if (g.lookNext <= 0) { g.lookTo = (Math.random() - 0.5) * 1.1; g.lookNext = 2 + Math.random() * 3; }
   } else { g.lookTo = clamp(g.yawRate * 0.12, -0.35, 0.35); g.lookNext = 1.5; }
   g.look += (g.lookTo - g.look) * (1 - Math.exp(-dt * 3));
   const amp = clamp(s / 1.4, 0, 1);
   poseBody(P, {
-    s, k, duty, phase: g.phase, amp, time: G.time, look: g.look,
+    s, k, duty, phase: g.phase, amp, time, look: g.look,
     bank: clamp(g.yawRate * s * 0.05, -0.32, 0.32),
     acc: clamp(g.acc * 0.03, -0.16, 0.2),
     smooth: 1 - Math.exp(-dt * lerp(13, 20, k))
   });
-  DRUNK.pose(P);
+  if (o && o.post) o.post(P);
   // keep stance legs within reach: lower the pelvis if needed (downhill, long strides)
   const R = RIG.thigh + RIG.shin - 0.012;
   for (let i = 0; i < 2; i++) {
@@ -268,17 +298,4 @@ function updateGait() {
   }
   // ...but never squat more than a little: a foot still out of reach is about to step anyway
   P.pel.y = Math.max(P.pel.y, RIG.hipY - 0.2);
-  // hat: a small spring that lags behind the head's vertical motion
-  if (dt > 0) {
-    const vy = g.pelYPrev === null ? 0 : (P.pel.y - g.pelYPrev) / dt;
-    const ay = (vy - g.pelVPrev) / dt;
-    g.pelYPrev = P.pel.y; g.pelVPrev = vy;
-    g.hatV += (-300 * g.hatY - 16 * g.hatV - clamp(ay, -60, 60) * 0.35) * dt;
-    g.hatY = clamp(g.hatY + g.hatV * dt, -0.025, 0.025);
-  }
-  P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
-  PLAY.phase = g.phase * TAU;
-  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
-  if (typeof PHP !== 'undefined') PHP.pose(P, dt);
-  applyPose(ch);
 }

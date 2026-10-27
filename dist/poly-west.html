@@ -3844,13 +3844,17 @@ function poseBody(P, o) {
 }
 
 /* ---------- live gait: feet planted in the world ---------- */
-const GAIT = {
-  init: false, phase: 0, moving: false, s: 0, k: 0, duty: 0.6, freq: 0, cycleLen: 1,
-  yawPrev: null, yawRate: 0, vPrev: 0, acc: 0, idleT: 0, look: 0, lookTo: 0, lookNext: 3,
-  hatY: 0, hatV: 0, pelYPrev: null, pelVPrev: 0, lastT: null,
-  feet: [0, 1].map(() => ({ plant: new THREE.Vector3(), yaw: 0, swing: false, idle: false, from: new THREE.Vector3(), fromYaw: 0,
-    to: new THREE.Vector3(), toYaw: 0, t: 0, pitch: 0, p0: 0, gp: new THREE.Vector3(), cur: new THREE.Vector3(), curYaw: 0 }))
-};
+// one walker's gait state (the player's is GAIT; every NPC has its own: npc.js), so everybody walks and runs alike
+function makeGait() {
+  return {
+    init: false, phase: 0, moving: false, s: 0, k: 0, duty: 0.6, freq: 0, cycleLen: 1,
+    yawPrev: null, yawRate: 0, vPrev: 0, acc: 0, idleT: 0, look: 0, lookTo: 0, lookNext: 3,
+    hatY: 0, hatV: 0, pelYPrev: null, pelVPrev: 0, lastT: null,
+    feet: [0, 1].map(() => ({ plant: new THREE.Vector3(), yaw: 0, swing: false, idle: false, from: new THREE.Vector3(), fromYaw: 0,
+      to: new THREE.Vector3(), toYaw: 0, t: 0, pitch: 0, p0: 0, gp: new THREE.Vector3(), cur: new THREE.Vector3(), curYaw: 0 }))
+  };
+}
+const GAIT = makeGait();
 const _gv = new THREE.Vector3();
 function wrapA(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
 function restPoint(i, pos, yaw, out) {
@@ -3859,20 +3863,25 @@ function restPoint(i, pos, yaw, out) {
   out.y = groundAt(out.x, out.z, pos.y);
   return out;
 }
-function beginSwing(F, idle, pos, yaw) {
+function beginSwing(F, idle, pos, yaw, g, o) {
   F.swing = true; F.idle = idle; F.t = 0; F.p0 = F.pitch;
   F.from.copy(F.plant); F.fromYaw = F.yaw;
   const dx = F.plant.x - pos.x, dz = F.plant.z - pos.z, c = Math.cos(-yaw), s = Math.sin(-yaw);
   F.relX = dx * c + dz * s; F.relZ = -dx * s + dz * c;
-  if (!idle) SFX.scuff(GAIT.s, GAIT.k);
+  if (!idle && o && o.scuff) o.scuff(g);
   F.to.copy(F.plant); F.toYaw = F.yaw;
 }
-function landFoot(F, hard) {
+function landFoot(F, hard, g, o) {
   F.swing = false; F.idle = false; F.t = 0;
   F.plant.copy(F.to); F.yaw = F.toYaw;
-  if (hard > 0) DUST.burst(F.plant, F.yaw, hard);
-  SFX.step(GAIT.s, GAIT.k, F === GAIT.feet[0] ? 1 : -1, onPlanks(F.plant.x, F.plant.z, F.plant.y));
+  if (o && o.land) o.land(F, hard, g);
 }
+// the player's feet: dust and the step sound
+const PLAYER_FEET = {
+  scuff: (g) => SFX.scuff(g.s, g.k),
+  land: (F, hard, g) => { if (hard > 0) DUST.burst(F.plant, F.yaw, hard); SFX.step(g.s, g.k, F === g.feet[0] ? 1 : -1, onPlanks(F.plant.x, F.plant.z, F.plant.y)); },
+  post: (P) => DRUNK.pose(P)
+};
 
 function updateGait() {
   const g = GAIT, ch = W.ch, P = ch.pose, pos = PLAY.pos, yaw = PLAY.yaw;
@@ -3888,7 +3897,27 @@ function updateGait() {
   if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof AID !== 'undefined' && AID.owns()) { AID.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
-  const sp = Math.hypot(PLAY.vx, PLAY.vz);
+  gaitStep(g, P, pos, yaw, PLAY.vx, PLAY.vz, dt, G.time, PLAYER_FEET);
+  // hat: a small spring that lags behind the head's vertical motion
+  if (dt > 0) {
+    const vy = g.pelYPrev === null ? 0 : (P.pel.y - g.pelYPrev) / dt;
+    const ay = (vy - g.pelVPrev) / dt;
+    g.pelYPrev = P.pel.y; g.pelVPrev = vy;
+    g.hatV += (-300 * g.hatY - 16 * g.hatV - clamp(ay, -60, 60) * 0.35) * dt;
+    g.hatY = clamp(g.hatY + g.hatV * dt, -0.025, 0.025);
+  }
+  P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
+  PLAY.phase = g.phase * TAU;
+  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
+  if (typeof PHP !== 'undefined') PHP.pose(P, dt);
+  applyPose(ch);
+}
+
+/* one step of the gait for any walker: g its state, P its pose, where it is, which way it faces, how it moves;
+   o: { scuff(g), land(F, hard, g) (sounds, dust), post(P) (after the body), rate(g) (step-rate factor: a limp) } */
+function gaitStep(g, P, pos, yaw, vx, vz, dt, time, o) {
+  if (!g.init) { g.feet.forEach((F, i) => { restPoint(i, pos, yaw, F.plant); F.yaw = yaw; }); g.init = true; }
+  const sp = Math.hypot(vx, vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));
   const s = g.s;
   const gp = gaitParams(Math.max(s, 0.3));
@@ -3900,6 +3929,7 @@ function updateGait() {
     g.acc += (clamp((sp - g.vPrev) / dt, -20, 20) - g.acc) * (1 - Math.exp(-dt * 5));
   }
   g.yawPrev = yaw; g.vPrev = sp;
+  const prate = o && o.rate ? o.rate(g) : 1;
 
   const wasMoving = g.moving;
   g.moving = s > (wasMoving ? 0.2 : 0.35);
@@ -3908,13 +3938,13 @@ function updateGait() {
     let i = g.feet[0].swing ? 0 : g.feet[1].swing ? 1 : -1, lc;
     if (i >= 0) { lc = duty + g.feet[i].t * (1 - duty); g.feet[i].idle = false; }
     else {
-      const v0 = (g.feet[0].plant.x - pos.x) * PLAY.vx + (g.feet[0].plant.z - pos.z) * PLAY.vz;
-      const v1 = (g.feet[1].plant.x - pos.x) * PLAY.vx + (g.feet[1].plant.z - pos.z) * PLAY.vz;
+      const v0 = (g.feet[0].plant.x - pos.x) * vx + (g.feet[0].plant.z - pos.z) * vz;
+      const v1 = (g.feet[1].plant.x - pos.x) * vx + (g.feet[1].plant.z - pos.z) * vz;
       i = v0 < v1 ? 0 : 1; lc = duty + 0.001;
     }
     g.phase = ((lc - i * 0.5) % 1 + 1) % 1;
   }
-  if (g.moving) g.phase = (g.phase + freq * dt) % 1;
+  if (g.moving) g.phase = (g.phase + freq * dt * prate) % 1;
 
   const vl = Math.max(sp, 0.01);
   const cy = Math.cos(-yaw), sy = Math.sin(-yaw), cY = Math.cos(yaw), sY = Math.sin(yaw);
@@ -3925,7 +3955,7 @@ function updateGait() {
     if (g.moving) {
       const inSwing = local >= duty;
       const rate = freq / (1 - duty);
-      if (inSwing && !F.swing) beginSwing(F, false, pos, yaw);
+      if (inSwing && !F.swing) beginSwing(F, false, pos, yaw, g, o);
       if (F.swing) {
         F.idle = false;
         if (inSwing) {
@@ -3937,7 +3967,7 @@ function updateGait() {
         // the swinging foot travels in body space: from where it left the ground to a spot just ahead of the hip
         const ahead = duty * gp.cycleLen * lerp(0.5, 0.4, k);
         const lat = lerp(0.12, 0.07, k) * sideS;
-        const vdx = PLAY.vx / vl, vdz = PLAY.vz / vl;
+        const vdx = vx / vl, vdz = vz / vl;
         // steps sideways and backwards are shorter than steps forward
         const lvx = vdx * cy + vdz * sy, lvz = -vdx * sy + vdz * cy;
         let tlx = sp > 0.05 ? lat + lvx * ahead * 0.55 : lat;
@@ -3955,7 +3985,7 @@ function updateGait() {
         F.toYaw = yaw;
         F.curYaw = F.fromYaw + wrapA(yaw - F.fromYaw) * sh.e;
         lift = sh.lift; pitch = sh.pitch;
-        if (F.t >= 1 || (!inSwing && F.t > 0.85)) { F.to.copy(F.gp); landFoot(F, s > 0.8 ? lerp(1, 4, k) : 0); }
+        if (F.t >= 1 || (!inSwing && F.t > 0.85)) { F.to.copy(F.gp); landFoot(F, s > 0.8 ? lerp(1, 4, k) : 0, g, o); }
       } else {
         F.gp.copy(F.plant); F.curYaw = F.yaw;
         pitch = stancePitch(Math.min(local / duty, 1), k);
@@ -3968,7 +3998,7 @@ function updateGait() {
       if (F.swing) {
         restPoint(i, pos, yaw, F.to); F.toYaw = yaw;
         F.t = Math.min(1, F.t + dt / (F.idle ? 0.24 : 0.16));
-        if (F.t >= 1) landFoot(F, 0);
+        if (F.t >= 1) landFoot(F, 0, g, o);
       }
       if (F.swing) {
         const e = F.t * F.t * (3 - 2 * F.t);
@@ -3993,7 +4023,7 @@ function updateGait() {
       const e = Math.hypot(F.plant.x - _gv.x, F.plant.z - _gv.z) + Math.abs(wrapA(yaw - F.yaw)) * 0.25;
       if (e > err) { err = e; worst = i; }
     });
-    if (err > 0.13 && g.idleT > 0.05) { beginSwing(g.feet[worst], true, pos, yaw); g.idleT = 0.0; }
+    if (err > 0.13 && g.idleT > 0.05) { beginSwing(g.feet[worst], true, pos, yaw, g, o); g.idleT = 0.0; }
   } else if (g.moving) g.idleT = 0;
 
   // a planted foot left far behind (sharp turn, reversal, strafing) takes a quick catch-up step at once,
@@ -4002,7 +4032,7 @@ function updateGait() {
     const F = g.feet[i];
     if (F.swing) continue;
     const sideS = i === 0 ? 1 : -1, hx = pos.x + sideS * RIG.hipX * cY, hz = pos.z - sideS * RIG.hipX * sY;
-    if (Math.hypot(F.plant.x - hx, F.plant.z - hz) > 0.6) { beginSwing(F, !g.moving, pos, yaw); g.idleT = 0; }
+    if (Math.hypot(F.plant.x - hx, F.plant.z - hz) > 0.6) { beginSwing(F, !g.moving, pos, yaw, g, o); g.idleT = 0; }
   }
   // feet into character space
   for (let i = 0; i < 2; i++) {
@@ -4013,19 +4043,19 @@ function updateGait() {
     P.ftPitch[i] = F.pitch;
   }
   // look around when standing, look into turns when moving
-  if (!g.moving && g.idleT > 2.5) {
+  if (!g.moving && g.idleT > 2.5 && !(o && o.noIdleLook)) {
     g.lookNext -= dt;
     if (g.lookNext <= 0) { g.lookTo = (Math.random() - 0.5) * 1.1; g.lookNext = 2 + Math.random() * 3; }
   } else { g.lookTo = clamp(g.yawRate * 0.12, -0.35, 0.35); g.lookNext = 1.5; }
   g.look += (g.lookTo - g.look) * (1 - Math.exp(-dt * 3));
   const amp = clamp(s / 1.4, 0, 1);
   poseBody(P, {
-    s, k, duty, phase: g.phase, amp, time: G.time, look: g.look,
+    s, k, duty, phase: g.phase, amp, time, look: g.look,
     bank: clamp(g.yawRate * s * 0.05, -0.32, 0.32),
     acc: clamp(g.acc * 0.03, -0.16, 0.2),
     smooth: 1 - Math.exp(-dt * lerp(13, 20, k))
   });
-  DRUNK.pose(P);
+  if (o && o.post) o.post(P);
   // keep stance legs within reach: lower the pelvis if needed (downhill, long strides)
   const R = RIG.thigh + RIG.shin - 0.012;
   for (let i = 0; i < 2; i++) {
@@ -4038,19 +4068,6 @@ function updateGait() {
   }
   // ...but never squat more than a little: a foot still out of reach is about to step anyway
   P.pel.y = Math.max(P.pel.y, RIG.hipY - 0.2);
-  // hat: a small spring that lags behind the head's vertical motion
-  if (dt > 0) {
-    const vy = g.pelYPrev === null ? 0 : (P.pel.y - g.pelYPrev) / dt;
-    const ay = (vy - g.pelVPrev) / dt;
-    g.pelYPrev = P.pel.y; g.pelVPrev = vy;
-    g.hatV += (-300 * g.hatY - 16 * g.hatV - clamp(ay, -60, 60) * 0.35) * dt;
-    g.hatY = clamp(g.hatY + g.hatV * dt, -0.025, 0.025);
-  }
-  P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
-  PLAY.phase = g.phase * TAU;
-  if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
-  if (typeof PHP !== 'undefined') PHP.pose(P, dt);
-  applyPose(ch);
 }
 
 // ==== gfx/dust.js ====
@@ -5113,7 +5130,10 @@ function updateCamera(dt) {
   }
   cam.lookAt(lookT);
   DRUNK.camera(cam);
-  const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) : cam.fov;
+  // the killing blow (combat/fist.js): the view closes in on him while it is slow, then lets go
+  let kz = 0;
+  if (G.killCam) { const K = G.killCam; K.t += dt; if (G.slowT <= 0 && K.rel === undefined) K.rel = K.t; kz = K.rel === undefined ? Math.min(1, K.t / 0.08) : Math.max(0, 1 - (K.t - K.rel) / 0.5); if (K.rel !== undefined && kz <= 0) G.killCam = null; }
+  const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) * (1 - 0.22 * kz) : cam.fov;
   if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
   cam.updateMatrixWorld();
   W.ch.root.visible = cam.position.distanceTo(G.lookAt) > 0.75;
@@ -7518,6 +7538,22 @@ const FOLEY = {
       SFX.noiseHit(t, g, { type: 'lowpass', freq: 420, q: 0.8, gain: heavy ? 0.6 : 0.4, attack: 0.002, decay: 0.09 });
     });
   },
+  /* bones breaking (k: how bad): a dry crack made of a few hard snaps close together, the dull blow under it and a
+     short crunching grind; slow: the killing blow in slow motion, everything lower and drawn out */
+  crack(pos, k, slow) {
+    GSFX.run(() => {
+      const { g, t } = GSFX.out(1.0 * (k || 1), pos), sl = slow ? 0.6 : 1;
+      const n = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const dt = (i * 0.011 + Math.random() * 0.008) / sl;
+        SFX.noiseHit(t + dt, g, { type: 'bandpass', freq: (2600 + Math.random() * 2600) * sl, q: 3.5, gain: 0.5 - i * 0.06, attack: 0.0006, decay: 0.012 / sl });
+        SFX.noiseHit(t + dt, g, { type: 'highpass', freq: 5200 * sl, q: 0.7, gain: 0.18, attack: 0.0005, decay: 0.006 / sl });
+      }
+      SFX.thump(t, g, 120 * sl, 42 * sl, 0.9, 0.16 / sl);
+      for (let i = 0; i < 6; i++) SFX.noiseHit(t + (0.035 + i * 0.016 + Math.random() * 0.01) / sl, g, { type: 'bandpass', freq: (1100 + Math.random() * 900) * sl, q: 2.5, gain: 0.14 * (1 - i / 7), attack: 0.002, decay: 0.018 / sl });
+      if (slow) { GSFX.play('punchH', g, t, 0.62, 1.0); SFX.thump(t + 0.02, g, 55, 24, 1.0, 0.6); }
+    });
+  },
   // the doctor: pen on paper, a cabinet, water in the basin
   scribble(pos) { GSFX.run(() => { const { g, t } = GSFX.out(0.25, pos); for (let i = 0; i < 5; i++) SFX.noiseHit(t + i * 0.09 + Math.random() * 0.04, g, { type: 'bandpass', freq: 3800 + Math.random() * 1500, q: 2, gain: 0.04, attack: 0.02, decay: 0.05 }); }); },
   cabinet(pos) { GSFX.run(() => { const { g, t } = GSFX.out(0.4, pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 520, q: 9, gain: 0.05, attack: 0.06, decay: 0.25 }); SFX.thump(t + 0.3, g, 200, 110, 0.25, 0.06); SFX.noiseHit(t + 0.3, g, { type: 'lowpass', freq: 900, q: 0.8, gain: 0.2, attack: 0.001, decay: 0.05 }); }); },
@@ -7959,8 +7995,14 @@ const FIST = {
       if (head && !ground && (big || counter || res === 'down') && Math.random() < 0.6) HARM.knockHat(N, dir, true);
       if (N.fight) N.fight.gotHit();
       if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.13); PLAY.camShake = Math.max(PLAY.camShake, 0.1); HUD.cueFlash('hit', 'Konter!', 0.7); }
-      // he goes down: a moment of slow motion
-      if (res === 'down' || res === 'dead') { G.slowT = 0.55; G.hitStop = Math.max(G.hitStop, 0.12); PLAY.camShake = Math.max(PLAY.camShake, 0.14); }
+      // he goes down: a moment of slow motion. Beaten to death: the last blow in long slow motion, bones breaking,
+      // the view closing in on him
+      if (res === 'dead') {
+        G.slowT = 1.8; G.slowK = 0.18; G.hitStop = Math.max(G.hitStop, 0.22); PLAY.camShake = Math.max(PLAY.camShake, 0.22);
+        G.killCam = { npc: N, t: 0 }; FOLEY.crack(p, 1.2, true); HARM.bloodFx(p, dir, head ? 0.9 : 0.5, N);
+      } else if (res === 'down') { G.slowT = 0.55; G.hitStop = Math.max(G.hitStop, 0.12); PLAY.camShake = Math.max(PLAY.camShake, 0.14); }
+      // a hard blow on a man already broken (on the ground, or a heavy one late in a beating): a bone goes
+      else if ((ground && (big || foot)) || (big && N.hp.trauma > 0.5)) { if (Math.random() < 0.35 + N.hp.trauma * 0.5) FOLEY.crack(p, 0.7 + N.hp.trauma * 0.4, false); }
       if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
@@ -9152,7 +9194,9 @@ class NPC {
     o.scene.add(this.ch.root);
     this.pos = o.pos.clone(); this.yaw = o.yaw || 0;
     this.goal = null; this.faceYaw = null; this.vx = 0; this.vz = 0; this.speed = 0; this.ph = 0; this.stepN = 0;
-    this.walkSpeed = o.walkSpeed || 1.15;
+    // walking a little slower than you, running (hurry ≥ 2) nearly as fast as you (RUN, play/player.js)
+    this.walkSpeed = o.walkSpeed || 1.4; this.runSpeed = o.runSpeed || RUN * 0.88;
+    this.gait = makeGait(); this._lp = new THREE.Vector3();
     this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
     this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 }, cp: new THREE.Vector3(), cpOk: false }));
@@ -9211,12 +9255,14 @@ class NPC {
     return 0;
   }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
+  // how fast he goes: walking (hurry: a brisker walk), running from hurry 2 on; slower when hurt
+  topSpeed() { const h = this.hurry || 1; return (h >= 2 ? this.runSpeed : this.walkSpeed * h) * this.hp.speedK(); }
   /* time lived without being watched (npc/sim.js): s seconds of walking along the way, no collisions, no steps,
      no pose; where he ends up, he is */
   ff(s) {
     const H = this.hp;
     if (H.canWalk() && !(this.waitFor && this.waitFor.t > G.time)) {
-      let left = this.walkSpeed * (this.hurry || 1) * H.speedK() * s;
+      let left = this.topSpeed() * s;
       for (let k = 0; k < 24 && left > 1e-4; k++) {
         if (!this.goal) { if ((this.path && this.path.length) || this.dest) this.nextLeg(); if (!this.goal) break; }
         const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
@@ -9297,7 +9343,7 @@ class NPC {
     if (this.goal && can && !hold) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
-      else { const top = this.walkSpeed * (this.hurry || 1) * H.speedK(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
+      else { const top = this.topSpeed(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
     const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
@@ -9339,12 +9385,6 @@ class NPC {
       const fy = hold ? this.faceHold : this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
-    // the step: a limp hurries over the bad leg and lingers on the good one
-    let stepK = 1;
-    if (H.limp > 0.02) { const bad = H.limpSide === 'L' ? 0 : 1, onBad = -Math.cos(this.ph + bad * Math.PI) > 0; stepK = onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
-    this.ph += (this.speed * dt * TAU) / 1.15 * stepK;
-    const n = Math.floor(this.ph / Math.PI);
-    if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
     // the behaviour's wishes, eased
     const e = 1 - Math.exp(-dt * 6);
     this.lean += (this.leanT - this.lean) * e; this.crouch += (this.crouchT - this.crouch) * (1 - Math.exp(-dt * 9));
@@ -9356,7 +9396,7 @@ class NPC {
     if ((this.glanceT = (this.glanceT || 2 + Math.random() * 3) - dt) <= 0) {
       this.glanceT = 3 + Math.random() * 4;
       const o = NPCS.list.find((n) => n !== this && !n.hp.dead && (n.room || null) === (this.room || null) && Math.hypot(n.pos.x - this.pos.x, n.pos.z - this.pos.z) < 5);
-      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !this.fear) { this.mood = 'sad'; this.moodT = G.time + 3; } }
+      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !(this.fear > G.time) && G.time > (this.moodT || 0)) { this.mood = 'sad'; this.moodT = G.time + 3; } }
     }
     if (this.glanceAt && G.time < this.glanceUntil && this.lookTW < 0.6) { this.look.copy(this.glanceAt.ch.p.head.getWorldPosition(this._gq)); this.lookTW = 0.8; }
     // after a start: the eyes stay on where it came from (over whatever the behaviour wanted him to look at)
@@ -9437,22 +9477,30 @@ class NPC {
       SFX.noiseHit(t, g, { type: 'highpass', freq: 2600 * p, q: 0.7, gain: 0.12, decay: 0.015 });
     });
   }
+  // his feet: the step sound and a little dust when he runs (only where you are)
+  feet() {
+    return this._feet || (this._feet = {
+      noIdleLook: true,   // (he looks where his behaviour wants him to)
+      land: (F, hard) => { if (this.gait.s > 0.25) this.footstep(); if (hard > 1.5 && !this.room && Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) < 25) DUST.burst(F.plant, F.yaw, hard * 0.6); },
+      // a limp: the step over the bad leg comes quicker, the good one lingers
+      rate: (g) => { const H = this.hp; if (H.limp <= 0.02) return 1; const bad = H.limpSide === 'L' ? 0 : 1, onBad = ((g.phase + bad * 0.5) % 1) < g.duty; return onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
+    });
+  }
   pose(dt) {
-    const P = this.ch.pose, t = G.time, m = Math.min(1, this.speed / 0.5);
-    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
-    // the way it walks, in its own frame (+x left, +z ahead)
-    const lx = this.speed > 0.05 ? (this.vx * c - this.vz * s) / this.speed : 0, lz = this.speed > 0.05 ? (this.vx * s + this.vz * c) / this.speed : 0;
+    const P = this.ch.pose, t = G.time, g = this.gait;
+    // the same gait as yours (char/gait.js): feet planted in the world, the body over them, walking or running.
+    // Moved far in one go (put somewhere, got up from the floor): the feet start again where he stands
+    if (this.hp.anim || this._lp.distanceToSquared(this.pos) > 1) g.init = false;
+    this._lp.copy(this.pos);
+    gaitStep(g, P, this.pos, this.yaw, this.speed > 0.02 ? this.vx : 0, this.speed > 0.02 ? this.vz : 0, dt, t, this.feet());
+    // (the phase as an angle, for the limp and the hanging arm: 0 when the left foot is in the middle of its step)
+    this.ph = TAU * (g.phase - g.duty / 2) + Math.PI;
     const cr = this.crouch, ln = this.lean;
-    P.pel.set(0, RIG.hipY - 0.02 - 0.025 * Math.abs(Math.sin(this.ph)) * m - cr * 0.42, -cr * 0.12 - ln * 0.05);
-    P.pelYaw = 0; P.pelPitch = cr * 0.25; P.pelRoll = Math.sin(this.ph) * 0.03 * m;
-    P.spPitch = 0.02 + Math.sin(t * 1.7) * 0.012 + ln * 0.38 + cr * 0.35; P.spRoll = 0;
-    for (let i = 0; i < 2; i++) {
-      const sd = i === 0 ? 1 : -1, ph = this.ph + i * Math.PI;
-      P.ank[i].set(sd * (0.12 + cr * 0.06) + lx * 0.2 * Math.sin(ph) * m, RIG.ankleH + 0.07 * Math.max(0, Math.cos(ph)) * m, lz * 0.2 * Math.sin(ph) * m + (cr ? -cr * 0.05 * sd : 0));
-      P.ftYaw[i] = 0; P.ftPitch[i] = 0;
-      const a = P.arm[i]; a.sw = -Math.sin(ph) * 0.3 * m * lz; a.out = 0.08 + 0.05 * m; a.el = 0.15 + 0.15 * m;
-    }
+    P.pel.y -= cr * 0.42; P.pel.z -= cr * 0.12 + ln * 0.05; P.pelPitch += cr * 0.25;
+    P.spPitch += ln * 0.38 + cr * 0.35;
+    if (cr) for (let i = 0; i < 2; i++) { const sd = i === 0 ? 1 : -1; P.ank[i].x += sd * cr * 0.06; P.ank[i].z -= cr * 0.05 * sd; }
     // the head (and a little of the chest) turns to what it looks at
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
     let ty = 0, tp = 0;
     if (this.lookW > 0.01) {
       const hx = this.pos.x, hy = this.pos.y + 1.62 - cr * 0.42, hz = this.pos.z;
@@ -9462,12 +9510,12 @@ class NPC {
     }
     const k = 1 - Math.exp(-dt * 5);
     this.spYawL += (ty * 0.3 - this.spYawL) * k; this.hdYaw += (clamp(ty - ty * 0.3, -1, 1) - this.hdYaw) * k; this.hdPitch += (tp - this.hdPitch) * k;
-    P.spYaw = this.spYawL;
+    P.spYaw += this.spYawL;
     // a fighter's body: twisted into a punch, leaning in, the hips forward (npc/brawl.js)
     if (this.tw || this.leanF || this.lunge) { P.spYaw += this.tw || 0; P.pelYaw += (this.tw || 0) * 0.4; P.spPitch += this.leanF || 0; P.pel.z += this.lunge || 0; }
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
-    P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
+    P.hdYaw += this.hdYaw; P.hdPitch += this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
     const gdef = this.gest && GESTURES[this.gest], genv = gdef ? GESTURE.env(gdef, this.gestT, this.gestEnd) : 0;
     if (gdef && gdef.head) gdef.head(this.gestT, P);
     P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;
@@ -9620,6 +9668,8 @@ const HURT_KEYS = {
   deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] },
   // gut-shot: curled up on his side, knees drawn up, both arms round the belly
   curl:      { pel: [-0.28, 0.17, -0.02], pp: 0.55, pr: 1.38, sp: 0.5, sr: 0.1, hd: -0.45, hr: -0.35, ank: [[-0.12, 0.24, 0.16], [-0.3, 0.1, 0.24]], fp: [0.9, 0.9], arm: [[1.1, 0.05, 1.7], [1.0, 0.1, 1.7]] },
+  // gut-shot on his back: knees drawn up, head and shoulders lifted off the floor, curled over the belly
+  gutBack:   { pel: [0, 0.15, -0.34], pp: -1.2, sp: 0.55, hd: -0.5, ank: [[0.17, 0.085, 0.24], [-0.15, 0.085, 0.2]], fp: [0, 0], arm: [[1.0, 0.15, 1.6], [1.0, 0.15, 1.6]] },
   // sitting on the floor, the hurt leg out, bent over it
   sitLeg:    { pel: [0, 0.17, -0.2], pp: -0.2, sp: 0.62, hd: -0.45, ank: [[0.2, 0.085, 0.62], [-0.15, 0.13, 0.3]], fp: [-0.6, 0], arm: [[0.9, 0.2, 0.9], [0.8, 0.25, 1.0]] },
   // the knees go (faint): down in a heap
@@ -9627,6 +9677,8 @@ const HURT_KEYS = {
 };
 function hurtKey(name) { return HURT_KEYS[name] || FALL_KEYS[name]; }
 
+// which leg kicks out while writhing (they take turns)
+function i0(t) { return Math.floor(t / 5) % 2; }
 /* a sequence of key poses that owns a person's body while it runs (falls, getting up, dying) */
 class KeyAnim {
   constructor(seq, kind, sd, from) {
@@ -9822,7 +9874,9 @@ class Vitals {
     // the leg gives way, he sits down hard and holds it (and stays down a while: a bleeding thigh keeps him there)
     else if (kind === 'legSit') { seq = [S('kneelHurt', 0.26, 'in', 0.5), S('sitLeg', 0.4, 'in', 0.7), { lie: 1, d: 0.8, hold: true }, S('kneelHurt', 0.6, 'inout'), S('lunge', 0.55, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 6 + Math.random() * 6; }
     // gut-shot: folds over, to his knees, onto his side and curls up; long minutes before he gets up again
-    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('hip', 0.35, 'inout', 0.7), S('curl', 0.6, 'inout', 0.3), { lie: 1, d: 0.8, hold: true }, S('sitHold', 0.9, 'inout'), S('squat', 0.8, 'inout'), S('clutch', 0.6, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 35 + Math.random() * 30; }
+    // gut-shot: folds over, to his knees, sits down hard and goes onto his back, curled up over the belly; long
+    // minutes before he gets up again
+    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('sitHold', 0.45, 'inout', 0.7), S('gutBack', 0.7, 'inout', 0.3), { lie: 1, d: 0.8, hold: true }, S('sitHold', 0.9, 'inout'), S('squat', 0.8, 'inout'), S('clutch', 0.6, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 35 + Math.random() * 30; }
     // too much blood gone: the knees go and he sinks down (he does not get up again unless it is stopped)
     else if (kind === 'faint') { seq = [S('buckle', 0.45, 'in', 0.5), S('seat', 0.35, 'in', 0.7), S('flat', 0.6, 'in', 0.8), { lie: 1, d: 1, hold: true }, S('sitUp', 0.8, 'inout'), S('squat', 0.7, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 20; }
     else if (kind === 'side') { dk = 'side'; seq = [S('lean', 0.22, 'out'), S('hip', 0.24, 'in', 0.9), S('sideFlat', 0.5, 'inout', 0.35), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.6, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 3; }
@@ -9830,7 +9884,7 @@ class Vitals {
       : [S('reel', 0.3, 'out'), S('seat', 0.3, 'in', 0.7), S('flat', 0.6, 'in', 1), { lie: 1, d: 1, hold: true }]; this.downFor = 1e9; }
     else { dk = f > 0.2 ? 'fwd' : 'back'; seq = dk === 'fwd' ? [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), S('face', 0.3, 'in', 0.9), S('prone', 0.4, 'inout'), { lie: 1, d: 0.8, hold: true }, S('hands', 0.5, 'inout'), S('kneel', 0.45, 'inout'), S('lunge', 0.4, 'inout'), S('stand', 0.45, 'inout')]
       : [S('reel', 0.28, 'out'), S('seat', 0.26, 'in', 0.8), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.55, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 4 + Math.random() * 3; }
-    const lay = kind === 'side' || kind === 'belly' ? 'side' : kind === 'faint' ? 'back' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
+    const lay = kind === 'side' ? 'side' : kind === 'faint' || kind === 'belly' ? 'back' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
     const fit = lay ? this.fitFall(lay, sd, dir, false) : null;
     if (fit && fit.seq) seq = fit.seq;
     this.anim = new KeyAnim(seq, dk, sd, this.currentKey());
@@ -9986,11 +10040,15 @@ class Vitals {
         if (this.out) { P.hdYaw = 0.2; P.hdPitch += 0.15; P.spPitch += Math.sin(G.time * 1.6) * 0.01; }   // out cold: only the breath
         else {
           P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3;
-          // gut-shot: he writhes, the legs draw up and push away, he rocks
+          // gut-shot: he writhes. Waves of pain: he rolls from one side to the other, the knees fall over together,
+          // one leg pushes out and drags back, the head goes back and forth, at the worst he curls up tight
           if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) {
-            const t = G.time, a = Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.9 + 1) * 0.3 + Math.max(0, Math.sin(t * 0.37)) * 0.6;
-            P.pelRoll += a * 0.08; P.spPitch += 0.08 * a; P.hdPitch += 0.1 * Math.sin(t * 1.9);
-            P.ank[0].z += Math.sin(t * 1.7) * 0.07 * (0.5 + a); P.ank[1].z += Math.sin(t * 1.7 + 2.2) * 0.07 * (0.5 + a);
+            const t = G.time + (this.seedT || (this.seedT = Math.random() * 50)), wave = 0.5 + 0.5 * Math.sin(t * 0.55) * Math.sin(t * 0.21 + 1);
+            const roll = Math.sin(t * 0.8) * (0.25 + 0.3 * wave), kick = Math.max(0, Math.sin(t * 1.25)) * wave;
+            P.pelRoll += roll; P.spRoll += roll * 0.6; P.hdRoll = (P.hdRoll || 0) + Math.sin(t * 0.8 + 0.6) * 0.35;
+            P.spPitch += 0.12 * wave + 0.04 * Math.sin(t * 3.1); P.hdPitch -= 0.15 * wave;
+            for (let i = 0; i < 2; i++) { P.ank[i].x += roll * 0.25; }
+            P.ank[i0(t)].z += kick * 0.28; P.ank[i0(t)].y += kick * 0.04;
           }
           this.clutchPose(P, dt, true);
         }
@@ -10089,6 +10147,18 @@ class Vitals {
     else { o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; }
     P.armOv[i] = o; busy[i] = true;
     P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
+    // the belly: both hands on it, one over the other
+    const j = 1 - i;
+    if (c.w && c.w.gut && this.armUse[j] > 0.15) {
+      const t2 = (this._t2 || (this._t2 = new THREE.Vector3())).copy(tgt).applyMatrix4(AIK.inv); t2.x += (i === 0 ? -1 : 1) * 0.085; t2.y -= 0.03; t2.applyMatrix4(AIK.tor);
+      GESTURE.safe(t2, N.ch.look.build.width, N.ch.look.build.belly);
+      const q2 = (this._q2 || (this._q2 = new THREE.Vector3())).set(-(i === 0 ? 1 : -1), -0.55, 0.1).transformDirection(AIK.tor);
+      const r2 = GESTURE.solveArm(j, t2, q2, N.ch.look.build.width, N.ch.look.build.belly), b2 = P.armOv[j];
+      const o2 = b2 && b2.hurt ? b2 : { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true };
+      if (b2 && b2.key) { o2.w = 1; o2.sw = lerp(b2.sw, r2.sw, wgt); o2.yw = lerp(b2.yw, r2.yw, wgt); o2.out = lerp(b2.out, r2.out, wgt); o2.el = lerp(b2.el, r2.el, wgt); }
+      else { o2.w = wgt; o2.sw = r2.sw; o2.yw = r2.yw; o2.out = r2.out; o2.el = r2.el; }
+      P.armOv[j] = o2; busy[j] = true; P.hand[j].open = Math.max(P.hand[j].open, 0.7 * wgt); P.hand[j].fist = 0;
+    }
     if (c.w && wgt > 0.5) c.w.handT = G.time + 0.3;
     return busy;
   }
@@ -10161,18 +10231,70 @@ class Vitals {
     return out;
   }
   /* ---- blood on the clothes: a dark red patch where the bullet went in, riding on the part, growing a little ---- */
+  /* ---- blood on the clothes: soaked into the cloth around the hole, flat on the part's face (an uneven patch,
+     dark at the hole, lighter at its edge), spreading with what the wound loses, mostly downwards, with runs where
+     it drips; when it reaches the side of the part it goes on round the edge. Rebuilt as it grows. ---- */
   stain(partName, lp, k, wound) {
     const N = this.npc, part = N.ch.p[partName]; if (!part) return;
     const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
     const B = g.boundingBox;
-    // the face of the part's box the point lies on: the patch is thin across it
-    const d = [['x', lp.x - B.min.x], ['x', B.max.x - lp.x], ['y', lp.y - B.min.y], ['y', B.max.y - lp.y], ['z', lp.z - B.min.z], ['z', B.max.z - lp.z]];
-    d.sort((a, b) => a[1] - b[1]);
-    const ax = d[0][0], s = 0.075 * k, mb = new MB();
-    mb.box(0, -(ax === 'y' ? 0.008 : s / 2), 0, ax === 'x' ? 0.016 : s, ax === 'y' ? 0.016 : s, ax === 'z' ? 0.016 : s, rgb(0x5a0c08), 0);
-    const m = new THREE.Mesh(mb.build(), N.mat || G.litMat); m.position.copy(lp); m.frustumCulled = false; m.scale.setScalar(0.5);
-    part.add(m); (this.stains || (this.stains = [])).push({ m, grow: 1 + Math.random() * 0.4, w: wound || null, y0: m.position.y });
-    if (this.stains.length > 8) { const o = this.stains.shift(); o.m.parent.remove(o.m); }
+    // the face of the part's box the point lies on
+    const d = [[0, -1, lp.x - B.min.x], [0, 1, B.max.x - lp.x], [1, -1, lp.y - B.min.y], [1, 1, B.max.y - lp.y], [2, -1, lp.z - B.min.z], [2, 1, B.max.z - lp.z]];
+    d.sort((a, b) => a[2] - b[2]);
+    const S = { part, ax: d[0][0], sg: d[0][1], lp: [lp.x, lp.y, lp.z], k, w: wound || null, seed: Array.from({ length: 12 }, () => 0.75 + Math.random() * 0.5), r: 0, m: null };
+    (this.stains || (this.stains = [])).push(S);
+    if (this.stains.length > 8) { const o = this.stains.shift(); if (o.m && o.m.parent) o.m.parent.remove(o.m); }
+    this.stainBuild(S, 0.028 * k);
+  }
+  stainBuild(S, r) {
+    const N = this.npc, part = S.part, B = part.geometry.boundingBox, mb = new MB();
+    S.r = r;
+    // the face's frame: n (out of the part), u and v across it (v up where there is an up)
+    const ax = S.ax, ua = ax === 0 ? 2 : 0, va = ax === 1 ? 2 : 1, lo = [B.min.x, B.min.y, B.min.z], hi = [B.max.x, B.max.y, B.max.z];
+    const face = S.sg > 0 ? hi[ax] : lo[ax], lift = 0.004, P = (u, v, l) => { const q = [0, 0, 0]; q[ax] = face + S.sg * (lift + (l || 0)); q[ua] = clamp(u, lo[ua] - 0.002, hi[ua] + 0.002); q[va] = clamp(v, lo[va] - 0.002, hi[va] + 0.002); return q; };
+    const cu = S.lp[ua], cv = S.lp[va], down = va === 1 ? 1 : 0;
+    // keep every triangle facing out of the part
+    const tri = (a, b, c, col) => {
+      const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const nx = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]][ax] * S.sg;
+      if (nx < 0) mb.tri(a, c, b, [col[0], col[2], col[1]], 0); else mb.tri(a, b, c, col, 0);
+    };
+    const dark = [0.2, 0.015, 0.012], mid = [0.36, 0.035, 0.03], edge = [0.44, 0.06, 0.045], hole = [0.07, 0.01, 0.01];
+    const n = S.seed.length, ring = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU, ca = Math.cos(a), sa = Math.sin(a), rr = r * S.seed[i];
+      // (it spreads down the cloth further than up)
+      ring.push([cu + ca * rr, cv + sa * rr * (sa < 0 ? 1 + 0.9 * down : 0.75)]);
+    }
+    const C = P(cu, cv, 0.0005);
+    for (let i = 0; i < n; i++) { const p0 = ring[i], p1 = ring[(i + 1) % n]; tri(C, P(p0[0], p0[1]), P(p1[0], p1[1]), [mid, edge, edge]); }
+    // the soaked middle and the hole
+    const ri = r * 0.45;
+    for (let i = 0; i < 6; i++) { const a0 = (i / 6) * TAU, a1 = ((i + 1) / 6) * TAU; tri(P(cu, cv, 0.001), P(cu + Math.cos(a0) * ri, cv + Math.sin(a0) * ri, 0.001), P(cu + Math.cos(a1) * ri, cv + Math.sin(a1) * ri, 0.001), [dark, mid, mid]); }
+    const rh = 0.007;
+    for (let i = 0; i < 5; i++) { const a0 = (i / 5) * TAU, a1 = ((i + 1) / 5) * TAU; tri(P(cu, cv, 0.0015), P(cu + Math.cos(a0) * rh, cv + Math.sin(a0) * rh, 0.0015), P(cu + Math.cos(a1) * rh, cv + Math.sin(a1) * rh, 0.0015), [hole, hole, hole]); }
+    // runs down from its lower edge once it has soaked through
+    if (down && r > 0.045) for (let j = 0; j < Math.min(3, Math.floor((r - 0.03) / 0.025)); j++) {
+      const x = cu + (S.seed[j] - 1) * r * 1.6, y0 = cv - r * (1.2 + down * 0.5) * 0.85, L = r * (0.6 + S.seed[j + 3] * 0.8), w = 0.006 + 0.004 * S.seed[j + 6];
+      tri(P(x - w, y0), P(x + w, y0), P(x + w * 0.5, y0 - L), [mid, mid, mid]); tri(P(x - w, y0), P(x + w * 0.5, y0 - L), P(x - w * 0.5, y0 - L), [mid, mid, mid]);
+      tri(P(x - w * 0.9, y0 - L), P(x + w * 0.9, y0 - L), P(x, y0 - L - w * 1.6), [mid, mid, mid]);
+    }
+    // round the edge: where the patch runs off the face to one side, it goes on along the side of the part
+    for (const sd of [-1, 1]) {
+      const lim = sd > 0 ? hi[ua] : lo[ua], over = (cu + sd * r * 1.05) - lim;
+      if (sd * over <= 0) continue;
+      const depth = Math.min(Math.abs(over) * 1.4, hi[ax] - lo[ax]);
+      const q = (t, v) => { const o = [0, 0, 0]; o[ua] = lim + sd * lift; o[ax] = face - S.sg * t; o[va] = clamp(v, lo[va], hi[va]); return o; };
+      const vh = r * 0.7;
+      const pa = q(0, cv - vh * 1.3), pb = q(0, cv + vh * 0.8), pc = q(depth, cv + vh * 0.3), pd = q(depth, cv - vh);
+      // (facing out of that side)
+      const e1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]], e2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+      const nn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]][ua] * sd;
+      if (nn > 0) { mb.tri(pa, pb, pc, [mid, edge, edge], 0); mb.tri(pa, pc, pd, [mid, edge, edge], 0); } else { mb.tri(pa, pc, pb, [mid, edge, edge], 0); mb.tri(pa, pd, pc, [mid, edge, edge], 0); }
+    }
+    const geo = mb.build();
+    if (S.m) { S.m.geometry.dispose(); S.m.geometry = geo; }
+    else { S.m = new THREE.Mesh(geo, N.mat || G.litMat); S.m.frustumCulled = false; part.add(S.m); }
   }
   /* ---- bandages, riding on the part, fitted to it: the cross-section of the part at the wound (from its own
      corners) gives the size of every turn, so a band sits on a thigh as on an arm or the chest.
@@ -10188,11 +10310,11 @@ class Vitals {
       else if (w.field && !w.bandaged && !w.fieldMesh) this.makeBand(w, true);
     }
     for (const m of this.bandages) if (m.material !== (N.mat || G.litMat)) m.material = N.mat || G.litMat;
-    // (the patch soaks further with what the wound has lost, and creeps downwards)
+    // (the patch soaks further with what the wound has lost; rebuilt now and then while it grows)
     if (this.stains) for (const S of this.stains) {
-      if (S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat;
-      const want = S.grow * (1 + Math.min(2.4, (S.w && S.w.lost || 0) * 22)), sc = S.m.scale.x;
-      if (sc < want) { const v = Math.min(want, sc + 0.004); S.m.scale.set(v, v * 1.25, v); S.m.position.y = S.y0 - (v - 0.5) * 0.02; }
+      if (S.m && S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat;
+      const want = Math.min(0.13, 0.028 * S.k + Math.sqrt(S.w && S.w.lost || 0) * 0.32);
+      if (want > S.r * 1.08 + 0.002 && G.time > (S.t || 0)) { S.t = G.time + 0.4; this.stainBuild(S, Math.min(want, S.r + 0.015)); }
     }
   }
   // the part's cross-section at height y (part frame): centre and half sizes, from the corners near that height
@@ -10282,7 +10404,7 @@ class Vitals {
     for (const w of this.wounds) if (w.heal >= 1) for (const k of ['bandMesh', 'fieldMesh']) if (w[k]) { if (w[k].parent) w[k].parent.remove(w[k]); this.bandages = this.bandages.filter((m) => m !== w[k]); w[k] = null; }
     this.wounds = this.wounds.filter((w) => w.heal < 1);
     // clean clothes once the gunshots have healed a good way
-    if (this.stains && this.stains.length && !this.wounds.some((w) => w.kind === 'shot' && w.heal < 0.5)) { for (const S of this.stains) if (S.m.parent) S.m.parent.remove(S.m); this.stains = []; }
+    if (this.stains && this.stains.length && !this.wounds.some((w) => w.kind === 'shot' && w.heal < 0.5)) { for (const S of this.stains) if (S.m && S.m.parent) S.m.parent.remove(S.m); this.stains = []; }
     this.trauma = Math.max(0, this.trauma - h * 0.05);
     this.recalc();
   }
@@ -10817,9 +10939,10 @@ const BARKEEP = {
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
   // a gesture that goes with a kind of line (not always)
   BARK_GESTURE: { bump2: 'point_you', bumpFall: 'fist_shake', excuse: 'calm_down', mutter: 'scratch_head', helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
-  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
+  SURVIVE: { bleed: 1, mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
+    bleed: [['Ich verblute… hol den Doc, schnell!', 'sleepy'], ['Drück drauf… bitte, das Blut hört nicht auf!', 'sleepy'], ['Das Bein… ich verblute hier!', 'sleepy'], ['Es läuft und läuft… hilf mir doch!', 'sleepy']],
     aidStart: [['Was… was machst du?', 'surprised'], ['Drück drauf… fester…', 'sleepy'], ['Gott… danke…', 'sleepy']],
     aidWary: [['Fass mich nicht… was soll das?', 'surprised'], ['Erst schießt du, und jetzt das?', 'angry'], ['Lass mich… nein. Drück drauf.', 'sleepy']],
     aidThanks: [['Danke, Fremder. Das vergess ich dir nicht.', 'neutral'], ['Hält. Ich muss trotzdem zum Doc.', 'neutral'], ['Du hast mir vielleicht das Leben gerettet.', 'neutral']],
@@ -11026,10 +11149,11 @@ const BARKEEP = {
       // what is on his mind down there: not getting shot again, getting help, and at the end not dying
       if (this.groanT <= 0 && lying) {
         this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
-        const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
+        const bleeding = H.bleed > 0.0012 && !(N.hp.wounds.some((w) => (w.aidT || 0) > G.time));
+        const kind = this.aimedT > 0.2 ? 'mercy' : bleeding && Math.random() < 0.7 ? 'bleed' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
         // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
         const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
-        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'bleed' ? 'Du liegst am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
@@ -11139,7 +11263,7 @@ const BARKEEP = {
     const H = N.hp;
     for (const m of H.bandages) if (m.parent) m.parent.remove(m);
     HARM.hatBack(N);
-    for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
+    for (const S of (H.stains || [])) if (S.m && S.m.parent) S.m.parent.remove(S.m);
     N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
     // healed and back at his place behind the bar, whatever he was doing
     if (N.fight.on) N.fight.stop();
@@ -12095,7 +12219,7 @@ const DOC = {
     if (!R) return;
     const s = this.SPOTS.desk, p = rwp(R, s[0], R.floorY, s[1]);
     this.npc = new NPC({
-      id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.05,
+      id: 'doctor', name: 'Doc', room: R, scene, pos: p, yaw: this.yawFor(s[2]), walkSpeed: 1.3,
       desc: { skin: 0, build: { width: 0.95, belly: 0.1 }, face: { nose: 'small', brows: 0.9 }, hair: { style: 'slick', color: rgb(0x9a948a) }, beard: { style: 'goatee', color: rgb(0x8a8378) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe8e4da) }, vest: rgb(0x2a2a2e), pants: { color: rgb(0x34322f) }, boots: rgb(0x1e1a18), belt: rgb(0x1e1a18), bowtie: rgb(0x2a2a2e), glasses: true, gun: false } }
     });
@@ -12425,7 +12549,8 @@ const DIRECT = {
     return P === this.PROVIDERS.claude ? this.anthropic(prompt, opt || {}) : this.openaiStyle(P, prompt, opt || {});
   },
   async anthropic(prompt, opt) {
-    const model = this.modelFor(this.PROVIDERS.claude);
+    // (what people say goes to the stronger model unless one is set: better German, sentences that fit)
+    const model = !(SETTINGS.v.aiModel || '').trim() && opt.modelTier && opt.modelTier !== 'quick' ? 'claude-sonnet-5-5' : this.modelFor(this.PROVIDERS.claude);
     let r;
     try {
       r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -12471,7 +12596,7 @@ const DIRECT = {
   },
   // Groq and OpenAI: /chat/completions, streamed; the text comes in choices[0].delta.content
   async openaiStyle(P, prompt, opt, retried) {
-    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 160,
+    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.6, max_tokens: opt.maxTokens || 160,
       messages: (opt.system ? [{ role: 'system', content: opt.system }] : []).concat([{ role: 'user', content: prompt }]) };
     if (/gpt-oss/.test(model)) { body.reasoning_effort = 'low'; body.include_reasoning = false; body.max_tokens = 600; }   // (thinking models: think briefly, say it short)
     let r;
@@ -13189,9 +13314,11 @@ const TALK = {
   // what his body says before anything else (the survival instinct): put at the top of what he knows
   plightText(n) {
     const lv = n.plight ? n.plight() : 0, gun = n.fear && G.time < n.fear ? ' Eine Waffe ist auf dich gerichtet.' : '';
-    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt, du kriegst kaum Luft.' + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr. Du sprichst stockend, mit letzter Kraft: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch.\n';
-    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz, gepresst, unter Schmerzen.\n';
-    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
+    const H = n.hp, bw = H && H.wounds.filter((w) => w.b && !w.bandaged).sort((a, b) => b.b - a.b)[0];
+    const bleed = bw && H.bleed > 0.0006 ? ' Du verblutest gerade: aus der Wunde ' + zoneIn(bw.zone, bw.side) + (bw.art && !bw.field ? ' pumpt das Blut stoßweise heraus und hört nicht auf' : ' läuft das Blut und hört nicht auf') + '. Das spürst du, das sagst du auch: dass du verblutest, dass jemand draufdrücken oder den Doc holen muss.' : '';
+    if (lv >= 3) return 'DEIN ZUSTAND (wichtiger als alles andere): Du stirbst. Du liegst in deinem Blut, dir wird kalt und schwindlig.' + bleed + gun + ' Theke, Geld, Regeln, Kunden – nichts davon zählt mehr: Angst, Abschied, eine letzte Bitte oder ein letzter Fluch. Ein kurzer, ganzer Satz, leise und mit letzter Kraft, aber verständlich.\n';
+    if (lv >= 2) return 'DEIN ZUSTAND (wichtiger als alles andere): Du liegst angeschossen am Boden und blutest. Du hast Todesangst.' + bleed + gun + ' Dein einziger Gedanke ist zu überleben: dass er nicht noch einmal schießt, dass jemand den Doc holt. Theke, Kunden, Geld und deine Regeln sind dir jetzt völlig egal. Kurz und unter Schmerzen, aber in ganzen Sätzen.\n';
+    if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + bleed + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
     return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
   },
   /* curiosity: he asks you something, once (key), when you are close and nothing else is going on: what happened to
@@ -13230,7 +13357,7 @@ const TALK = {
     let failed = false;
     const fail = () => { if (failed) return; failed = true; if (seq === this.seq && !F.shown() && fallback) fallback(); };
     const timer = setTimeout(() => { if (!F.shown()) { ctl.abort(); fail(); } }, 7000);
-    this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
+    this.callAI(sys, prompt, { modelTier: 'default', cache: false, signal: ctl.signal, maxTokens: 80, onText: ({ text: t }) => F.feed(t, false) }).then((r) => {
       const raw = r && r.text;
       if (!raw || !raw.trim() || seq !== this.seq) { fail(); return; }
       const out = this.parse(raw), say = String(out.say || '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -13248,7 +13375,10 @@ const TALK = {
   },
   /* the person's unchanging part (who he is, how he talks) goes apart from what changes: with an own key it is sent
      as the system part (Claude keeps it ready between calls, cheaper and faster); through claude.ai as one text */
+  // how everybody speaks (at the end of every prompt that makes someone talk)
+  LANG: '\nSprache: natürliches, grammatisch korrektes Deutsch in ganzen Sätzen, so wie ein Mensch es in dieser Lage wirklich sagen würde. Jeder Satz muss für sich verständlich sein und genau zu dem passen, was gerade passiert. Keine Wortfetzen, keine erfundenen Wörter, keine verdrehten Satzteile; lieber einfach als kunstvoll. Auch mit Schmerzen sprichst du verständlich.',
   callAI(sys, prompt, opt) {
+    prompt += this.LANG;
     if (this.via === 'key') return this.ai(prompt, Object.assign({ system: sys }, opt));
     return this.ai(sys + '\n\n' + prompt, opt);
   },
@@ -13264,7 +13394,7 @@ const TALK = {
       // no answer in time: give up (the first call may wait on the viewer's permission, so it gets longer)
       const timer = setTimeout(() => { this.lastErr = 'Keine Antwort (Zeit abgelaufen).'; ctl.abort(); }, this.aiOk ? 25000 : 120000);
       try {
-        const r = await this.callAI(sys, prompt, { modelTier: 'quick', cache: false, signal: ctl.signal, maxTokens: 120, onText: ({ text: t }) => onText(t) });
+        const r = await this.callAI(sys, prompt, { modelTier: 'default', cache: false, signal: ctl.signal, maxTokens: 120, onText: ({ text: t }) => onText(t) });
         this.aiOk = this.aiEver = true; this.model = (r.modelApplied || r.modelTierApplied || '') + ''; return r.text;
       } finally { clearTimeout(timer); if (this.ctl === ctl) this.ctl = null; }
     };
@@ -13330,7 +13460,12 @@ const GOSSIP = {
     return out;
   },
   // what someone heard from another, for his memory (the other's own words, so nothing is twisted on the way)
-  told(from, f) { return from.name + ' hat dir erzählt (über den Fremden, aus seiner Sicht): „' + f.replace(/ \(Tag \d+, \w+\)\.?$/, '.') + '“ (' + TIME.stamp() + ').'; }
+  // (turned round to the one who tells it: "Er hat dir … geschossen" → "Hank sagt, der Fremde hat ihm … geschossen")
+  told(from, f) {
+    const t = f.replace(/ \(Tag \d+, \w+\)\.?$/, '').replace(/\.$/, '').replace(/^Er /, 'der Fremde ').replace(/^Der Fremde /, 'der Fremde ')
+      .replace(/\bdir\b/g, 'ihm').replace(/\bdich\b/g, 'ihn').replace(/\bdu\b/g, 'er').replace(/\bdein(e|en|em|er|es)?\b/g, (m, e) => 'sein' + (e || ''));
+    return from.name + ' hat dir erzählt, ' + t + ' (' + TIME.stamp() + ').';
+  }
 };
 const CHAT = {
   t: 3, run: null, cool: new Map(),
@@ -13390,7 +13525,7 @@ const CHAT = {
       (T ? T.prompt + ' ' : news.length ? a.name + ' erzählt ' + b.name + ' etwas über den Fremden, das er erlebt hat: „' + news[0] + '“ ' + b.name + ' ist neugierig und fragt nach. ' : '') +
       'Sie reden kurz miteinander, nicht mit dem Fremden (der kann zuhören). Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
       'Jede Zeile höchstens 12 Wörter, einfaches Deutsch, kein Markdown. Format je Zeile genau: Name: [stimmung] Text. Stimmungen: neutral, amused, angry, surprised, disgusted, sleepy, whisper.';
-    TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'quick', cache: false, maxTokens: 160 }).then((r) => {
+    TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'default', cache: false, maxTokens: 160 }).then((r) => {
       if (this.run !== R) return;
       const out = [];
       for (const line of String(r && r.text || '').split('\n')) {
@@ -14887,7 +15022,7 @@ const DEV = {
     // hit-stop: a landed punch freezes the world for a few frames
     if (G.hitStop > 0) { G.hitStop -= dt; dt *= 0.04; }
     // a knockdown: half a second of slow motion (counted in real time)
-    if (G.slowT > 0) { G.slowT -= dt; dt *= 0.3; }
+    if (G.slowT > 0) { G.slowT -= dt; dt *= G.slowT > 0 ? (G.slowK || 0.3) : 1; if (G.slowT <= 0) G.slowK = 0; }
     G.time += dt;
     G.frameNo++;
     TIME.update(dt);

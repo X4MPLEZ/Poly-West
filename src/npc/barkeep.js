@@ -20,9 +20,10 @@ const BARKEEP = {
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
   // a gesture that goes with a kind of line (not always)
   BARK_GESTURE: { bump2: 'point_you', bumpFall: 'fist_shake', excuse: 'calm_down', mutter: 'scratch_head', helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
-  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
+  SURVIVE: { bleed: 1, mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
+    bleed: [['Ich verblute… hol den Doc, schnell!', 'sleepy'], ['Drück drauf… bitte, das Blut hört nicht auf!', 'sleepy'], ['Das Bein… ich verblute hier!', 'sleepy'], ['Es läuft und läuft… hilf mir doch!', 'sleepy']],
     aidStart: [['Was… was machst du?', 'surprised'], ['Drück drauf… fester…', 'sleepy'], ['Gott… danke…', 'sleepy']],
     aidWary: [['Fass mich nicht… was soll das?', 'surprised'], ['Erst schießt du, und jetzt das?', 'angry'], ['Lass mich… nein. Drück drauf.', 'sleepy']],
     aidThanks: [['Danke, Fremder. Das vergess ich dir nicht.', 'neutral'], ['Hält. Ich muss trotzdem zum Doc.', 'neutral'], ['Du hast mir vielleicht das Leben gerettet.', 'neutral']],
@@ -229,10 +230,11 @@ const BARKEEP = {
       // what is on his mind down there: not getting shot again, getting help, and at the end not dying
       if (this.groanT <= 0 && lying) {
         this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
-        const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
+        const bleeding = H.bleed > 0.0012 && !(N.hp.wounds.some((w) => (w.aidT || 0) > G.time));
+        const kind = this.aimedT > 0.2 ? 'mercy' : bleeding && Math.random() < 0.7 ? 'bleed' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
         // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
         const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
-        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'bleed' ? 'Du liegst am Boden und verblutest, das Blut läuft aus dir heraus und hört nicht auf.' : kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
@@ -342,7 +344,7 @@ const BARKEEP = {
     const H = N.hp;
     for (const m of H.bandages) if (m.parent) m.parent.remove(m);
     HARM.hatBack(N);
-    for (const S of (H.stains || [])) if (S.m.parent) S.m.parent.remove(S.m);
+    for (const S of (H.stains || [])) if (S.m && S.m.parent) S.m.parent.remove(S.m);
     N.hp = new Vitals(N); N.body.r = 0.32; N.ch.pose.armOv = [null, null];
     // healed and back at his place behind the bar, whatever he was doing
     if (N.fight.on) N.fight.stop();

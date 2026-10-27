@@ -56,7 +56,9 @@ class NPC {
     o.scene.add(this.ch.root);
     this.pos = o.pos.clone(); this.yaw = o.yaw || 0;
     this.goal = null; this.faceYaw = null; this.vx = 0; this.vz = 0; this.speed = 0; this.ph = 0; this.stepN = 0;
-    this.walkSpeed = o.walkSpeed || 1.15;
+    // walking a little slower than you, running (hurry ≥ 2) nearly as fast as you (RUN, play/player.js)
+    this.walkSpeed = o.walkSpeed || 1.4; this.runSpeed = o.runSpeed || RUN * 0.88;
+    this.gait = makeGait(); this._lp = new THREE.Vector3();
     this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
     this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 }, cp: new THREE.Vector3(), cpOk: false }));
@@ -115,12 +117,14 @@ class NPC {
     return 0;
   }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
+  // how fast he goes: walking (hurry: a brisker walk), running from hurry 2 on; slower when hurt
+  topSpeed() { const h = this.hurry || 1; return (h >= 2 ? this.runSpeed : this.walkSpeed * h) * this.hp.speedK(); }
   /* time lived without being watched (npc/sim.js): s seconds of walking along the way, no collisions, no steps,
      no pose; where he ends up, he is */
   ff(s) {
     const H = this.hp;
     if (H.canWalk() && !(this.waitFor && this.waitFor.t > G.time)) {
-      let left = this.walkSpeed * (this.hurry || 1) * H.speedK() * s;
+      let left = this.topSpeed() * s;
       for (let k = 0; k < 24 && left > 1e-4; k++) {
         if (!this.goal) { if ((this.path && this.path.length) || this.dest) this.nextLeg(); if (!this.goal) break; }
         const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
@@ -201,7 +205,7 @@ class NPC {
     if (this.goal && can && !hold) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
-      else { const top = this.walkSpeed * (this.hurry || 1) * H.speedK(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
+      else { const top = this.topSpeed(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
     const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
@@ -243,12 +247,6 @@ class NPC {
       const fy = hold ? this.faceHold : this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
-    // the step: a limp hurries over the bad leg and lingers on the good one
-    let stepK = 1;
-    if (H.limp > 0.02) { const bad = H.limpSide === 'L' ? 0 : 1, onBad = -Math.cos(this.ph + bad * Math.PI) > 0; stepK = onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
-    this.ph += (this.speed * dt * TAU) / 1.15 * stepK;
-    const n = Math.floor(this.ph / Math.PI);
-    if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
     // the behaviour's wishes, eased
     const e = 1 - Math.exp(-dt * 6);
     this.lean += (this.leanT - this.lean) * e; this.crouch += (this.crouchT - this.crouch) * (1 - Math.exp(-dt * 9));
@@ -260,7 +258,7 @@ class NPC {
     if ((this.glanceT = (this.glanceT || 2 + Math.random() * 3) - dt) <= 0) {
       this.glanceT = 3 + Math.random() * 4;
       const o = NPCS.list.find((n) => n !== this && !n.hp.dead && (n.room || null) === (this.room || null) && Math.hypot(n.pos.x - this.pos.x, n.pos.z - this.pos.z) < 5);
-      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !this.fear) { this.mood = 'sad'; this.moodT = G.time + 3; } }
+      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !(this.fear > G.time) && G.time > (this.moodT || 0)) { this.mood = 'sad'; this.moodT = G.time + 3; } }
     }
     if (this.glanceAt && G.time < this.glanceUntil && this.lookTW < 0.6) { this.look.copy(this.glanceAt.ch.p.head.getWorldPosition(this._gq)); this.lookTW = 0.8; }
     // after a start: the eyes stay on where it came from (over whatever the behaviour wanted him to look at)
@@ -341,22 +339,30 @@ class NPC {
       SFX.noiseHit(t, g, { type: 'highpass', freq: 2600 * p, q: 0.7, gain: 0.12, decay: 0.015 });
     });
   }
+  // his feet: the step sound and a little dust when he runs (only where you are)
+  feet() {
+    return this._feet || (this._feet = {
+      noIdleLook: true,   // (he looks where his behaviour wants him to)
+      land: (F, hard) => { if (this.gait.s > 0.25) this.footstep(); if (hard > 1.5 && !this.room && Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) < 25) DUST.burst(F.plant, F.yaw, hard * 0.6); },
+      // a limp: the step over the bad leg comes quicker, the good one lingers
+      rate: (g) => { const H = this.hp; if (H.limp <= 0.02) return 1; const bad = H.limpSide === 'L' ? 0 : 1, onBad = ((g.phase + bad * 0.5) % 1) < g.duty; return onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
+    });
+  }
   pose(dt) {
-    const P = this.ch.pose, t = G.time, m = Math.min(1, this.speed / 0.5);
-    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
-    // the way it walks, in its own frame (+x left, +z ahead)
-    const lx = this.speed > 0.05 ? (this.vx * c - this.vz * s) / this.speed : 0, lz = this.speed > 0.05 ? (this.vx * s + this.vz * c) / this.speed : 0;
+    const P = this.ch.pose, t = G.time, g = this.gait;
+    // the same gait as yours (char/gait.js): feet planted in the world, the body over them, walking or running.
+    // Moved far in one go (put somewhere, got up from the floor): the feet start again where he stands
+    if (this.hp.anim || this._lp.distanceToSquared(this.pos) > 1) g.init = false;
+    this._lp.copy(this.pos);
+    gaitStep(g, P, this.pos, this.yaw, this.speed > 0.02 ? this.vx : 0, this.speed > 0.02 ? this.vz : 0, dt, t, this.feet());
+    // (the phase as an angle, for the limp and the hanging arm: 0 when the left foot is in the middle of its step)
+    this.ph = TAU * (g.phase - g.duty / 2) + Math.PI;
     const cr = this.crouch, ln = this.lean;
-    P.pel.set(0, RIG.hipY - 0.02 - 0.025 * Math.abs(Math.sin(this.ph)) * m - cr * 0.42, -cr * 0.12 - ln * 0.05);
-    P.pelYaw = 0; P.pelPitch = cr * 0.25; P.pelRoll = Math.sin(this.ph) * 0.03 * m;
-    P.spPitch = 0.02 + Math.sin(t * 1.7) * 0.012 + ln * 0.38 + cr * 0.35; P.spRoll = 0;
-    for (let i = 0; i < 2; i++) {
-      const sd = i === 0 ? 1 : -1, ph = this.ph + i * Math.PI;
-      P.ank[i].set(sd * (0.12 + cr * 0.06) + lx * 0.2 * Math.sin(ph) * m, RIG.ankleH + 0.07 * Math.max(0, Math.cos(ph)) * m, lz * 0.2 * Math.sin(ph) * m + (cr ? -cr * 0.05 * sd : 0));
-      P.ftYaw[i] = 0; P.ftPitch[i] = 0;
-      const a = P.arm[i]; a.sw = -Math.sin(ph) * 0.3 * m * lz; a.out = 0.08 + 0.05 * m; a.el = 0.15 + 0.15 * m;
-    }
+    P.pel.y -= cr * 0.42; P.pel.z -= cr * 0.12 + ln * 0.05; P.pelPitch += cr * 0.25;
+    P.spPitch += ln * 0.38 + cr * 0.35;
+    if (cr) for (let i = 0; i < 2; i++) { const sd = i === 0 ? 1 : -1; P.ank[i].x += sd * cr * 0.06; P.ank[i].z -= cr * 0.05 * sd; }
     // the head (and a little of the chest) turns to what it looks at
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
     let ty = 0, tp = 0;
     if (this.lookW > 0.01) {
       const hx = this.pos.x, hy = this.pos.y + 1.62 - cr * 0.42, hz = this.pos.z;
@@ -366,12 +372,12 @@ class NPC {
     }
     const k = 1 - Math.exp(-dt * 5);
     this.spYawL += (ty * 0.3 - this.spYawL) * k; this.hdYaw += (clamp(ty - ty * 0.3, -1, 1) - this.hdYaw) * k; this.hdPitch += (tp - this.hdPitch) * k;
-    P.spYaw = this.spYawL;
+    P.spYaw += this.spYawL;
     // a fighter's body: twisted into a punch, leaning in, the hips forward (npc/brawl.js)
     if (this.tw || this.leanF || this.lunge) { P.spYaw += this.tw || 0; P.pelYaw += (this.tw || 0) * 0.4; P.spPitch += this.leanF || 0; P.pel.z += this.lunge || 0; }
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
-    P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
+    P.hdYaw += this.hdYaw; P.hdPitch += this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
     const gdef = this.gest && GESTURES[this.gest], genv = gdef ? GESTURE.env(gdef, this.gestT, this.gestEnd) : 0;
     if (gdef && gdef.head) gdef.head(this.gestT, P);
     P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;

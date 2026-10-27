@@ -111,6 +111,22 @@ const FOLEY = {
       SFX.noiseHit(t, g, { type: 'lowpass', freq: 420, q: 0.8, gain: heavy ? 0.6 : 0.4, attack: 0.002, decay: 0.09 });
     });
   },
+  /* bones breaking (k: how bad): a dry crack made of a few hard snaps close together, the dull blow under it and a
+     short crunching grind; slow: the killing blow in slow motion, everything lower and drawn out */
+  crack(pos, k, slow) {
+    GSFX.run(() => {
+      const { g, t } = GSFX.out(1.0 * (k || 1), pos), sl = slow ? 0.6 : 1;
+      const n = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const dt = (i * 0.011 + Math.random() * 0.008) / sl;
+        SFX.noiseHit(t + dt, g, { type: 'bandpass', freq: (2600 + Math.random() * 2600) * sl, q: 3.5, gain: 0.5 - i * 0.06, attack: 0.0006, decay: 0.012 / sl });
+        SFX.noiseHit(t + dt, g, { type: 'highpass', freq: 5200 * sl, q: 0.7, gain: 0.18, attack: 0.0005, decay: 0.006 / sl });
+      }
+      SFX.thump(t, g, 120 * sl, 42 * sl, 0.9, 0.16 / sl);
+      for (let i = 0; i < 6; i++) SFX.noiseHit(t + (0.035 + i * 0.016 + Math.random() * 0.01) / sl, g, { type: 'bandpass', freq: (1100 + Math.random() * 900) * sl, q: 2.5, gain: 0.14 * (1 - i / 7), attack: 0.002, decay: 0.018 / sl });
+      if (slow) { GSFX.play('punchH', g, t, 0.62, 1.0); SFX.thump(t + 0.02, g, 55, 24, 1.0, 0.6); }
+    });
+  },
   // the doctor: pen on paper, a cabinet, water in the basin
   scribble(pos) { GSFX.run(() => { const { g, t } = GSFX.out(0.25, pos); for (let i = 0; i < 5; i++) SFX.noiseHit(t + i * 0.09 + Math.random() * 0.04, g, { type: 'bandpass', freq: 3800 + Math.random() * 1500, q: 2, gain: 0.04, attack: 0.02, decay: 0.05 }); }); },
   cabinet(pos) { GSFX.run(() => { const { g, t } = GSFX.out(0.4, pos); SFX.noiseHit(t, g, { type: 'bandpass', freq: 520, q: 9, gain: 0.05, attack: 0.06, decay: 0.25 }); SFX.thump(t + 0.3, g, 200, 110, 0.25, 0.06); SFX.noiseHit(t + 0.3, g, { type: 'lowpass', freq: 900, q: 0.8, gain: 0.2, attack: 0.001, decay: 0.05 }); }); },

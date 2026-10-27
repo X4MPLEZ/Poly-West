@@ -356,8 +356,14 @@ const FIST = {
       if (head && !ground && (big || counter || res === 'down') && Math.random() < 0.6) HARM.knockHat(N, dir, true);
       if (N.fight) N.fight.gotHit();
       if (counter) { this.counterT = -9; G.hitStop = Math.max(G.hitStop, 0.13); PLAY.camShake = Math.max(PLAY.camShake, 0.1); HUD.cueFlash('hit', 'Konter!', 0.7); }
-      // he goes down: a moment of slow motion
-      if (res === 'down' || res === 'dead') { G.slowT = 0.55; G.hitStop = Math.max(G.hitStop, 0.12); PLAY.camShake = Math.max(PLAY.camShake, 0.14); }
+      // he goes down: a moment of slow motion. Beaten to death: the last blow in long slow motion, bones breaking,
+      // the view closing in on him
+      if (res === 'dead') {
+        G.slowT = 1.8; G.slowK = 0.18; G.hitStop = Math.max(G.hitStop, 0.22); PLAY.camShake = Math.max(PLAY.camShake, 0.22);
+        G.killCam = { npc: N, t: 0 }; FOLEY.crack(p, 1.2, true); HARM.bloodFx(p, dir, head ? 0.9 : 0.5, N);
+      } else if (res === 'down') { G.slowT = 0.55; G.hitStop = Math.max(G.hitStop, 0.12); PLAY.camShake = Math.max(PLAY.camShake, 0.14); }
+      // a hard blow on a man already broken (on the ground, or a heavy one late in a beating): a bone goes
+      else if ((ground && (big || foot)) || (big && N.hp.trauma > 0.5)) { if (Math.random() < 0.35 + N.hp.trauma * 0.5) FOLEY.crack(p, 0.7 + N.hp.trauma * 0.4, false); }
       if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));

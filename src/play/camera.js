@@ -78,7 +78,10 @@ function updateCamera(dt) {
   }
   cam.lookAt(lookT);
   DRUNK.camera(cam);
-  const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) : cam.fov;
+  // the killing blow (combat/fist.js): the view closes in on him while it is slow, then lets go
+  let kz = 0;
+  if (G.killCam) { const K = G.killCam; K.t += dt; if (G.slowT <= 0 && K.rel === undefined) K.rel = K.t; kz = K.rel === undefined ? Math.min(1, K.t / 0.08) : Math.max(0, 1 - (K.t - K.rel) / 0.5); if (K.rel !== undefined && kz <= 0) G.killCam = null; }
+  const fov = G.baseFov ? G.baseFov * (1 - 0.16 * aw) * (1 + 0.045 * GUN.fovPunch * GUN.fovPunch) * (1 - 0.22 * kz) : cam.fov;
   if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
   cam.updateMatrixWorld();
   W.ch.root.visible = cam.position.distanceTo(G.lookAt) > 0.75;

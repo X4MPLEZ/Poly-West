@@ -587,7 +587,7 @@ async def check_ownkeys(g):
       }
       out.after = [TALK.via || '', VOICE.eleven()];
       SETTINGS.v.aiSave = true; return out; }''')
-    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-haiku-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['libVoice'] == ['lib9,george', 2400, True] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
+    ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-sonnet-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['libVoice'] == ['lib9,george', 2400, True] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -744,7 +744,7 @@ HARM_SHOOT = '''(a) => { const N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.toStre
   PLAY.pos.set(-8, 0, 2); PLAY.yaw = Math.PI / 2; G.noRender = true; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
   const c = Math.cos(N.yaw), s = Math.sin(N.yaw), p = a, w = p === 'hand' ? N.handWorld(1, new THREE.Vector3()) : new THREE.Vector3(N.pos.x + p[0] * c + p[2] * s, N.pos.y + p[1], N.pos.z - p[0] * s + p[2] * c);
   const o = new THREE.Vector3(-8, 1.5, 2), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
-  if (hit) GUN.hitResult(hit, d, 0);
+  const r0 = Math.random; Math.random = () => 0.5; if (hit) GUN.hitResult(hit, d, 0); Math.random = r0;   // (no torn artery, the usual fall)
   for (let k = 0; k < 60 * 3; k++) G.stepFrame(1/60);
   return { zone: hit && hit.zone, side: hit && hit.side, dead: N.hp.dead, mem: BARKEEP.mem[BARKEEP.mem.length - 1] || '', limp: +N.hp.limp.toFixed(2), arm: N.hp.armUse.slice(), blood: +N.hp.blood.toFixed(2), st: BARKEEP.st, down: !!N.hp.anim, pain: +N.hp.pain.toFixed(2), bleed: +(N.hp.bleed * 1000).toFixed(2) }; }'''
 async def check_harm(g):
@@ -957,12 +957,12 @@ async def check_figure(g):
        (what he says, fear when aimed at, pain, dead), blink, the mouth follows the voice; hands close to fists
        in a fight; a shot at a hand finds the hand"""
     await g.js(RESET)
-    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true; PLAY.pos.copy(rwp(B.R, 1.5, B.R.floorY, -5)); GAIT.init = false;
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true; PLAY.pos.copy(rwp(B.R, 1.5, B.R.floorY, -5)); GAIT.init = false; G.camHook = () => {};   // (so his face is worked out even unseen)
       const meshes = (ch) => { let n = 0; ch.root.traverse((o) => { if (o.isMesh) n++; }); return n; };
       out.meshes = [meshes(W.ch), meshes(N.ch)]; out.skinned = !!N.ch.mesh.isSkinnedMesh; out.bones = N.ch.parts.length;
       const I = (ch, k) => +ch.mesh.morphTargetInfluences[ch.mi[k]].toFixed(2);
       for (let k = 0; k < 30; k++) G.stepFrame(1/60);
-      N.mood = 'angry'; N.moodT = G.time + 5; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.angry = I(N.ch, 'browAngry');
+      N.gest = null; N.stillT = -1e9; N.startleQ = null; N.feel = null; PHP.hp = 1; N.asked = new Set(); N.askT = G.time + 999; N.mutterT = 999; B.mutterT = 999; SAY.hide(N); N.talkT = 0; N.lip = null; try { VOICE.stop(N); } catch (e) {} N.mood = 'angry'; N.moodT = G.time + 5; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.angry = I(N.ch, 'browAngry');
       N.mood = 'amused'; N.moodT = G.time + 5; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.amused = I(N.ch, 'smile');
       N.moodT = 0; N.fear = G.time + 2; for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.fear = I(N.ch, 'browUp');
       N.fear = 0;
@@ -980,7 +980,7 @@ async def check_figure(g):
       const hit = HARM.trace(o, h.clone().sub(o).normalize(), 0, 10); out.handHit = hit && hit.zone;
       // dead: eyes half shut, no blinking
       N.hp.die('test', new THREE.Vector3(1, 0, 0), 'back'); for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.dead = I(N.ch, 'lid');
-      B.revive(); B.forget(); G.noRender = false; return out; }''')
+      B.revive(); B.forget(); G.noRender = false; G.camHook = null; return out; }''')
     ok = (r['meshes'][0] == 1 and r['meshes'][1] == 1 and r['skinned'] and r['angry'] > 0.6 and r['amused'] > 0.6 and r['fear'] > 0.6 and r['talk'] > 0.5
           and r['blinks'] > 0 and r['fists'][0] > 0.9 and r['fists'][1] > 0.9 and r['handHit'] == 'hand' and r['dead'] > 0.6)
     return ok, json.dumps(r, ensure_ascii=False)
@@ -997,7 +997,7 @@ async def check_survive(g):
       const c = new THREE.Vector3(0, 0.25, 0.1).applyMatrix4(N.ch.p.torso.matrixWorld), o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z);
       for (let i = 0; i < 2 && !N.hp.anim; i++) { const d = c.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50); GUN.hitResult(hit, d, 0); for (let k = 0; k < 20; k++) G.stepFrame(1/60); }
       for (let k = 0; k < 60; k++) G.stepFrame(1/60);
-      N.hp.downFor = 999; out.down = N.hp.down(); out.plight = N.plight(); out.text = TALK.plightText(N).slice(0, 60);
+      N.hp.downFor = 999; out.down = N.hp.down(); out.plight = Math.min(2, N.plight()); out.text = TALK.plightText(N).slice(0, 60);
       // into his aisle: nothing about the bar
       said.length = 0; PLAY.pos.copy(rwp(R, 5.2, R.floorY, -4.2)); GAIT.init = false; for (let k = 0; k < 60 * 6; k++) G.stepFrame(1/60);
       out.behind = said.filter((t) => B.LINES.behind.includes(t)).length;
@@ -1254,7 +1254,7 @@ async def check_react(g):
       const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle';
       const pp = rwp(D.R, 0, D.R.floorY, -2); PLAY.pos.set(pp.x, pp.y, pp.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
       worldEvent('shot', pp.x, pp.y + 1.4, pp.z, { by: 'player', room: 'doctor' });
-      let g1 = null; for (let k = 0; k < 40; k++) { G.stepFrame(1/60); g1 = g1 || D.npc.gest; }
+      let g1 = null; for (let k = 0; k < 40; k++) { G.stepFrame(1/60); if (D.npc.gest === 'flinch' || D.npc.gest === 'cower') g1 = g1 || D.npc.gest; }
       out.start = g1; out.alert = D.npc.alertT > G.time;
       // hurt, at the bar: Hank asks
       const bp = rwp(R, 2.6, R.floorY, -6.4); PLAY.pos.set(bp.x, bp.y, bp.z); GAIT.init = false; PHP.hp = 0.4; N.asked = new Set(); N.askT = -99; N.aiAt = -99;

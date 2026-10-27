@@ -59,7 +59,8 @@ const DIRECT = {
     return P === this.PROVIDERS.claude ? this.anthropic(prompt, opt || {}) : this.openaiStyle(P, prompt, opt || {});
   },
   async anthropic(prompt, opt) {
-    const model = this.modelFor(this.PROVIDERS.claude);
+    // (what people say goes to the stronger model unless one is set: better German, sentences that fit)
+    const model = !(SETTINGS.v.aiModel || '').trim() && opt.modelTier && opt.modelTier !== 'quick' ? 'claude-sonnet-5-5' : this.modelFor(this.PROVIDERS.claude);
     let r;
     try {
       r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -105,7 +106,7 @@ const DIRECT = {
   },
   // Groq and OpenAI: /chat/completions, streamed; the text comes in choices[0].delta.content
   async openaiStyle(P, prompt, opt, retried) {
-    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.9, max_tokens: opt.maxTokens || 160,
+    const model = this.modelFor(P), body = { model, stream: true, temperature: 0.6, max_tokens: opt.maxTokens || 160,
       messages: (opt.system ? [{ role: 'system', content: opt.system }] : []).concat([{ role: 'user', content: prompt }]) };
     if (/gpt-oss/.test(model)) { body.reasoning_effort = 'low'; body.include_reasoning = false; body.max_tokens = 600; }   // (thinking models: think briefly, say it short)
     let r;
