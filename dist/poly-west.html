@@ -3615,6 +3615,8 @@ const FACE = {
     else if (N.fight && N.fight.on) W.mood = H.daze > 0.4 ? 'pain' : 'angry';
     else if (N.feel && N.feel.mood && G.time - N.feel.t < 25) { W.mood = N.feel.mood; W.k = 0.6; }   // (how the talk left him: talk.js)
     else if (N.attitude) { const f = N.attitude(); W.mood = f > 0.35 ? 'amused' : f < -0.35 ? 'angry' : 'neutral'; W.k = Math.min(1, Math.abs(f)) * 0.5; }
+    const gd = N.gest && GESTURES[N.gest];
+    if (gd && gd.face) { W.mood2 = gd.face; W.k2 = 0.85; }
     if (H.pain > 0.25) { W.mood2 = 'pain'; W.k2 = clamp(H.pain - 0.2, 0, 1); }
     if (H.daze > 0.5) { W.mood2 = 'dazed'; W.k2 = H.daze - 0.4; }
     return W;
@@ -3636,6 +3638,87 @@ const FACE = {
     return Q;
   },
   _v2: new THREE.Vector3()
+};
+
+// ==== char/gesture.js ====
+/* ---------- gestures: what the hands (and head) say ----------
+   Each gesture is a short movement of one or both hands in the character's frame (+x his left, +y up, +z ahead),
+   written for the right hand (x < 0 is his right) and mirrored for the left (unless raw): arm(i, t, n) → { p: [x, y, z], pole, shape } or null (that
+   arm is not used), head(t, P) for nods and shakes, dur (seconds; 0 = held until something else comes), face (a
+   feeling for the face while it lasts). A gesture eases in and out (GESTURE.env); while it runs it overrides what
+   the hands were doing (npc.js: hand targets are blended, never jump, and kept out of the body: GESTURE.safe).
+   Used by the AI's actions ([aktion, …], npc/talk.js), by ready-made lines, by idle standing (IDLE) and as small
+   beats while talking (beat). */
+const GESTURES = {
+  nod: { dur: 1.1, head: (t, P) => { P.hdPitch += Math.max(0, Math.sin(t * 9)) * 0.22 * Math.sin(Math.PI * Math.min(1, t / 1.1)); } },
+  shake_head: { dur: 1.2, head: (t, P) => { P.hdYaw += Math.sin(t * 11) * 0.32 * Math.sin(Math.PI * Math.min(1, t / 1.2)); } },
+  laugh: { dur: 1.4, face: 'happy',
+    head: (t, P) => { const f = Math.sin(Math.PI * Math.min(1, t / 1.4)); P.hdPitch -= 0.28 * f; P.spPitch -= 0.1 * f; P.pel.y += Math.abs(Math.sin(t * 15)) * 0.012 * f; },
+    arm: (i, t) => (i === 1 ? { p: [-0.05, 1.08 + Math.abs(Math.sin(t * 15)) * 0.015, 0.22], shape: { open: 0.6 } } : null) },
+  // palms up, shoulders and brows up: "what do I know"
+  shrug: { dur: 1.3, face: 'doubt',
+    head: (t, P) => { const f = Math.sin(Math.PI * Math.min(1, t / 1.3)); P.hdRoll = (P.hdRoll || 0) + 0.15 * f; P.pel.y += 0.02 * f; },
+    arm: (i) => ({ p: [-0.3, 1.06, 0.3], pole: [-1, -0.4, -0.4], shape: { open: 1 }, wrist: { x: -0.9, z: 0.3 } }) },
+  wave: { dur: 1.5, face: 'amused',
+    arm: (i, t) => (i === 1 ? { p: [-0.3 + Math.sin(t * 9) * 0.07, 1.78, 0.18], pole: [-1, 0, -0.2], shape: { open: 1 } } : null) },
+  // come here: hand out, fingers curling in
+  beckon: { dur: 1.6,
+    arm: (i, t) => (i === 1 ? { p: [-0.15, 1.2, 0.45 - Math.max(0, Math.sin(t * 7)) * 0.08], shape: { open: 1 - Math.max(0, Math.sin(t * 7)), fist: Math.max(0, Math.sin(t * 7)) * 0.7 }, wrist: { x: -0.8, z: 0 } } : null) },
+  // points: at the door, at you, or wherever n.gestTarget is
+  point: { dur: 1.7, arm: (i, t, n) => (i === 1 ? { p: GESTURE.aimAt(n, 0.62), pole: [-1, -0.6, 0], shape: { point: 1 } } : null) },
+  point_door: { dur: 1.8, arm: (i, t, n) => (i === 1 ? { p: GESTURE.aimAt(n, 0.62), pole: [-1, -0.6, 0], shape: { point: 1 } } : null) },
+  point_you: { dur: 1.5, face: 'angry', arm: (i, t, n) => (i === 1 ? { p: GESTURE.aimAt(n, 0.58, true), pole: [-1, -0.6, 0], shape: { point: 1 } } : null) },
+  fist_shake: { dur: 1.4, face: 'furious', arm: (i, t) => (i === 1 ? { p: [-0.24, 1.48 + Math.sin(t * 16) * 0.04, 0.34], pole: [-1, -0.5, -0.3], shape: { fist: 1 } } : null) },
+  // easy now: both palms down, pressing the air
+  calm_down: { dur: 1.8, arm: (i, t) => ({ p: [-0.2, 1.08 + Math.sin(t * 4) * 0.05, 0.42], pole: [-1, -0.6, -0.3], shape: { open: 1 }, wrist: { x: 0.9, z: 0 } }) },
+  cross_arms: { dur: 0, raw: true, arm: (i) => (i === 0 ? { p: [-0.13, 1.22, 0.2], pole: [0.8, -0.8, 0.2], shape: { fist: 0.4 } } : { p: [0.12, 1.26, 0.23], pole: [-0.8, -0.8, 0.2], shape: { fist: 0.4 } }) },
+  hands_hips: { dur: 0, arm: () => ({ p: [-0.27, 0.98, -0.02], pole: [-1, 0.1, -0.4], shape: { fist: 0.5 } }) },
+  thumbs_belt: { dur: 0, arm: () => ({ p: [-0.12, 0.99, 0.17], pole: [-1, -0.7, -0.3], shape: { fist: 0.6 } }) },
+  scratch_head: { dur: 1.9, face: 'doubt', arm: (i, t) => (i === 1 ? { p: [-0.1 + Math.sin(t * 14) * 0.02, 1.86, -0.02], pole: [-1, 0.4, 0.2], shape: { fist: 0.3 } } : null) },
+  wipe_brow: { dur: 1.3, arm: (i, t) => (i === 1 ? { p: [lerp(-0.12, 0.08, clamp((t - 0.35) / 0.6, 0, 1)), 1.74, 0.2], pole: [-1, -0.2, 0], shape: { open: 0.8 }, wrist: { x: -0.5, z: 0 } } : null) },
+  facepalm: { dur: 1.8, face: 'sad', head: (t, P) => { P.hdPitch += 0.3 * Math.sin(Math.PI * Math.min(1, t / 1.8)); },
+    arm: (i) => (i === 1 ? { p: [0.0, 1.62, 0.24], pole: [-1, -0.5, 0], shape: { open: 1 }, wrist: { x: -0.6, z: 0 } } : null) },
+  // a small hand movement on a word (talking)
+  beat: { dur: 0.75, arm: (i, t, n) => (i === n.beatSide ? { p: [-0.17, 1.13 + Math.sin(Math.min(1, t / 0.4) * Math.PI) * 0.04, 0.34], pole: [-1, -0.7, -0.3], shape: { open: 0.8 }, wrist: { x: -0.4, z: 0 } } : null) }
+};
+const GESTURE = {
+  // the actions the AI may choose (besides the trade's own: serve_…)
+  AI: ['nod', 'laugh', 'shake_head', 'point_door', 'shrug', 'wave', 'beckon', 'point_you', 'fist_shake', 'calm_down', 'scratch_head', 'facepalm', 'cross_arms'],
+  IDLE: ['cross_arms', 'hands_hips', 'thumbs_belt', 'cross_arms', 'scratch_head', 'wipe_brow'],
+  IN: 0.28, OUT: 0.32,
+  // how much of the gesture shows at time t (in and out)
+  env(def, t, endT) {
+    const a = clamp(t / this.IN, 0, 1), d = def.dur;
+    if (endT !== null && endT !== undefined) return Math.min(a, 1 - clamp((t - endT) / this.OUT, 0, 1));
+    if (!d) return a;
+    return Math.min(a, clamp((d - t) / this.OUT, 0, 1));
+  },
+  // the right hand stretched out towards n.gestTarget (or you, or straight ahead), at length len
+  _v: new THREE.Vector3(), _w: new THREE.Vector3(), _p: [0, 0, 0],
+  aimAt(n, len, atPlayer) {
+    let tgt = n.gestTarget;
+    if (!tgt || atPlayer) tgt = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z);
+    const l = n.toLocal(tgt, this._v), sh = this._p;
+    l.y -= 1.45; l.x += 0.3; l.normalize();
+    if (l.z < 0.2) { l.z = 0.2; l.normalize(); }
+    sh[0] = -0.3 + l.x * len; sh[1] = 1.45 + l.y * len; sh[2] = l.z * len;
+    return sh;
+  },
+  /* a hand target never inside the own body: pushed out of the torso, the belly and the head (in the torso's frame,
+     after torsoInverse(P)); hands go round to the front or the side, not through */
+  _t: new THREE.Vector3(),
+  safe(p, w, belly) {
+    const A = AIK, t = this._t.copy(p).applyMatrix4(A.inv), hx = 0.27 * (w || 1) + 0.05, hz = 0.15 + (belly || 0) * 0.08 + 0.05;
+    // the trunk: from the hips (y -0.25) to the shoulders (0.5)
+    if (t.y > -0.25 && t.y < 0.5 && Math.abs(t.x) < hx && t.z > -hz && t.z < hz) {
+      const ox = hx - Math.abs(t.x), oz = hz - t.z;
+      if (oz < ox || t.z > 0) t.z = hz; else t.x = Math.sign(t.x || 1) * hx;
+    }
+    // the head: a ball
+    const hy = RIG.neckY + 0.17, dx = t.x, dy = t.y - hy, dz = t.z - 0.01, d = Math.hypot(dx, dy, dz);
+    if (d < 0.2 && d > 1e-4) { const k = 0.2 / d; t.set(dx * k, hy + dy * k, 0.01 + dz * k); }
+    return p.copy(t).applyMatrix4(A.tor);
+  }
 };
 
 // ==== char/gait.js ====
@@ -8561,7 +8644,9 @@ class NPC {
     this.walkSpeed = o.walkSpeed || 1.15;
     this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
-    this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
+    this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 }, cp: new THREE.Vector3(), cpOk: false }));
+    this.gest = null; this.gestT = 0; this.gestEnd = null; this.gestTarget = null; this.gW = [0, 0]; this.gS = [null, null];
+    this._ht = new THREE.Vector3(); this._hp = new THREE.Vector3(); this._gp = new THREE.Vector3(); this._gq = new THREE.Vector3(); this._hs = new THREE.Vector3();
     this.tw = 0; this.leanF = 0; this.lunge = 0; this.hurry = 1;
     this.handShape = [null, null];   // { fist, open, point } the behaviour wants for a hand (null: by what it holds)
     this.mood = 'neutral'; this.moodT = 0; this.fear = 0; this.attitude = o.attitude || null;
@@ -8623,8 +8708,13 @@ class NPC {
   canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
-  // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
-  gesture(name) { this.gest = name; this.gestT = 0; }
+  /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()
+     (else as long as the gesture lasts). Not while fighting or down. */
+  gesture(name, target, held) {
+    if (!GESTURES[name] || (this.fight && this.fight.on) || this.hp.busy()) return;
+    this.gest = name; this.gestT = 0; this.gestEnd = null; this.gestTarget = target || null; this.gestHeld = !!held;
+  }
+  endGesture() { if (this.gest && this.gestEnd === null) this.gestEnd = this.gestT; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
   reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
   free(i) { this.hand[i].tw = 0; }
@@ -8677,7 +8767,10 @@ class NPC {
       const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
-    this.ph += (this.speed * dt * TAU) / 1.15;
+    // the step: a limp hurries over the bad leg and lingers on the good one
+    let stepK = 1;
+    if (H.limp > 0.02) { const bad = H.limpSide === 'L' ? 0 : 1, onBad = -Math.cos(this.ph + bad * Math.PI) > 0; stepK = onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
+    this.ph += (this.speed * dt * TAU) / 1.15 * stepK;
     const n = Math.floor(this.ph / Math.PI);
     if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
     // the behaviour's wishes, eased
@@ -8686,9 +8779,32 @@ class NPC {
     this.lookW += (this.lookTW - this.lookW) * e;
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
-    if (this.gest) { this.gestT += dt; if (this.gestT > (this.gest === 'point_door' ? 1.8 : 1.2)) this.gest = null; }
+    this.updGesture(dt);
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
     this.pose(dt);
+  }
+  // gestures run out; standing about he finds something to do with his hands; talking, his hands go with the words
+  updGesture(dt) {
+    const def = this.gest && GESTURES[this.gest];
+    if (def) {
+      this.gestT += dt;
+      if ((def.dur && this.gestT > def.dur) || (this.gestEnd !== null && this.gestT > this.gestEnd + GESTURE.OUT)) { this.gest = null; this.idleG = false; }
+      else if ((this.fight && this.fight.on) || this.hp.busy()) this.gest = null;
+      // an idle pose gives way to anything else the hands are asked to do, and to walking
+      else if (this.idleG && (this.hand[0].tw > 0 || this.hand[1].tw > 0 || this.speed > 0.15 || this.talkT > 0 || G.time > this.idleUntil)) this.endGesture();
+    }
+    const busyHands = this.hand[0].tw > 0.05 || this.hand[1].tw > 0.05;
+    this.stillT = this.speed < 0.08 && !busyHands && !this.talkT && !(this.fight && this.fight.on) ? (this.stillT || 0) + dt : 0;
+    if (!this.gest && this.stillT > 4 && Math.random() < dt * 0.25 && !this.hp.busy()) {
+      const pick = GESTURE.IDLE[Math.floor(Math.random() * GESTURE.IDLE.length)];
+      this.gesture(pick, null, !GESTURES[pick].dur); this.idleG = true; this.idleUntil = G.time + 4 + Math.random() * 6; this.stillT = 0;
+    }
+    // beats on the loud words (not when the hands hold or do something)
+    const talk = this.talkT > 0 ? FACE.talkOf(this) : 0;
+    if (talk > 0.55 && talk - (this.talkPrev || 0) > 0.12 && !this.gest && !busyHands && G.time - (this.beatT || -9) > 1.1 && Math.random() < 0.6) {
+      this.beatSide = Math.random() < 0.5 ? 0 : 1; this.beatT = G.time; this.gesture('beat');
+    }
+    this.talkPrev = talk;
   }
   footstep() {
     if (Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) > 18) return;
@@ -8730,27 +8846,35 @@ class NPC {
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
     P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
-    if (this.gest) {
-      const g = this.gestT, f = Math.sin(Math.PI * Math.min(1, g / 1.2));
-      if (this.gest === 'nod') P.hdPitch += Math.max(0, Math.sin(g * 9)) * 0.22 * f;
-      else if (this.gest === 'shake_head') P.hdYaw += Math.sin(g * 11) * 0.32 * f;
-      else if (this.gest === 'laugh') { P.hdPitch -= 0.28 * f; P.spPitch -= 0.1 * f; P.pel.y += Math.abs(Math.sin(g * 15)) * 0.012 * f; }
-    }
+    const gdef = this.gest && GESTURES[this.gest], genv = gdef ? GESTURE.env(gdef, this.gestT, this.gestEnd) : 0;
+    if (gdef && gdef.head) gdef.head(this.gestT, P);
     P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;
-    // hands put somewhere: arm IK on top of the swing
+    /* the arms, in layers: the walking swing; the hands put somewhere by the behaviour (reach); a gesture over that;
+       wounds, falls and death last (hp.pose). Hands move to their targets (never jump) and stay out of the body. */
     let inv = false;
+    const L = this.ch.look;
     for (let i = 0; i < 2; i++) {
-      const h = this.hand[i];
-      if (h.w < 0.002) { P.armOv[i] = null; continue; }
+      const h = this.hand[i], g = gdef && gdef.arm && genv > 0.001 ? gdef.arm(i, this.gestT, this) : null;
+      const gw = g ? genv : 0, Wt = Math.max(h.w, gw);
+      this.gW[i] = gw; this.gS[i] = g ? g.shape : null;
+      P.wrist[i].x = g && g.wrist ? g.wrist.x * gw : 0; P.wrist[i].z = g && g.wrist ? g.wrist.z * gw : 0;
+      if (Wt < 0.002) { P.armOv[i] = null; h.cpOk = false; continue; }
       if (!inv) { torsoInverse(P); inv = true; }
-      const r = armIK(i, h.p, h.pole), o = h.ov;
-      o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
+      const m = g && !gdef.raw && i === 0 ? -1 : 1, tgt = this._ht, pole = this._hp;
+      if (g) { this._gp.set(g.p[0] * m, g.p[1], g.p[2]); if (g.pole) this._gq.set(g.pole[0] * m, g.pole[1], g.pole[2]); else this._gq.copy(h.pole); }
+      if (h.w > 0.002) { tgt.copy(h.p); pole.copy(h.pole); if (g) { tgt.lerp(this._gp, gw); pole.lerp(this._gq, gw); } }
+      else { tgt.copy(this._gp); pole.copy(this._gq); }
+      if (!h.cpOk) { h.cp.copy(tgt); h.cpOk = true; } else h.cp.lerp(tgt, 1 - Math.exp(-dt * 12));
+      const at = GESTURE.safe(this._hs.copy(h.cp), L.build.width, L.build.belly);
+      const r = armIK(i, at, pole), o = h.ov;
+      o.w = Wt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
-    // the hands: holding something closes them, fighting makes fists; a shape the behaviour asked for wins
+    // the hands: holding something closes them, fighting makes fists; a gesture shapes them; a shape the behaviour asked for wins
     for (let i = 0; i < 2; i++) {
-      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i];
+      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i], gs = this.gS[i], gw = this.gW[i];
       hs.fist = 0.55 * w; hs.open = 0; hs.point = 0;
       if (this.fight && this.fight.on) hs.fist = 1;
+      if (gs) { hs.fist = lerp(hs.fist, gs.fist || 0, gw); hs.open = lerp(hs.open, gs.open || 0, gw); hs.point = lerp(hs.point, gs.point || 0, gw); }
       if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
     }
     // wounds, falls and death have the last word over the body
@@ -8972,7 +9096,7 @@ class Vitals {
     if (Z.down && Math.random() < Z.down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' ? 'leg' : 'leg', dir, info.side);
     else this.flinchBy(dir, 1.2, info.zone, info.side);
     if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side };
-    else if (info.zone === 'leg' || info.zone === 'foot' || info.zone === 'hip') this.clutch = null;
+    else if (info.zone === 'foot' || info.part === 'shinL' || info.part === 'shinR') this.clutch = null;
     else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '' };
     this.stunT = 1.2;
     return w;
@@ -9170,7 +9294,7 @@ class Vitals {
     if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) { this.clutch = null; this.clutchRest = 3 + Math.random() * 5; } }
     // an open gunshot on the body or an arm: the hand goes back to it now and then
     else if (!this.dead && !this.anim && (this.clutchRest = (this.clutchRest || 0) - dt) <= 0) {
-      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm/.test(x.part));
+      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm|thigh/.test(x.part));
       if (w) this.clutch = { part: w.part, lp: w.lp, t: 5 + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '' };
       else this.clutchRest = 4;
     }
@@ -9209,31 +9333,51 @@ class Vitals {
     const pn = this.pain01();
     P.spPitch += pn * 0.12; P.hdPitch += pn * 0.08;
     if (this.blood < 0.6) { const w = (0.6 - this.blood) * 0.3; P.spRoll += Math.sin(G.time * 1.3) * w; P.pelRoll += Math.sin(G.time * 1.3 + 0.5) * w * 0.4; }
-    // limping: the bad leg takes little weight, the body drops over it and hurries off it
+    /* limping: the bad leg is put down briefly and carefully, the good one takes the weight for longer (npc.js runs
+       the step faster over the bad leg); while the bad leg carries, the body sinks and drops onto it and the head
+       nods, the shoulders lean over the good side; the bad leg swings stiff and wide, the foot dragged low.
+       Standing still, the bad foot rests on its toes, the weight on the good leg. */
     if (this.limp > 0.02) {
-      const bad = this.limpSide === 'L' ? 0 : 1, m = Math.min(1, N.speed / 0.4), ph = N.ph + bad * Math.PI;
-      const onBad = Math.max(0, Math.sin(ph));
-      P.pel.y -= this.limp * (0.07 * onBad * m + 0.02);
-      P.pelRoll += this.limp * 0.12 * Math.sin(ph) * m * (bad ? 1 : -1);
-      P.spRoll -= this.limp * 0.1 * Math.sin(ph) * m * (bad ? 1 : -1);
-      P.pel.x += (bad ? 1 : -1) * this.limp * 0.04;
-      P.ank[bad].y += this.limp * 0.02 * (1 - m); P.ank[bad].z += this.limp * 0.06 * (1 - m);
-      P.ftPitch[bad] += this.limp * 0.3 * (1 - m);
+      const L = this.limp, bad = this.limpSide === 'L' ? 0 : 1, sb = bad === 0 ? 1 : -1, m = Math.min(1, N.speed / 0.4), ph = N.ph + bad * Math.PI;
+      const onBad = Math.max(0, -Math.cos(ph)), swingBad = Math.max(0, Math.cos(ph));
+      P.pel.y -= L * (0.085 * onBad * m + 0.025);
+      P.pelRoll += L * 0.16 * (onBad - 0.4) * m * sb;
+      P.spRoll -= L * 0.2 * (onBad - 0.3) * m * sb;
+      P.spPitch += L * (0.12 * onBad * m + 0.06);
+      P.hdPitch += L * 0.12 * onBad * m;
+      P.pel.x -= sb * L * 0.05 * (1 - onBad * m);   // the weight over the good leg
+      const a = P.ank[bad];
+      a.y = RIG.ankleH + (a.y - RIG.ankleH) * (1 - 0.6 * L);              // barely lifted
+      a.x += sb * L * 0.06 * swingBad * m;                                // swung out wide
+      P.ftPitch[bad] += L * (0.25 * swingBad * m + 0.35 * (1 - m));       // the toe drags, at rest it is on its toes
+      if (m < 0.3) { a.z += L * 0.08 * (1 - m); a.y += L * 0.025 * (1 - m); }
     }
-    // a hand on the wound (the other hand, if the wound is on an arm)
+    /* a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
+       hand on that side (the other one for an arm); a wound on the back is held from the side */
     let busy = [false, false];
     if (this.clutch && this.clutch.lp) {
       const c = this.clutch, part = N.ch.p[c.part];
-      if (part) {
-        const i = c.side === 'L' ? 1 : c.side === 'R' ? 0 : (this.armUse[1] > 0.5 ? 1 : 0);
+      if (part && part.geometry) {
+        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        const B = g.boundingBox, lp = c.lp;
+        // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
+        const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+        const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
+        const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
+        const n = nl.transformDirection(part.matrix);
+        tgt.addScaledVector(n, 0.055);
+        const armW = /Arm|hand/.test(c.part);
+        let i = armW ? (c.side === 'L' ? 1 : 0) : tgt.x > 0.03 ? 0 : tgt.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
+        if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
+        if (n.z < -0.55 && !armW) { tgt.x = (i === 0 ? 1 : -1) * 0.31; tgt.z = Math.max(tgt.z, -0.02); }   // (the back: held at the side)
         if (this.armUse[i] > 0.15) {
-          const tgt = this._v.set(c.lp[0], c.lp[1], c.lp[2]).applyMatrix4(part.matrix);
-          tgt.z += 0.06;
           torsoInverse(P);
-          const r = armIK(i, tgt, this._w.set(i ? -0.8 : 0.8, -0.6, -0.3));
+          if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
+          const s = i === 0 ? 1 : -1, r = armIK(i, tgt, this._q || (this._q = new THREE.Vector3()).set(s * 0.6, -0.35, -0.85));
           const o = P.armOv[i] && P.armOv[i].hurt ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true });
-          const wgt = Math.min(1, c.t * 2);
+          const wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * 3)));
           o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; busy[i] = true;
+          P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
         }
       }
     }
@@ -9801,6 +9945,8 @@ const BARKEEP = {
   /* ready-made lines: each kind is a bag that is used up before a line comes again (and never twice in a row).
      They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
+  // a gesture that goes with a kind of line (not always)
+  BARK_GESTURE: { helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
   SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
@@ -9972,7 +10118,9 @@ const BARKEEP = {
       if (this.groanT <= 0 && lying) {
         this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
         const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
-        if (inside && Math.random() < 0.65 && !TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', kind === 'groan' ? 0.25 : 0.5)) this.shout(kind);
+        // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
+        const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
@@ -9984,6 +10132,7 @@ const BARKEEP = {
       return;
     }
     // on his feet again, hurt: he backs off behind his bar and keeps away from you
+    this.downAI = false;
     this.hurtT += dt;
     N.crouchT = this.aimedT > 0.2 ? 0 : 0.15;
     if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
@@ -9993,7 +10142,8 @@ const BARKEEP = {
     // once the bleeding is seen to (bandaged) or healing, back to work
     if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 0.5; this.pickIdle(); return; }
     // a gunshot needs the doctor: when it is quiet, he goes (if there still is one)
-    if (this.hurtT > 8 && dP > 2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
+    // (shot: straight away, as soon as he is on his feet and nobody holds a gun on him; the bar can wait)
+    if (this.hurtT > 1.2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
   },
   // developer tools: out into the middle of the street (to fight in the open) / everything healed, alive again
   toStreet() {
@@ -10191,7 +10341,7 @@ const BARKEEP = {
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
-        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt: dann nennst du den Preis und willst erst das Geld sehen (er legt es per Knopf hin, erst dann schenkst du ein) – sag also nicht, dass es schon kommt. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
+        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken). Nimm die Geste, die zu deinen Worten passt, oft auch none. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt: dann nennst du den Preis und willst erst das Geld sehen (er legt es per Knopf hin, erst dann schenkst du ein) – sag also nicht, dass es schon kommt. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
       ].join('\n'),
       context() {
         const L = DRUNK.level, lines = [];
@@ -10261,7 +10411,7 @@ const BARKEEP = {
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
         if (m) { B.askPay(m[1], true); return; }   // he has named his price in his words; the button does the rest
-        if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) B.npc.gesture(action);
+        if (GESTURE.AI.includes(action)) B.npc.gesture(action, action === 'point_door' ? B.doorPoint() : null);
       }
     };
   },
@@ -10276,6 +10426,7 @@ const BARKEEP = {
     SHOP.buy(id, true);
   },
   // a point in the saloon's frame (x across, z along the bar), at floor height, into out
+  doorPoint() { const d = rwp(this.R, 0, this.R.floorY + 1.4, this.R.z1); return new THREE.Vector3(d.x, d.y, d.z); },
   roomPt(x, z, out) { const w = rwp(this.R, x, this.R.floorY, z); return out.set(w.x, w.y, w.z); },
   yawFor(dir) { const a = rwp(this.R, 4, 0, -6), b = rwp(this.R, 4 + dir, 0, -6); return Math.atan2(b.x - a.x, b.z - a.z); },
   along(p) { return clamp(rLocal(this.R, p.x, p.z)[1], this.Z0, this.Z1); },
@@ -10292,6 +10443,8 @@ const BARKEEP = {
     if (kind === 'hello') kind = this.helloKind();
     const l = this.pick(kind); if (!l) return false;
     this.npc.speak(l.text, undefined, TALK.barkMood(this.npc, l.mood), true);
+    const g = this.BARK_GESTURE[kind];
+    if (g && Math.random() < 0.7 && !this.cur && !this.attending) this.npc.gesture(g, g === 'point_door' ? this.doorPoint() : null);
     return true;
   },
   /* ---- orders: from SHOP ---- */
@@ -10874,6 +11027,7 @@ const DOC = {
     this.pickAct();
   },
   yawFor(a) { const R = this.R, A = rwp(R, 0, 0, 0), B = rwp(R, Math.sin(a), 0, Math.cos(a)); return Math.atan2(B.x - A.x, B.z - A.z); },
+  doorPoint() { const d = rwp(this.R, 0, this.R.floorY + 1.4, this.R.z1); return new THREE.Vector3(d.x, d.y, d.z); },
   spot(name) { const s = this.SPOTS[name], p = rwp(this.R, s[0], this.R.floorY, s[1]); return { x: p.x, z: p.z, yaw: this.yawFor(s[2]) }; },
   available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'treat'); },
   // where someone who was shot down wakes up: by the couch
@@ -11036,7 +11190,7 @@ const DOC = {
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), verärgert (angry), angewidert (disgusted), überrascht (surprised), müde (sleepy). Flüstern (whisper) nur für echte Geheimnisse.',
-        'action ist genau eines von: none, nod, laugh, shake_head, point_door.'
+        'action ist genau eines von: none, nod, laugh, shake_head, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken). Nimm die Geste, die zu deinen Worten passt, oft auch none.'
       ].join('\n'),
       context() {
         const lines = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.'];
@@ -11068,7 +11222,7 @@ const DOC = {
       forget() { D.mem = []; D.att = 0; D.knows = []; },
       memory() { return { events: D.mem.slice().concat(D.knows.map((k) => 'Gehört: ' + k)), inPrompt: 5, facts: [['Haltung zu dir', D.att.toFixed(2)]] }; },
       forgetEvent(i) { if (i < D.mem.length) D.mem.splice(i, 1); else D.knows.splice(i - D.mem.length, 1); },
-      act(action) { if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) D.npc.gesture(action); }
+      act(action) { if (GESTURE.AI.includes(action)) D.npc.gesture(action, action === 'point_door' ? D.doorPoint() : null); }
     };
   }
 };
@@ -11587,7 +11741,7 @@ const TALK = {
   micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99, hearWant: false, quietT: 0,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
-  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
+  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door', 'shrug', 'wave', 'beckon', 'point_you', 'fist_shake', 'calm_down', 'scratch_head', 'facepalm', 'cross_arms'],
   init() {
     const $ = (id) => document.getElementById(id);
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
@@ -11921,7 +12075,7 @@ const TALK = {
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
-    const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
+    const acts = ['none'].concat(GESTURE.AI);
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const dire = n.plight && n.plight() >= 2;

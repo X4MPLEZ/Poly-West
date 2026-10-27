@@ -114,6 +114,8 @@ const FACE = {
     else if (N.fight && N.fight.on) W.mood = H.daze > 0.4 ? 'pain' : 'angry';
     else if (N.feel && N.feel.mood && G.time - N.feel.t < 25) { W.mood = N.feel.mood; W.k = 0.6; }   // (how the talk left him: talk.js)
     else if (N.attitude) { const f = N.attitude(); W.mood = f > 0.35 ? 'amused' : f < -0.35 ? 'angry' : 'neutral'; W.k = Math.min(1, Math.abs(f)) * 0.5; }
+    const gd = N.gest && GESTURES[N.gest];
+    if (gd && gd.face) { W.mood2 = gd.face; W.k2 = 0.85; }
     if (H.pain > 0.25) { W.mood2 = 'pain'; W.k2 = clamp(H.pain - 0.2, 0, 1); }
     if (H.daze > 0.5) { W.mood2 = 'dazed'; W.k2 = H.daze - 0.4; }
     return W;

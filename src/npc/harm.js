@@ -170,7 +170,7 @@ class Vitals {
     if (Z.down && Math.random() < Z.down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' ? 'leg' : 'leg', dir, info.side);
     else this.flinchBy(dir, 1.2, info.zone, info.side);
     if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side };
-    else if (info.zone === 'leg' || info.zone === 'foot' || info.zone === 'hip') this.clutch = null;
+    else if (info.zone === 'foot' || info.part === 'shinL' || info.part === 'shinR') this.clutch = null;
     else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '' };
     this.stunT = 1.2;
     return w;
@@ -368,7 +368,7 @@ class Vitals {
     if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) { this.clutch = null; this.clutchRest = 3 + Math.random() * 5; } }
     // an open gunshot on the body or an arm: the hand goes back to it now and then
     else if (!this.dead && !this.anim && (this.clutchRest = (this.clutchRest || 0) - dt) <= 0) {
-      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm/.test(x.part));
+      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm|thigh/.test(x.part));
       if (w) this.clutch = { part: w.part, lp: w.lp, t: 5 + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '' };
       else this.clutchRest = 4;
     }
@@ -407,31 +407,51 @@ class Vitals {
     const pn = this.pain01();
     P.spPitch += pn * 0.12; P.hdPitch += pn * 0.08;
     if (this.blood < 0.6) { const w = (0.6 - this.blood) * 0.3; P.spRoll += Math.sin(G.time * 1.3) * w; P.pelRoll += Math.sin(G.time * 1.3 + 0.5) * w * 0.4; }
-    // limping: the bad leg takes little weight, the body drops over it and hurries off it
+    /* limping: the bad leg is put down briefly and carefully, the good one takes the weight for longer (npc.js runs
+       the step faster over the bad leg); while the bad leg carries, the body sinks and drops onto it and the head
+       nods, the shoulders lean over the good side; the bad leg swings stiff and wide, the foot dragged low.
+       Standing still, the bad foot rests on its toes, the weight on the good leg. */
     if (this.limp > 0.02) {
-      const bad = this.limpSide === 'L' ? 0 : 1, m = Math.min(1, N.speed / 0.4), ph = N.ph + bad * Math.PI;
-      const onBad = Math.max(0, Math.sin(ph));
-      P.pel.y -= this.limp * (0.07 * onBad * m + 0.02);
-      P.pelRoll += this.limp * 0.12 * Math.sin(ph) * m * (bad ? 1 : -1);
-      P.spRoll -= this.limp * 0.1 * Math.sin(ph) * m * (bad ? 1 : -1);
-      P.pel.x += (bad ? 1 : -1) * this.limp * 0.04;
-      P.ank[bad].y += this.limp * 0.02 * (1 - m); P.ank[bad].z += this.limp * 0.06 * (1 - m);
-      P.ftPitch[bad] += this.limp * 0.3 * (1 - m);
+      const L = this.limp, bad = this.limpSide === 'L' ? 0 : 1, sb = bad === 0 ? 1 : -1, m = Math.min(1, N.speed / 0.4), ph = N.ph + bad * Math.PI;
+      const onBad = Math.max(0, -Math.cos(ph)), swingBad = Math.max(0, Math.cos(ph));
+      P.pel.y -= L * (0.085 * onBad * m + 0.025);
+      P.pelRoll += L * 0.16 * (onBad - 0.4) * m * sb;
+      P.spRoll -= L * 0.2 * (onBad - 0.3) * m * sb;
+      P.spPitch += L * (0.12 * onBad * m + 0.06);
+      P.hdPitch += L * 0.12 * onBad * m;
+      P.pel.x -= sb * L * 0.05 * (1 - onBad * m);   // the weight over the good leg
+      const a = P.ank[bad];
+      a.y = RIG.ankleH + (a.y - RIG.ankleH) * (1 - 0.6 * L);              // barely lifted
+      a.x += sb * L * 0.06 * swingBad * m;                                // swung out wide
+      P.ftPitch[bad] += L * (0.25 * swingBad * m + 0.35 * (1 - m));       // the toe drags, at rest it is on its toes
+      if (m < 0.3) { a.z += L * 0.08 * (1 - m); a.y += L * 0.025 * (1 - m); }
     }
-    // a hand on the wound (the other hand, if the wound is on an arm)
+    /* a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
+       hand on that side (the other one for an arm); a wound on the back is held from the side */
     let busy = [false, false];
     if (this.clutch && this.clutch.lp) {
       const c = this.clutch, part = N.ch.p[c.part];
-      if (part) {
-        const i = c.side === 'L' ? 1 : c.side === 'R' ? 0 : (this.armUse[1] > 0.5 ? 1 : 0);
+      if (part && part.geometry) {
+        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        const B = g.boundingBox, lp = c.lp;
+        // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
+        const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+        const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
+        const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
+        const n = nl.transformDirection(part.matrix);
+        tgt.addScaledVector(n, 0.055);
+        const armW = /Arm|hand/.test(c.part);
+        let i = armW ? (c.side === 'L' ? 1 : 0) : tgt.x > 0.03 ? 0 : tgt.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
+        if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
+        if (n.z < -0.55 && !armW) { tgt.x = (i === 0 ? 1 : -1) * 0.31; tgt.z = Math.max(tgt.z, -0.02); }   // (the back: held at the side)
         if (this.armUse[i] > 0.15) {
-          const tgt = this._v.set(c.lp[0], c.lp[1], c.lp[2]).applyMatrix4(part.matrix);
-          tgt.z += 0.06;
           torsoInverse(P);
-          const r = armIK(i, tgt, this._w.set(i ? -0.8 : 0.8, -0.6, -0.3));
+          if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
+          const s = i === 0 ? 1 : -1, r = armIK(i, tgt, this._q || (this._q = new THREE.Vector3()).set(s * 0.6, -0.35, -0.85));
           const o = P.armOv[i] && P.armOv[i].hurt ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true });
-          const wgt = Math.min(1, c.t * 2);
+          const wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * 3)));
           o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; busy[i] = true;
+          P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
         }
       }
     }

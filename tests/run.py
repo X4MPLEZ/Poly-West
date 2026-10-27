@@ -1011,6 +1011,38 @@ async def check_survive(g):
     ok = (r['down'] and r['plight'] >= 2 and 'liegst' in r['text'] and r['behind'] == 0 and r['plead'] > 0.6 and r['open'] > 0.5 and r['mercy'] and r['dying'])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_gesture(g):
+    """gestures: the AI's actions move the hands (shrug: both palms up), a held pose ends when he has to work,
+       standing about he finds something to do with his hands; a hand on a wound stays outside the body; shot in
+       the leg he limps off to the doctor straight away"""
+    await g.js(RESET)
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true;
+      PLAY.pos.set(-8, 0, 7); GAIT.init = false; B.toStreet(); N.pos.set(-8, 0, 2); for (let k = 0; k < 10; k++) G.stepFrame(1/60); B.st = 'street';
+      const I = (k) => +N.ch.mesh.morphTargetInfluences[N.ch.mi[k]].toFixed(2);
+      N.gesture('shrug'); for (let k = 0; k < 40; k++) G.stepFrame(1/60);
+      out.shrug = [+(P0 => P0)(N.ch.pose.armOv[0] ? N.ch.pose.armOv[0].w : 0).toFixed(2), +(N.ch.pose.armOv[1] ? N.ch.pose.armOv[1].w : 0).toFixed(2), I('openL'), I('openR')];
+      for (let k = 0; k < 60; k++) G.stepFrame(1/60); out.after = N.gest;
+      // idle: something to do with the hands
+      let idle = null; for (let k = 0; k < 60 * 30 && !idle; k++) { N.pos.set(-8, 0, 2); N.stop && N.stop(); G.stepFrame(1/60); if (N.gest && N.idleG) idle = N.gest; }
+      out.idle = idle; let ends = false; for (let k = 0; k < 60; k++) { N.goTo(-4, 2); G.stepFrame(1/60); if (!N.gest || N.gestEnd !== null) ends = true; } out.idleEnds = ends;
+      // a hand on a side wound: the hand is outside the trunk
+      const r0 = Math.random; Math.random = () => 0.99;
+      N.hp.shot({ zone: 'belly', side: '', part: 'torso', local: new THREE.Vector3(0.24, 0.12, 0.02), dir: new THREE.Vector3(0, 0, -1), point: N.pos.clone() });
+      Math.random = r0;
+      for (let k = 0; k < 50; k++) G.stepFrame(1/60); N.ch.root.updateMatrixWorld(true);
+      const h = new THREE.Vector3(0, -0.07, 0).applyMatrix4(N.ch.p.handL.matrixWorld).applyMatrix4(new THREE.Matrix4().copy(N.ch.p.torso.matrixWorld).invert());
+      out.hand = [+h.x.toFixed(2), +h.y.toFixed(2), +h.z.toFixed(2)]; out.outside = Math.abs(h.x) > 0.25 || h.z > 0.14 || h.z < -0.14;
+      // a leg wound: off to the doctor at once
+      B.revive(); B.st = 'idle'; G.stepFrame(1/60); const R = B.R; N.pos.copy(rwp(R, 5, R.floorY, -6)); N.room = R; PLAY.pos.copy(rwp(R, 1.5, R.floorY, -6)); GAIT.init = false;
+      for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      Math.random = () => 0.99; N.hp.shot({ zone: 'leg', side: 'R', part: 'thighR', local: new THREE.Vector3(0, -0.2, 0.105), dir: new THREE.Vector3(1, 0, 0), point: N.pos.clone() }); Math.random = r0;
+      if (N.onHarm) N.onHarm({ type: 'shot', zone: 'leg', side: 'R' });
+      let k = 0; for (; k < 60 * 6 && B.st !== 'toDoc'; k++) G.stepFrame(1/60); out.toDoc = [B.st, +(k / 60).toFixed(1)]; out.limp = +N.hp.limp.toFixed(2);
+      B.revive(); B.forget(); G.noRender = false; return out; }''')
+    ok = (r['shrug'][0] > 0.8 and r['shrug'][1] > 0.8 and r['shrug'][2] > 0.7 and r['after'] is None and r['idle'] and r['idleEnds'] and r['outside']
+          and r['toDoc'][0] == 'toDoc' and r['toDoc'][1] < 3 and r['limp'] > 0.3)
+    return ok, json.dumps(r, ensure_ascii=False)
+
 async def check_deepgram(g):
     """listening with Deepgram (stand-ins): the key goes as the socket's protocol, raw PCM goes out, pieces of a
        sentence are put together and sent when the pause comes (speech_final); a rejected key falls back"""
@@ -1047,7 +1079,7 @@ async def check_deepgram(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

@@ -18,6 +18,8 @@ const BARKEEP = {
   /* ready-made lines: each kind is a bag that is used up before a line comes again (and never twice in a row).
      They cost nothing to think up, and with ElevenLabs each is paid for once and then kept in the browser */
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
+  // a gesture that goes with a kind of line (not always)
+  BARK_GESTURE: { helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
   SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
@@ -189,7 +191,9 @@ const BARKEEP = {
       if (this.groanT <= 0 && lying) {
         this.groanT = lv >= 3 ? 6 + Math.random() * 5 : 5 + Math.random() * 6;
         const kind = this.aimedT > 0.2 ? 'mercy' : lv >= 3 ? 'dying' : lv >= 2 && Math.random() < 0.6 ? 'help' : 'groan';
-        if (inside && Math.random() < 0.65 && !TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', kind === 'groan' ? 0.25 : 0.5)) this.shout(kind);
+        // (his own words once while he lies there, after that the ready-made lines, whose sound is kept: ElevenLabs is paid once)
+        const ai = !this.downAI && kind !== 'groan'; if (ai) this.downAI = true;
+        if (inside && Math.random() < 0.65 && !(ai && TALK.remark(N, kind === 'dying' ? 'Du spürst, dass du gleich stirbst.' : kind === 'help' ? 'Du liegst hier und verblutest, der Fremde steht in der Nähe.' : 'Du liegst am Boden, die Wunde brennt.', () => this.shout(kind), 'sleepy', 1))) this.shout(kind);
       }
       if (this.aimedT > 0.2 && !this.saidMercy && lying) { this.saidMercy = true; this.shout('mercy'); }
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
@@ -201,6 +205,7 @@ const BARKEEP = {
       return;
     }
     // on his feet again, hurt: he backs off behind his bar and keeps away from you
+    this.downAI = false;
     this.hurtT += dt;
     N.crouchT = this.aimedT > 0.2 ? 0 : 0.15;
     if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
@@ -210,7 +215,8 @@ const BARKEEP = {
     // once the bleeding is seen to (bandaged) or healing, back to work
     if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 0.5; this.pickIdle(); return; }
     // a gunshot needs the doctor: when it is quiet, he goes (if there still is one)
-    if (this.hurtT > 8 && dP > 2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
+    // (shot: straight away, as soon as he is on his feet and nobody holds a gun on him; the bar can wait)
+    if (this.hurtT > 1.2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
   },
   // developer tools: out into the middle of the street (to fight in the open) / everything healed, alive again
   toStreet() {
@@ -408,7 +414,7 @@ const BARKEEP = {
         'Sprich einfaches, kerniges Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen.',
         'Von der modernen Welt weißt du nichts; redet der Fremde davon, verstehst du ihn nicht.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), wenn dich etwas ärgert laut (angry), angewidert bei Unsinn (disgusted), überrascht (surprised), müde spät nachts (sleepy). Flüstern (whisper) NUR, wenn du ihm wirklich leise etwas Vertrauliches zusteckst, ein Geheimnis oder Klatsch, den keiner hören soll; sonst nie, auch nicht bei Gefahr. Wähle die Stimmung, die zu deinem Satz passt.',
-        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt: dann nennst du den Preis und willst erst das Geld sehen (er legt es per Knopf hin, erst dann schenkst du ein) – sag also nicht, dass es schon kommt. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
+        'action ist genau eines von: none, nod, laugh, shake_head, serve_whiskey, serve_beer, serve_water, serve_bottle, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken). Nimm die Geste, die zu deinen Worten passt, oft auch none. Nimm serve_… nur, wenn der Fremde jetzt wirklich etwas bestellt: dann nennst du den Preis und willst erst das Geld sehen (er legt es per Knopf hin, erst dann schenkst du ein) – sag also nicht, dass es schon kommt. Ist er sehr betrunken, darfst du Alkohol verweigern (dann shake_head). point_door, wenn du ihm den Weg nach draußen zeigst.'
       ].join('\n'),
       context() {
         const L = DRUNK.level, lines = [];
@@ -478,7 +484,7 @@ const BARKEEP = {
       act(action) {
         const m = /^serve_(whiskey|beer|water|bottle)$/.exec(action);
         if (m) { B.askPay(m[1], true); return; }   // he has named his price in his words; the button does the rest
-        if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) B.npc.gesture(action);
+        if (GESTURE.AI.includes(action)) B.npc.gesture(action, action === 'point_door' ? B.doorPoint() : null);
       }
     };
   },
@@ -493,6 +499,7 @@ const BARKEEP = {
     SHOP.buy(id, true);
   },
   // a point in the saloon's frame (x across, z along the bar), at floor height, into out
+  doorPoint() { const d = rwp(this.R, 0, this.R.floorY + 1.4, this.R.z1); return new THREE.Vector3(d.x, d.y, d.z); },
   roomPt(x, z, out) { const w = rwp(this.R, x, this.R.floorY, z); return out.set(w.x, w.y, w.z); },
   yawFor(dir) { const a = rwp(this.R, 4, 0, -6), b = rwp(this.R, 4 + dir, 0, -6); return Math.atan2(b.x - a.x, b.z - a.z); },
   along(p) { return clamp(rLocal(this.R, p.x, p.z)[1], this.Z0, this.Z1); },
@@ -509,6 +516,8 @@ const BARKEEP = {
     if (kind === 'hello') kind = this.helloKind();
     const l = this.pick(kind); if (!l) return false;
     this.npc.speak(l.text, undefined, TALK.barkMood(this.npc, l.mood), true);
+    const g = this.BARK_GESTURE[kind];
+    if (g && Math.random() < 0.7 && !this.cur && !this.attending) this.npc.gesture(g, g === 'point_door' ? this.doorPoint() : null);
     return true;
   },
   /* ---- orders: from SHOP ---- */

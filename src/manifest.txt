@@ -19,6 +19,7 @@ gfx/atlas.js
 char/look.js
 char/rig.js
 char/face.js
+char/gesture.js
 char/gait.js
 gfx/dust.js
 gfx/shaders.js

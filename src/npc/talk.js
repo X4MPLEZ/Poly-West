@@ -16,7 +16,7 @@ const TALK = {
   micOff: false, micWhy: '', ctl: null, lastErr: '', seq: 0, model: '', dictT: 0, aiEver: false, remarking: false, remarkT: -99, hearWant: false, quietT: 0,
   // the moods the voice can speak in (a person's persona may allow fewer: persona.moods)
   MOODS: ['neutral', 'amused', 'angry', 'surprised', 'disgusted', 'sleepy', 'whisper'],
-  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door'],
+  ACTIONS: ['none', 'nod', 'laugh', 'shake_head', 'serve_whiskey', 'serve_beer', 'serve_water', 'serve_bottle', 'point_door', 'shrug', 'wave', 'beckon', 'point_you', 'fist_shake', 'calm_down', 'scratch_head', 'facepalm', 'cross_arms'],
   init() {
     const $ = (id) => document.getElementById(id);
     this.el = $('talk'); this.state = $('talkState'); this.heardEl = $('talkHeard'); this.mic = $('talkMic');
@@ -350,7 +350,7 @@ const TALK = {
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
-    const acts = ['none', 'nod', 'laugh', 'shake_head', 'point_door'];
+    const acts = ['none'].concat(GESTURE.AI);
     // a different angle each time, so he does not say the same kind of thing twice
     const ANG = this.ANGLES, ang = ANG[Math.floor(Math.random() * ANG.length)];
     const dire = n.plight && n.plight() >= 2;

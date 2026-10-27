@@ -48,6 +48,7 @@ const DOC = {
     this.pickAct();
   },
   yawFor(a) { const R = this.R, A = rwp(R, 0, 0, 0), B = rwp(R, Math.sin(a), 0, Math.cos(a)); return Math.atan2(B.x - A.x, B.z - A.z); },
+  doorPoint() { const d = rwp(this.R, 0, this.R.floorY + 1.4, this.R.z1); return new THREE.Vector3(d.x, d.y, d.z); },
   spot(name) { const s = this.SPOTS[name], p = rwp(this.R, s[0], this.R.floorY, s[1]); return { x: p.x, z: p.z, yaw: this.yawFor(s[2]) }; },
   available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'treat'); },
   // where someone who was shot down wakes up: by the couch
@@ -210,7 +211,7 @@ const DOC = {
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
         'Deine Stimme hat Farbe: meist ruhig (neutral), trocken belustigt (amused), verärgert (angry), angewidert (disgusted), überrascht (surprised), müde (sleepy). Flüstern (whisper) nur für echte Geheimnisse.',
-        'action ist genau eines von: none, nod, laugh, shake_head, point_door.'
+        'action ist genau eines von: none, nod, laugh, shake_head, point_door, shrug (Achselzucken), wave (winken), beckon (herwinken), point_you (auf ihn zeigen), fist_shake (Faust schütteln), calm_down (beschwichtigen), scratch_head (am Kopf kratzen), facepalm, cross_arms (Arme verschränken). Nimm die Geste, die zu deinen Worten passt, oft auch none.'
       ].join('\n'),
       context() {
         const lines = ['Es ist ' + TIME.words() + ', ' + TIME.str() + ' Uhr.'];
@@ -242,7 +243,7 @@ const DOC = {
       forget() { D.mem = []; D.att = 0; D.knows = []; },
       memory() { return { events: D.mem.slice().concat(D.knows.map((k) => 'Gehört: ' + k)), inPrompt: 5, facts: [['Haltung zu dir', D.att.toFixed(2)]] }; },
       forgetEvent(i) { if (i < D.mem.length) D.mem.splice(i, 1); else D.knows.splice(i - D.mem.length, 1); },
-      act(action) { if (['nod', 'laugh', 'shake_head', 'point_door'].includes(action)) D.npc.gesture(action); }
+      act(action) { if (GESTURE.AI.includes(action)) D.npc.gesture(action, action === 'point_door' ? D.doorPoint() : null); }
     };
   }
 };

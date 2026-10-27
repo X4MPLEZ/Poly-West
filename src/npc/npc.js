@@ -31,7 +31,9 @@ class NPC {
     this.walkSpeed = o.walkSpeed || 1.15;
     this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
-    this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
+    this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 }, cp: new THREE.Vector3(), cpOk: false }));
+    this.gest = null; this.gestT = 0; this.gestEnd = null; this.gestTarget = null; this.gW = [0, 0]; this.gS = [null, null];
+    this._ht = new THREE.Vector3(); this._hp = new THREE.Vector3(); this._gp = new THREE.Vector3(); this._gq = new THREE.Vector3(); this._hs = new THREE.Vector3();
     this.tw = 0; this.leanF = 0; this.lunge = 0; this.hurry = 1;
     this.handShape = [null, null];   // { fist, open, point } the behaviour wants for a hand (null: by what it holds)
     this.mood = 'neutral'; this.moodT = 0; this.fear = 0; this.attitude = o.attitude || null;
@@ -93,8 +95,13 @@ class NPC {
   canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
-  // a short gesture: 'nod' | 'laugh' | 'shake_head' | 'point_door' (the behaviour may use the last for the arm)
-  gesture(name) { this.gest = name; this.gestT = 0; }
+  /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()
+     (else as long as the gesture lasts). Not while fighting or down. */
+  gesture(name, target, held) {
+    if (!GESTURES[name] || (this.fight && this.fight.on) || this.hp.busy()) return;
+    this.gest = name; this.gestT = 0; this.gestEnd = null; this.gestTarget = target || null; this.gestHeld = !!held;
+  }
+  endGesture() { if (this.gest && this.gestEnd === null) this.gestEnd = this.gestT; }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
   reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
   free(i) { this.hand[i].tw = 0; }
@@ -147,7 +154,10 @@ class NPC {
       const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
-    this.ph += (this.speed * dt * TAU) / 1.15;
+    // the step: a limp hurries over the bad leg and lingers on the good one
+    let stepK = 1;
+    if (H.limp > 0.02) { const bad = H.limpSide === 'L' ? 0 : 1, onBad = -Math.cos(this.ph + bad * Math.PI) > 0; stepK = onBad ? 1 + H.limp * 0.9 : 1 - H.limp * 0.4; }
+    this.ph += (this.speed * dt * TAU) / 1.15 * stepK;
     const n = Math.floor(this.ph / Math.PI);
     if (n !== this.stepN) { this.stepN = n; if (this.speed > 0.25) this.footstep(); }
     // the behaviour's wishes, eased
@@ -156,9 +166,32 @@ class NPC {
     this.lookW += (this.lookTW - this.lookW) * e;
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
-    if (this.gest) { this.gestT += dt; if (this.gestT > (this.gest === 'point_door' ? 1.8 : 1.2)) this.gest = null; }
+    this.updGesture(dt);
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
     this.pose(dt);
+  }
+  // gestures run out; standing about he finds something to do with his hands; talking, his hands go with the words
+  updGesture(dt) {
+    const def = this.gest && GESTURES[this.gest];
+    if (def) {
+      this.gestT += dt;
+      if ((def.dur && this.gestT > def.dur) || (this.gestEnd !== null && this.gestT > this.gestEnd + GESTURE.OUT)) { this.gest = null; this.idleG = false; }
+      else if ((this.fight && this.fight.on) || this.hp.busy()) this.gest = null;
+      // an idle pose gives way to anything else the hands are asked to do, and to walking
+      else if (this.idleG && (this.hand[0].tw > 0 || this.hand[1].tw > 0 || this.speed > 0.15 || this.talkT > 0 || G.time > this.idleUntil)) this.endGesture();
+    }
+    const busyHands = this.hand[0].tw > 0.05 || this.hand[1].tw > 0.05;
+    this.stillT = this.speed < 0.08 && !busyHands && !this.talkT && !(this.fight && this.fight.on) ? (this.stillT || 0) + dt : 0;
+    if (!this.gest && this.stillT > 4 && Math.random() < dt * 0.25 && !this.hp.busy()) {
+      const pick = GESTURE.IDLE[Math.floor(Math.random() * GESTURE.IDLE.length)];
+      this.gesture(pick, null, !GESTURES[pick].dur); this.idleG = true; this.idleUntil = G.time + 4 + Math.random() * 6; this.stillT = 0;
+    }
+    // beats on the loud words (not when the hands hold or do something)
+    const talk = this.talkT > 0 ? FACE.talkOf(this) : 0;
+    if (talk > 0.55 && talk - (this.talkPrev || 0) > 0.12 && !this.gest && !busyHands && G.time - (this.beatT || -9) > 1.1 && Math.random() < 0.6) {
+      this.beatSide = Math.random() < 0.5 ? 0 : 1; this.beatT = G.time; this.gesture('beat');
+    }
+    this.talkPrev = talk;
   }
   footstep() {
     if (Math.hypot(this.pos.x - PLAY.pos.x, this.pos.z - PLAY.pos.z) > 18) return;
@@ -200,27 +233,35 @@ class NPC {
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
     P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;
-    if (this.gest) {
-      const g = this.gestT, f = Math.sin(Math.PI * Math.min(1, g / 1.2));
-      if (this.gest === 'nod') P.hdPitch += Math.max(0, Math.sin(g * 9)) * 0.22 * f;
-      else if (this.gest === 'shake_head') P.hdYaw += Math.sin(g * 11) * 0.32 * f;
-      else if (this.gest === 'laugh') { P.hdPitch -= 0.28 * f; P.spPitch -= 0.1 * f; P.pel.y += Math.abs(Math.sin(g * 15)) * 0.012 * f; }
-    }
+    const gdef = this.gest && GESTURES[this.gest], genv = gdef ? GESTURE.env(gdef, this.gestT, this.gestEnd) : 0;
+    if (gdef && gdef.head) gdef.head(this.gestT, P);
     P.hatDy = 0; P.hatTilt = 0; P.gunInHand = false;
-    // hands put somewhere: arm IK on top of the swing
+    /* the arms, in layers: the walking swing; the hands put somewhere by the behaviour (reach); a gesture over that;
+       wounds, falls and death last (hp.pose). Hands move to their targets (never jump) and stay out of the body. */
     let inv = false;
+    const L = this.ch.look;
     for (let i = 0; i < 2; i++) {
-      const h = this.hand[i];
-      if (h.w < 0.002) { P.armOv[i] = null; continue; }
+      const h = this.hand[i], g = gdef && gdef.arm && genv > 0.001 ? gdef.arm(i, this.gestT, this) : null;
+      const gw = g ? genv : 0, Wt = Math.max(h.w, gw);
+      this.gW[i] = gw; this.gS[i] = g ? g.shape : null;
+      P.wrist[i].x = g && g.wrist ? g.wrist.x * gw : 0; P.wrist[i].z = g && g.wrist ? g.wrist.z * gw : 0;
+      if (Wt < 0.002) { P.armOv[i] = null; h.cpOk = false; continue; }
       if (!inv) { torsoInverse(P); inv = true; }
-      const r = armIK(i, h.p, h.pole), o = h.ov;
-      o.w = h.w; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
+      const m = g && !gdef.raw && i === 0 ? -1 : 1, tgt = this._ht, pole = this._hp;
+      if (g) { this._gp.set(g.p[0] * m, g.p[1], g.p[2]); if (g.pole) this._gq.set(g.pole[0] * m, g.pole[1], g.pole[2]); else this._gq.copy(h.pole); }
+      if (h.w > 0.002) { tgt.copy(h.p); pole.copy(h.pole); if (g) { tgt.lerp(this._gp, gw); pole.lerp(this._gq, gw); } }
+      else { tgt.copy(this._gp); pole.copy(this._gq); }
+      if (!h.cpOk) { h.cp.copy(tgt); h.cpOk = true; } else h.cp.lerp(tgt, 1 - Math.exp(-dt * 12));
+      const at = GESTURE.safe(this._hs.copy(h.cp), L.build.width, L.build.belly);
+      const r = armIK(i, at, pole), o = h.ov;
+      o.w = Wt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; P.armOv[i] = o;
     }
-    // the hands: holding something closes them, fighting makes fists; a shape the behaviour asked for wins
+    // the hands: holding something closes them, fighting makes fists; a gesture shapes them; a shape the behaviour asked for wins
     for (let i = 0; i < 2; i++) {
-      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i];
+      const hs = P.hand[i], w = this.hand[i].w, want = this.handShape[i], gs = this.gS[i], gw = this.gW[i];
       hs.fist = 0.55 * w; hs.open = 0; hs.point = 0;
       if (this.fight && this.fight.on) hs.fist = 1;
+      if (gs) { hs.fist = lerp(hs.fist, gs.fist || 0, gw); hs.open = lerp(hs.open, gs.open || 0, gw); hs.point = lerp(hs.point, gs.point || 0, gw); }
       if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
     }
     // wounds, falls and death have the last word over the body
