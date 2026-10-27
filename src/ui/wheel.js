@@ -26,9 +26,7 @@ const WHEEL = {
   // what can be in the wheel right now
   slots() {
     const s = [];
-    s.push(GUN.state === 'holster'
-      ? { icon: 'gun', label: 'Revolver ziehen', run: () => GUN.toggleHolster(), ok: !SIT.busy() && !DRUNK.blocked() }
-      : { icon: 'fist', label: 'Revolver wegstecken', run: () => GUN.toggleHolster(), ok: true });
+    // (no "draw the revolver" here: it is out only while you aim)
     for (const id of Object.keys(INV.items)) {
       const it = ITEMS[id];
       if (it.kind === 'aid') s.push({ icon: 'bandage', label: it.name, sub: INV.items[id] + ' Stück', run: () => this.selfAid(), ok: !FALL.busy() && !DRINK.busy() });

@@ -132,14 +132,14 @@ function initGunPad(onAction) {
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   };
-  on('bFire', () => { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); });
+  on('bFire', () => GUN.attack(false));
   const bf = document.getElementById('bFire');
   for (const ev of ['pointerup', 'pointercancel']) bf.addEventListener(ev, () => FIST.up());
   // the second button: the guard while someone fights you (held), otherwise aim (draws the revolver) / put it away
   on('bAim', () => { if (HUD.aimMode === 'block') FIST.setBlock(true); else GUN.aimButton(); });
   const ba = document.getElementById('bAim');
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) ba.addEventListener(ev, () => FIST.setBlock(false));
-  on('bGun', () => GUN.toggleHolster());
+  on('bGun', () => GUN.aimButton());
   on('bReload', () => GUN.pressReload());
 
 }

@@ -75,6 +75,12 @@ const GUN = {
     else if (this.state === 'drawn' || this.state === 'reload') { this.state = 'holstering'; this.t = 0; this.reload = null; this.wantAim = false; }
   },
   startDraw() { if (this.state === 'holster') { this.state = 'draw'; this.t = 0; } },
+  /* the attack button (left mouse, F, RT, the touch button): aiming, it fires; otherwise it is a punch. The revolver
+     is only out while you aim: let go of the aim and it goes back in the holster */
+  attack(mouse) {
+    if (this.wantAim && this.state !== 'holster' && this.state !== 'holstering') this.pressFire();
+    else if (this.state === 'holster') FIST.down(mouse);
+  },
   // touch aim button: first press draws and aims, the second puts the revolver straight away
   aimButton() {
     if (!this.wantAim) { this.setAim(true); return; }
@@ -94,8 +100,7 @@ const GUN = {
   },
   pressFire() {
     if (SIT.busy() || DRINK.busy() || DRUNK.blocked()) return;
-    if (this.state === 'holster') { this.startDraw(); return; }
-    if (this.state === 'holstering') return;
+    if (this.state === 'holster' || this.state === 'holstering') return;
     if (this.reload) { if (this.ammo > 0) this.reload.stop = true; else return; }
     this.fireQ = true;
     if (this.aimW < 0.6) { this.hipT = 0.9; if (this.camW < 0.05) PLAY.aimPitch = clamp(PLAY.camPitch - 0.25, -0.3, 0.55); }
@@ -116,8 +121,8 @@ const GUN = {
     this.t += dt;
     this.cool = Math.max(0, this.cool - dt);
     this.hipT = Math.max(0, this.hipT - dt);
-    // touch: there is no holster button; aiming draws the revolver, and it goes back by itself when not used for a while
-    if (this.touch && this.state === 'drawn' && !this.wantAim && this.hipT <= 0 && !this.reload) { this.idleT = (this.idleT || 0) + dt; if (this.idleT > 3.5) { this.idleT = 0; this.toggleHolster(); } }
+    // the revolver is out only while you aim (or reload): the aim let go, it goes back into the holster at once
+    if (this.state === 'drawn' && !this.wantAim && !this.fireQ && !this.reload && !this.reloadThenHolster) { this.idleT = (this.idleT || 0) + dt; if (this.idleT > 0.18) { this.idleT = 0; this.toggleHolster(); } }
     else this.idleT = 0;
     if (this.state === 'draw') {
       if (!this.inHand && this.t > 0.17) { this.inHand = true; GSFX.leather(); }

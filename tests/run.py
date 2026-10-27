@@ -83,7 +83,7 @@ async def check_gait(g):
     for name, steps in GAIT_SC.items():
         await g.js(RESET)
         r = await g.js('''(a) => { const [steps, aim] = a; PLAY.pos.set(0, 0, 2); PLAY.yaw = 0; PLAY.camYaw = Math.PI;
-          if (aim) { GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true); }
+          if (aim) { GUN.setAim(true); for (let k = 0; k < 40; k++) G.stepFrame(1/60); }
           for (let k = 0; k < 30; k++) G.stepFrame(1/60);
           let cross = 0, maxSep = 0;
           for (const [keys, secs] of steps) { INPUT.keys.clear(); keys.forEach(k => INPUT.keys.add(k));
@@ -114,13 +114,14 @@ async def check_fists(g):
 async def check_gun(g):
     await g.js(RESET)
     r = await g.js('''() => { PLAY.pos.set(-8, 0, 2); for (let k = 0; k < 10; k++) G.stepFrame(1/60);
-      GUN.toggleHolster(); for (let k = 0; k < 50; k++) G.stepFrame(1/60); const drawn = GUN.state;
-      GUN.setAim(true); for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      GUN.setAim(true); for (let k = 0; k < 50; k++) G.stepFrame(1/60); const drawn = GUN.state;
+      for (let k = 0; k < 30; k++) G.stepFrame(1/60);
       for (let i = 0; i < 6; i++) { GUN.pressFire(); for (let k = 0; k < 30; k++) G.stepFrame(1/60); }
-      const empty = GUN.ammo; GUN.setAim(false); GUN.pressReload(); for (let k = 0; k < 400 && GUN.reload; k++) G.stepFrame(1/60);
-      const after = [GUN.ammo, GUN.reserve]; GUN.toggleHolster(); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
-      return { drawn, empty, after, end: GUN.state }; }''')
-    if not (r['drawn'] == 'drawn' and r['empty'] == 0 and r['after'][0] == 6 and r['end'] == 'holster'): return False, json.dumps(r)
+      const empty = GUN.ammo; GUN.pressReload(); for (let k = 0; k < 400 && GUN.reload; k++) G.stepFrame(1/60);
+      // (the aim let go: back into the holster by itself; a click without aiming is a punch, not a shot)
+      const after = [GUN.ammo, GUN.reserve]; GUN.setAim(false); for (let k = 0; k < 60; k++) G.stepFrame(1/60); GUN.attack(false); for (let k = 0; k < 5; k++) G.stepFrame(1/60); FIST.up();
+      return { drawn, empty, after, end: GUN.state, ammoAfterClick: GUN.ammo }; }''')
+    if not (r['drawn'] == 'drawn' and r['empty'] == 0 and r['after'][0] == 6 and r['end'] == 'holster' and r['ammoAfterClick'] == 6): return False, json.dumps(r)
     # reload while holstered: draw, reload, put it back
     h = await g.js('''() => { GUN.ammo = 2; GUN.reserve = 12; GUN.pressReload(); let saw = false;
       for (let k = 0; k < 600; k++) { G.stepFrame(1/60); if (GUN.reload) saw = true; if (saw && GUN.state === 'holster') break; }
@@ -186,9 +187,9 @@ async def check_sit_block(g):
     await g.js(RESET)
     r = await g.js('''() => { const S = INTERACT.items.find(s => s.kind === 'bench' && !s.room);
       PLAY.pos.set(S.sx + S.fx * 0.8, S.y, S.sz + S.fz * 0.8); PLAY.yaw = S.yaw + Math.PI; GAIT.init = false;
-      GUN.toggleHolster(); for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      for (let k = 0; k < 20; k++) G.stepFrame(1/60);
       INTERACT.update(); INTERACT.use(); let t = 0; while (SIT.state !== 'sit' && t < 6) { G.stepFrame(1/60); t += 1/60; }
-      const sat = SIT.state, holstered = GUN.state; GUN.toggleHolster(); GUN.setAim(true); FIST.down(); G.stepFrame(1/60);
+      const sat = SIT.state, holstered = GUN.state; GUN.setAim(true); FIST.down(); G.stepFrame(1/60);
       const blocked = GUN.state === 'holster' && !GUN.wantAim && !FIST.holding;
       INPUT.keys.add('w'); for (let k = 0; k < 90; k++) G.stepFrame(1/60); INPUT.keys.clear();
       return { sat, holstered, blocked, after: SIT.state, prompt: document.getElementById('prompt').hidden }; }''')
@@ -335,7 +336,7 @@ async def check_npc(g):
       worldEvent('shot', PLAY.pos.x, PLAY.pos.y + 1.4, PLAY.pos.z, { by: 'player' }); let low = 0;
       for (let k = 0; k < 60 * 7; k++) { G.stepFrame(1/60); low = Math.max(low, B.npc.crouch); } out.duck = +low.toFixed(2); out.after = B.st;
       // aimed at: hands up
-      GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true); let up = 0;
+      GUN.setAim(true); for (let k = 0; k < 40; k++) G.stepFrame(1/60); let up = 0;
       for (let k = 0; k < 90; k++) { const h = B.npc.pos; const yaw = Math.atan2(h.x - PLAY.pos.x, h.z - PLAY.pos.z); PLAY.camYaw = yaw + Math.PI; PLAY.aimPitch = 0.05; G.stepFrame(1/60); up = Math.max(up, B.aimedT); }
       GUN.setAim(false); out.handsUp = +up.toFixed(2);
       if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; }
@@ -696,7 +697,7 @@ async def check_quick(g):
       for (let k = 0; k < 60 * 6 && B.st === 'duck'; k++) G.stepFrame(1/60);
       // a gun on him: first his own reaction (asked from the AI), and if it goes on, a firmer one
       const sits = [], rk = TALK.remark, am = B.aimedAtMe; TALK.remark = (n, sit) => { if (n === B.npc) sits.push(sit); return false; }; B.aimedAtMe = () => true; B.standoff = null;
-      GUN.toggleHolster(); for (let k = 0; k < 40; k++) G.stepFrame(1/60); GUN.setAim(true);
+      GUN.setAim(true); for (let k = 0; k < 40; k++) G.stepFrame(1/60);
       for (let k = 0; k < 60 * 7; k++) G.stepFrame(1/60);
       GUN.setAim(false); TALK.remark = rk; B.aimedAtMe = am; if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; }
       out.sits = sits.map((x) => x.slice(0, 50)); out.standoff = [sits.length, /Revolver auf dich/.test(sits[0] || ''), /Sekunden/.test(sits[1] || '')]; B.forget();
@@ -1009,7 +1010,7 @@ async def check_aim(g):
       const hit = HARM.trace(o, d, 0.3, 30); out.brim = hit && hit.zone; if (hit && hit.npc) HARM.shot(hit, d); out.dead = S.hp.dead; out.hatOff = S.hp.hatOff;
       CREW.gone(h);
       // a shotgun up at his cheek, aimed at you: a shot at his face is a head shot, a shot at the barrel takes the gun
-      { const h2 = CREW.makeBody(1, new THREE.Vector3(-4, 0, 2), 0), A = h2.npc; h2.ph = 'look'; CREW.arm(h2); PLAY.pos.set(-4, 0, 7); GUN.state = 'drawn'; GUN.inHand = true;
+      { const h2 = CREW.makeBody(1, new THREE.Vector3(-4, 0, 2), 0), A = h2.npc; h2.ph = 'look'; CREW.arm(h2); PLAY.pos.set(-4, 0, 7); GUN.state = 'drawn'; GUN.inHand = true; GUN.setAim(true);
         for (let k = 0; k < 60; k++) { G.stepFrame(1/60); GUNMAN.lastShot = GUNMAN.lastKill = -99; h2.gun.provoked = null; h2.gun.aimedT = 0; }
         A.ch.root.updateMatrixWorld(true); h2.gun.m.updateMatrixWorld(); const o2 = new THREE.Vector3(-4, 1.62, 7); let head = 0, gun = 0;
         for (const [x, y] of [[0, 0.06], [0.04, 0.1], [-0.04, 0.12], [0, 0.16], [0.05, 0.03]]) { const c = new THREE.Vector3(x, y, 0.1).applyMatrix4(A.ch.p.head.matrixWorld), q = HARM.trace(o2, c.sub(o2).normalize(), 0.3, 30); if (q && q.zone === 'head' && !q.item) head++; }

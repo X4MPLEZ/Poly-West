@@ -72,7 +72,7 @@ function initInput(app, canvas, onAction) {
       // in a fight with the revolver in the holster the right button is the guard; otherwise it draws and aims
       if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.rmbBlock = true; onAction('fire'); return; }
       GUN.setAim(true); onAction('aim');
-    } else if (e.button === 0) { if (GUN.state === 'holster') FIST.down(true); else GUN.pressFire(); onAction('fire'); }
+    } else if (e.button === 0) { GUN.attack(true); onAction('fire'); }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) FIST.up();
@@ -105,9 +105,9 @@ function initInput(app, canvas, onAction) {
     if (k === 'r' && !e.repeat && INTERACT.use(1)) { onAction('use'); return; }   // R is the second action when one is offered
     if (k === 't' && !e.repeat) { if (INV.has('bottle')) DRINK.start('bottle'); else TOAST.show('Du hast keine Flasche dabei.'); return; }
     if ((SIT.busy() || DRINK.busy()) && (k === 'q' || k === 'r' || k === 'f')) return;
-    if (k === 'q' && !e.repeat) { GUN.toggleHolster(); onAction('gun'); return; }
+    if (k === 'q') { if (!e.repeat) { GUN.setAim(true); onAction('aim'); } return; }   // (held: aim, like the right button)
     if (k === 'r' && !e.repeat) { GUN.pressReload(); onAction('gun'); return; }
-    if (k === 'f' && !e.repeat) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); onAction('fire'); return; }
+    if (k === 'f' && !e.repeat) { GUN.attack(false); onAction('fire'); return; }
     if (k === '+' || k === '=') SETTINGS.set('camDist', +clamp(PLAY.camDist * 0.85, 3.2, 12).toFixed(1));
     if (k === '-') SETTINGS.set('camDist', +clamp(PLAY.camDist / 0.85, 3.2, 12).toFixed(1));
     if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Shift', ' ', 'x'].includes(k)) {
@@ -118,7 +118,7 @@ function initInput(app, canvas, onAction) {
     }
   });
   window.addEventListener('keyup', (e) => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; INPUT.keys.delete(k);
-    if (k === 'Tab' && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); } if (k === 'f') FIST.up(); if (k === 'Shift') INPUT.keys.delete('Shift'); });
+    if (k === 'Tab' && WHEEL.open) { if (WHEEL.sel >= 0) WHEEL.use(); else WHEEL.close(); } if (k === 'f') FIST.up(); if (k === 'q') GUN.setAim(false); if (k === 'Shift') INPUT.keys.delete('Shift'); });
   window.addEventListener('blur', () => { INPUT.keys.clear(); });
 }
 
@@ -169,10 +169,11 @@ function pollGamepad(onAction) {
   // left trigger: the guard in a fight (revolver holstered), else aim
   if (b(6) && !prev[6]) { if (GUN.state === 'holster' && FIST.inFight()) { FIST.setBlock(true); INPUT.padBlock = true; } else GUN.setAim(true); }
   if (!b(6) && prev[6]) { if (INPUT.padBlock) { INPUT.padBlock = false; FIST.setBlock(false); } else GUN.setAim(false); }
-  if (b(7) && !prev[7]) { if (GUN.state === 'holster') FIST.down(false); else GUN.pressFire(); }
+  if (b(7) && !prev[7]) GUN.attack(false);
   if (!b(7) && prev[7]) FIST.up();
   if (b(2) && !prev[2]) GUN.pressReload();
-  if (b(4) && !prev[4]) GUN.toggleHolster();
+  if (b(4) && !prev[4]) GUN.setAim(true);   // (LB held: aim, like LT)
+  if (!b(4) && prev[4]) GUN.setAim(false);
   INPUT.padPrev = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(b);
   if (INPUT.padLookX || INPUT.padLookY) PLAY.userLookT = G.time;
   if (GUN.camW > 0.3) { PLAY.camYaw -= INPUT.padLookX * 0.05; PLAY.aimPitch = clamp(PLAY.aimPitch + INPUT.padLookY * 0.03, -0.75, 0.9); INPUT.padLookX = INPUT.padLookY = 0; }
