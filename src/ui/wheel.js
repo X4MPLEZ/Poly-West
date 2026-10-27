@@ -7,6 +7,7 @@ const WHEEL = {
   ICON: {
     gun: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 11h20l2-2h3v5h-4l-1 2H14l-2 3v6H7l1-7-4-2z" fill="currentColor"/></svg>',
     bottle: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 3h6v6l3 4v16H10V13l3-4z" fill="currentColor"/><rect x="12" y="16" width="8" height="6" fill="#1b120b" opacity=".45"/></svg>',
+    bandage: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="9" width="22" height="14" rx="7" fill="currentColor"/><path d="M14 12h4v3h3v4h-3v3h-4v-3h-3v-4h3z" fill="#7a1c1c"/></svg>',
     fist: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 13c0-2 2-3 4-3h10c2 0 3 2 3 4v6c0 4-3 7-7 7h-4c-4 0-6-3-6-6z" fill="currentColor"/></svg>'
   },
   init() {
@@ -30,9 +31,17 @@ const WHEEL = {
       : { icon: 'fist', label: 'Revolver wegstecken', run: () => GUN.toggleHolster(), ok: true });
     for (const id of Object.keys(INV.items)) {
       const it = ITEMS[id];
+      if (it.kind === 'aid') s.push({ icon: 'bandage', label: it.name, sub: INV.items[id] + ' Stück', run: () => this.selfAid(), ok: !FALL.busy() && !DRINK.busy() });
       if (it.kind === 'carry') s.push({ icon: it.vessel === 'bottle' ? 'bottle' : 'bottle', label: it.name, sub: (INV.sips[id] ?? it.sips) + ' Schlucke', run: () => DRINK.start(id), ok: !DRUNK.blocked() && !(DRINK.busy() && DRINK.src === 'glass') });
     }
     return s;
+  },
+  // a dressing on your own cuts and holes: some of it back, and the bag one roll lighter
+  selfAid() {
+    if (PHP.hp > 0.92) { TOAST.show('Du bist nicht verletzt.'); return; }
+    if (!INV.remove('bandage')) return;
+    PHP.hp = Math.min(1, PHP.hp + 0.22); FOLEY.cloth(PLAY.pos, 1.3);
+    TOAST.show('Du verbindest dich notdürftig.');
   },
   toggle() { if (this.open) this.close(); else this.show(); },
   show() {

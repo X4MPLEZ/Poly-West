@@ -20,9 +20,13 @@ const BARKEEP = {
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
   // a gesture that goes with a kind of line (not always)
   BARK_GESTURE: { bump2: 'point_you', bumpFall: 'fist_shake', excuse: 'calm_down', mutter: 'scratch_head', helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
-  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
+  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
+    aidStart: [['Was… was machst du?', 'surprised'], ['Drück drauf… fester…', 'sleepy'], ['Gott… danke…', 'sleepy']],
+    aidWary: [['Fass mich nicht… was soll das?', 'surprised'], ['Erst schießt du, und jetzt das?', 'angry'], ['Lass mich… nein. Drück drauf.', 'sleepy']],
+    aidThanks: [['Danke, Fremder. Das vergess ich dir nicht.', 'neutral'], ['Hält. Ich muss trotzdem zum Doc.', 'neutral'], ['Du hast mir vielleicht das Leben gerettet.', 'neutral']],
+    aidShooter: [['Erst schießt du auf mich und dann flickst du mich? Was bist du für einer?', 'disgusted'], ['Das macht es nicht wieder gut. Aber… danke.', 'sleepy'], ['Ich versteh dich nicht, Fremder.', 'disgusted']],
     helloNew: ['Howdy, Fremder.', 'Neu in der Stadt? Setz dich.', 'Tag. Der Staub bleibt draußen.', 'Willkommen im Saloon. Was darf’s sein?', 'Komm rein. Hier gibt’s Whiskey und Ruhe.', 'Ein neues Gesicht. Hab ich gern, solange es friedlich bleibt.'],
     helloBack: ['Da bist du ja wieder.', 'Na, wieder Durst?', 'Der Platz an der Theke ist noch frei.', 'Wieder im Lande, Cowboy?', 'Dachte mir, dass du wiederkommst.', ['Das Übliche?', 'neutral']],
     helloAngry: ['Du schon wieder.', ['Benimm dich diesmal.', 'angry'], ['Ich hab dich im Auge, Freund.', 'neutral'], ['Wenn du Ärger suchst, such ihn woanders.', 'angry'], 'Die Löcher in meiner Decke hab ich nicht vergessen.'],
@@ -147,6 +151,22 @@ const BARKEEP = {
     this.pending = null; this.attending = false; this.standoff = null;
     if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
+    // the doctor came to him and patched him up where he was: back to work (no more need to go to him)
+    if (info.type === 'treated') {
+      this.note('Der Doc ist gekommen und hat dich verbunden.'); this.remember('Der Doc ist zu dir gekommen und hat deine Wunde an Ort und Stelle verbunden (' + TIME.stamp() + ').');
+      if (['hurt', 'toDoc', 'atDoc'].includes(this.st)) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 2; this.hurtT = 0; }
+      return;
+    }
+    // first aid from you: he takes it (who shot him or not), and remembers it
+    if (info.type === 'aid') {
+      const shooter = TIME.min - (this.shotAt || -1e9) < 720;
+      if (info.mode === 'done') {
+        this.feel(shooter ? 0.2 : 0.4, 'Der Fremde hat deine Wunde verbunden.'); this.grudge = Math.max(this.grudgeFloor ? this.grudgeFloor() : 0, this.grudge - 0.15);
+        this.remember('Der Fremde hat deine Schusswunde ' + zoneIn(info.zone, '') + ' notdürftig verbunden' + (shooter ? ', nachdem er selbst auf dich geschossen hatte' : '') + ' (' + TIME.stamp() + ').');
+        this.shout(shooter ? 'aidShooter' : 'aidThanks');
+      } else if (!this.aidSaid || G.time - this.aidSaid > 30) { this.aidSaid = G.time; this.shout(shooter ? 'aidWary' : 'aidStart'); }
+      return;
+    }
     if (info.type === 'blow') {
       const F = this.fightLog || (this.fightLog = { punches: 0, downs: 0, ground: 0, landed: 0 });
       F.punches++; if (info.res === 'down') F.downs++; if (info.ground) F.ground++;
@@ -154,7 +174,7 @@ const BARKEEP = {
       this.grudge = Math.min(1, this.grudge + (info.ground ? 0.06 : 0.02) + (info.res === 'down' ? 0.08 : 0));
       if (info.res === 'dead') return;
       // hit: he fights back, if he can (and dares)
-      if (this.st !== 'brawl' && N.hp.blood > 0.45 && !N.hp.dead && this.st !== 'dead') {
+      if (this.st !== 'brawl' && N.hp.blood > BLOOD_WEAK && !N.hp.dead && this.st !== 'dead') {
         if (F.punches === 1) this.note('Er hat dich geschlagen.');
         this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
         setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy()) this.shout('brawl'); }, 350);
@@ -174,7 +194,7 @@ const BARKEEP = {
       if (info.zone === 'hat') return;
       const where = zoneInto(info.zone, info.side), Z = ZONES[info.zone];
       this.abortServe(); this.orders.length = 0;
-      this.feel(-1, 'Er hat dir ' + where + ' geschossen.');
+      this.feel(-1, 'Er hat dir ' + where + ' geschossen.'); this.shotAt = TIME.min;
       this.remember('Er hat dir ' + where + ' geschossen (' + TIME.stamp() + ').');
       this.grudge = Math.min(1, this.grudge + 0.35 + (Z.sev || 0.5) * 0.5);
       this.st = 'hurt'; this.hurtT = 0;
@@ -218,9 +238,6 @@ const BARKEEP = {
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
       if (lying && this.aimedT > 0.2) H.plead = G.time + 0.4;
       if (this.aimedT <= 0) this.saidMercy = false;
-      // a pool forms under a bleeding man
-      this.poolT = (this.poolT || 0) - dt;
-      if (H.bleed > 0.0015 && this.poolT <= 0 && H.anim && H.anim.holding()) { this.poolT = 6; HARM.pool(N); }
       return;
     }
     // on his feet again, hurt: he backs off behind his bar and keeps away from you
@@ -281,19 +298,21 @@ const BARKEEP = {
       }
     }
   },
-  // the hours of a night (sleep) at once: what he would have done meanwhile is done
-  skipped(m) {
-    if (m >= 60 && this.st === 'dead') this.removeBody();
-    if (this.st === 'gone') { if (TIME.min - (this.diedAt || 0) >= 1440 && G.room !== this.R && this.whoI < this.WHO.length - 1) this.arrive(); return; }
-    const N = this.npc; if (!N || N.hp.dead || m < 60) return;
-    if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; }
-    if (N.fight.on) N.fight.stop();
-    if (['hurt', 'toDoc', 'atDoc', 'return', 'street', 'brawl', 'duck', 'shotgun'].includes(this.st) || N.room !== this.R) {
-      if (DOC.npc && !DOC.npc.hp.dead && N.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { N.hp.bandageAll(); this.remember('Der Doc hat deine Wunde verbunden (' + TIME.stamp() + ').'); }
-      if (N.hp.anim && !N.hp.dead) { N.hp.anim = null; N.body.r = 0.32; }
-      const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; N.vx = N.vz = 0;
-      this.st = 'idle'; this.pickIdle();
-    }
+  /* a jump in time (sleep): what cannot go on without you stops first (a fight, the shotgun, standing about in the
+     street); everything else — getting up, the way to the doctor, being patched up, back behind the bar, the body
+     taken away, the next one arriving — is lived through by npc/sim.js */
+  beforeSkip(m, soft) {
+    const N = this.npc; if (soft || m < 20 || !N || N.hp.dead) return;
+    if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; this.st = 'idle'; }
+    if (N.fight.on) { N.fight.stop(); this.st = 'return'; this.returnT = 0.5; }
+    if (this.st === 'street' || this.st === 'duck') { this.st = 'return'; this.returnT = 0.5; }
+  },
+  // nothing more to happen (for npc/sim.js)
+  settled() {
+    const N = this.npc;
+    if (this.st === 'dead') return false;
+    if (this.st === 'gone') return this.whoI >= this.WHO.length - 1;
+    return !N || N.hp.dead || ((this.st === 'idle' || this.st === 'duck') && !this.cur && !this.orders.length && !N.hp.needsDoc());
   },
   // walking back to his place behind the bar (from the street, from the room)
   updReturn(dt) {
@@ -348,20 +367,23 @@ const BARKEEP = {
     this.props.rag = mk(rag.build());
     this.pickIdle();
     onWorldEvent((e) => this.event(e));
-    TIME.onSkip((m) => this.skipped(m));
+    WORLDSIM.before((m, soft) => this.beforeSkip(m, soft));
     this.scene0 = scene;
   },
   /* who stands behind the bar: Hank, and after him (if he dies) the ones who take the saloon over (npc/barkeep_fate.js) */
   WHO: [
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
+      mind: 'Die Whiskeylieferung aus Tucson ist überfällig, das ärgert dich. Doc Whitfield hältst du für einen guten Arzt, aber du glaubst, er nimmt heimlich selbst Laudanum. Dein Bruder Walt ist ein Hitzkopf, du sorgst dich um ihn.',
       desc: { skin: 2, build: { width: 1.05, belly: 0.4 }, face: { nose: 'big', brows: 1.3 }, hair: { style: 'slick', color: rgb(0x231812) }, beard: { style: 'handlebar', color: rgb(0x231812) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe9e3d3), rolled: true }, vest: rgb(0x2c303a), pants: { color: rgb(0x3b3532) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), gun: false } },
       voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
+      mind: 'Du vermisst deinen Bruder Hank und trägst seine Schürze. Den Saloon wolltest du nie, jetzt musst du ihn führen. Dem Doc traust du, sonst kaum jemandem.',
       desc: { skin: 1, build: { width: 1.12, belly: 0.15 }, face: { nose: 'normal', brows: 1.2 }, hair: { style: 'short', color: rgb(0x8a4a22) }, beard: { style: 'full', color: rgb(0x9a5a2a) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xd8cdb6), rolled: true }, vest: rgb(0x5a3a28), pants: { color: rgb(0x3e3a34) }, boots: rgb(0x3a2418), belt: rgb(0x2a1d15), apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), gun: false } },
       voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
+      mind: 'Dein Rücken plagt dich, und nachts träumst du vom Krieg. Hank und Walt waren wie Söhne für dich. Du beobachtest mehr, als du sagst.',
       desc: { skin: 2, build: { width: 0.92, belly: 0 }, face: { nose: 'big', brows: 1.1 }, hair: { style: 'bald', color: rgb(0xb0aaa0) }, beard: { style: 'chops', color: rgb(0xb0aaa0) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xcfc6b0), rolled: false }, vest: rgb(0x3a3a30), pants: { color: rgb(0x4a4238) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xcfc8b4), gun: false } },
       voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
@@ -371,6 +393,7 @@ const BARKEEP = {
   makeNpc(scene) {
     const W = this.who(), p = this.roomPt(this.X.stand, -6.4, this._v);
     this.npc = new NPC({ attitude: () => this.att, id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, desc: W.desc });
+    this.npc.gossip = { facts: () => this.mem.filter((m) => !/hat dir erzählt/.test(m) && /\bEr\b|Fremde/.test(m)), hear: (from, f) => this.remember(GOSSIP.told(from, f)) };
     this.npc.onBump = (info) => this.onBump(info); this.npc.role = this.who().name + ', der Barkeeper im Saloon (' + this.who().age + ')';
     const N = this.npc;
     N.persona = this.persona();
@@ -428,6 +451,7 @@ const BARKEEP = {
       rules: [
         'Du bist ' + B.who().name + ', der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
         'Wer du bist: ' + B.who().age + '. ' + B.who().more + ' Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.' + (B.whoI > 0 ? ' Du hast den Saloon übernommen, nachdem ' + B.WHO.slice(0, B.whoI).map((w) => w.name).join(' und dann ') + ' tot war' + (B.whoI > 1 ? 'en' : '') + '.' : ''),
+        'Dein Kopf ist nicht leer: ' + (B.who().mind || '') + ' Du bist neugierig und fragst ab und zu selbst nach, wenn dich etwas wundert (was er hier will, was passiert ist, woher er kommt), statt nur zu antworten. Wenn du etwas über ihn gehört hast, sprichst du ihn darauf an.',
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
         'Dein Ton: ruhig, souverän und glaubwürdig, wie ein Mann, der schon alles gesehen hat. Ernst, wenn es ernst ist. Trockener Humor nur ab und zu, nicht in jedem Satz, kein Clown. Sag nie zweimal dasselbe; finde jedes Mal neue Worte.',
@@ -563,6 +587,7 @@ const BARKEEP = {
   event(e) {
     if (!this.npc || e.by !== 'player') return;
     const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
+    if (e.type === 'shot' && !inside) this.shotsOut = TIME.min;
     if (e.type === 'shot' && (inside || near)) { const sc = this.scene(); sc.shots++; if (!inside) sc.outside++; if (sc.shots === 1) this.feel(inside ? -0.35 : -0.1, inside ? 'Er hat in deinem Saloon geschossen.' : 'Er hat vor deinem Saloon geschossen.'); this.duck(); }
     else if (e.type === 'impact' && e.room === 'saloon' && this.sc) { const k = e.part || 'wall'; this.sc[k] = (this.sc[k] || 0) + 1; }
     else if (e.type === 'glass' && e.room === 'saloon') { const sc = this.scene(); sc.glass[e.kind] = (sc.glass[e.kind] || 0) + 1; this.feel(-0.06); }
@@ -603,6 +628,9 @@ const BARKEEP = {
     if (this.pending && (G.time - this.pending.t > 45 || !inside)) { const was = this.pending; this.pending = null; if (inside && G.time - was.t > 45) this.say('nopay'); }   // grudges and good will fade slowly (about a tenth a minute)
     // the player: greet him, look at him, mind him
     if (inside && !this.wasInside && !this.greetSuccessor() && this.st !== 'shotgun') this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
+    // how long you were gone (for "where have you been"); the shooting he heard outside (for "what was that")
+    if (inside && !this.wasInside) this.away = TIME.min - (this.seenAt || TIME.min);
+    if (inside) this.seenAt = TIME.min;
     this.wasInside = inside;
     const head = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55 - 0.45 * (FALL.down || 0), PLAY.pos.z);
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
@@ -672,11 +700,26 @@ const BARKEEP = {
     }
   },
   /* ---- idle: the bar's own small work ---- */
+  /* he wants to know things: what happened to you, what the shooting was, where you have been, what brings you
+     here, what the doctor told him about you (one question at a time, each once: TALK.wonder) */
+  curious(dt, atBar) {
+    const N = this.npc, day = TIME.day();
+    if (this.att < -0.6 || N.plight() >= 2) return;
+    if (PHP.hp < 0.6 && TALK.wonder(N, 'hurt' + day, 'Der Fremde sieht übel zugerichtet aus, er hat Schrammen und blutet.', 'Was ist denn mit dir passiert?', 'surprised')) return;
+    if (this.shotsOut && TIME.min - this.shotsOut < 180 && TALK.wonder(N, 'out' + Math.round(this.shotsOut), 'Vorhin hat es draußen auf der Straße geknallt, Schüsse. Jetzt ist der Fremde hier.', 'Die Schüsse vorhin draußen… warst du das?', 'neutral')) return;
+    if (this.away > 1440 && TALK.wonder(N, 'back' + day, 'Der Fremde war über einen Tag nicht mehr in deinem Saloon und ist jetzt wieder da.', 'Lange nicht gesehen. Wo hast du gesteckt?', 'amused')) { this.away = 0; return; }
+    const heard = this.mem.filter((m) => /hat dir erzählt/.test(m)).slice(-1)[0];
+    if (heard && TALK.wonder(N, 'heard' + heard.length + heard.slice(0, 12), 'Jemand aus der Stadt hat dir etwas über den Fremden erzählt: ' + heard + ' Jetzt steht er vor dir.', 'Man erzählt sich so einiges über dich, Fremder.', 'neutral')) return;
+    this.atBarT = atBar ? (this.atBarT || 0) + dt : 0;
+    if (this.atBarT > 50 && this.att > -0.3 && TALK.wonder(N, 'origin', 'Der Fremde sitzt schon eine Weile an deinem Tresen und sagt nichts. Du weißt nichts über ihn, nicht mal, woher er kommt.', 'Und? Was führt dich nach Dust Creek?', 'neutral')) return;
+    if (this.atBarT > 140 && this.att > -0.2 && TALK.wonder(N, 'plans' + day, 'Der Fremde hängt schon lange an deinem Tresen herum. Du fragst dich, was er hier vorhat.', 'Bleibst du länger in der Stadt?', 'neutral')) return;
+  },
   updIdle(dt, inside) {
     const N = this.npc, t = G.time, atBar = this.playerAtBar();
     // talking to himself now and then (ready-made lines, so it costs nothing after the first time)
     this.mutterT = (this.mutterT === undefined ? 40 + Math.random() * 60 : this.mutterT) - dt;
     if (this.mutterT <= 0) { this.mutterT = 70 + Math.random() * 110; if (inside && !N.talking && !this.cur && !atBar && !TALK.open) this.say('mutter'); }
+    if (inside && !this.cur) this.curious(dt, atBar);
     // in a conversation: work stops, he faces the stranger; thinking: a hand to the chin
     if (N.talking || N.thinking || N.gest === 'point_door') {
       if (atBar && Math.abs(this.myZ() - this.along(PLAY.pos)) > 0.6) { const p = this.roomPt(this.X.pour + 0.08, this.along(PLAY.pos), this._v); N.goTo(p.x, p.z, this.faceYaw); }

@@ -2,10 +2,17 @@
    Game time in minutes since the first morning (day 1 starts at 0:00, the game at 10:00). A day lasts 48 real
    minutes (half a game minute per real second, like the big westerns). Systems ask TIME.hour() (0…24) and
    TIME.min; skipping time (sleeping) goes through TIME.skip(minutes), which tells everybody who listens with
-   TIME.onSkip(fn(minutes)) so wounds heal, drink wears off and people move on as if those hours had passed. */
+   TIME.onSkip(fn(minutes, soft)) so wounds heal, drink wears off and people move on as if those hours had passed. */
 const TIME = {
   min: 600, RATE: 0.5, frozen: false, skipFns: [], tickFns: [],
-  update(dt) { if (!this.frozen && !(typeof SLEEP !== 'undefined' && SLEEP.st)) this.min += dt * this.RATE * (this.speed || 1); for (const f of this.tickFns) f(dt); },
+  update(dt) {
+    if (!this.frozen && !(typeof SLEEP !== 'undefined' && SLEEP.st)) {
+      this.min += dt * this.RATE;
+      // the fast clock (developer tools): the extra minutes are lived through as small skips, so everything keeps pace
+      if ((this.speed || 1) > 1) { this.ffAcc = (this.ffAcc || 0) + dt * this.RATE * (this.speed - 1); if (this.ffAcc >= 0.5) { const m = this.ffAcc; this.ffAcc = 0; this.skip(m, true); } }
+    }
+    for (const f of this.tickFns) f(dt);
+  },
   hour() { return (this.min / 60) % 24; },
   day() { return Math.floor(this.min / 1440) + 1; },
   // 0 at full day, 1 deep in the night (follows the sun; see gfx/daynight.js for the light itself)
@@ -25,11 +32,13 @@ const TIME = {
   ago(m) { const d = Math.max(0, this.min - m); return d < 60 ? 'vor ' + Math.max(1, Math.round(d)) + ' Min.' : d < 1440 * 1.5 ? 'vor ' + Math.round(d / 60) + ' Std.' : 'vor ' + Math.round(d / 1440) + ' Tagen'; },
   onSkip(fn) { this.skipFns.push(fn); },
   onTick(fn) { this.tickFns.push(fn); },
-  skip(minutes) {
+  // soft: a small step of the fast clock (no clock shown, no event)
+  skip(minutes, soft) {
     const m = Math.max(0, minutes);
-    this.min += m;
-    for (const f of this.skipFns) { try { f(m); } catch (e) { /* one system failing must not stop the others */ } }
-    worldEvent('timeSkip', 0, 0, 0, { by: 'world', minutes: m });
+    // the people live those minutes first (npc/sim.js), then everybody else hears of them
+    if (typeof WORLDSIM !== 'undefined') WORLDSIM.run(m, soft); else this.min += m;
+    for (const f of this.skipFns) { try { f(m, soft); } catch (e) { /* one system failing must not stop the others */ } }
+    if (!soft) worldEvent('timeSkip', 0, 0, 0, { by: 'world', minutes: m });
   },
   // minutes from now until the clock shows hour h (0…24) next
   until(h) { const now = this.hour(); let d = (h - now) * 60; if (d < 0) d += 1440; return d; }

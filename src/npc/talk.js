@@ -340,6 +340,18 @@ const TALK = {
     if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
     return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
   },
+  /* curiosity: he asks you something, once (key), when you are close and nothing else is going on: what happened to
+     you, what the shooting was, what he has heard about you. His own words if the AI is there, else the ready-made
+     question (kept: its sound is paid once). The question stays in the conversation, so your answer is to it. */
+  wonder(n, key, situation, fallback, mood) {
+    const A = n.asked || (n.asked = new Set());
+    if (A.has(key) || !n.canBeHeard() || n.talking || n.thinking || n.talkT > 0 || VOICE.speaking(n) || (this.open && this.npc !== n)) return false;
+    if (Math.hypot(PLAY.pos.x - n.pos.x, PLAY.pos.z - n.pos.z) > 5 || G.time - (n.askT || -99) < 45 || G.time - (n.aiAt || -99) < 8) return false;
+    A.add(key); n.askT = G.time;
+    const say = () => { n.speak(fallback, undefined, mood || 'neutral', true); (n.talkLog || (n.talkLog = [])).push({ who: 'n', text: fallback }); };
+    if (!this.remark(n, situation + ' Du bist neugierig: frag ihn danach, kurz und direkt, eine Frage.', say, mood || 'neutral')) say();
+    return true;
+  },
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;

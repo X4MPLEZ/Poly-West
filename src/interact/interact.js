@@ -36,6 +36,7 @@ const INTERACT = {
     }
     // long things (bar counters) are checked by distance to their whole length, not through the grid
     for (const C of COUNTERS) this.wide.push(Object.assign(makeCounter(C), { id: 'bar' + this.wide.length }));
+    AID.init();
     const $ = (id) => document.getElementById(id);
     this.ui = [{ row: $('prompt1'), txt: $('promptTxt'), btn: $('bUse') }, { row: $('prompt2'), txt: $('promptTxt2'), btn: $('bUse2') }];
     this.ui.forEach((u, i) => {
@@ -62,7 +63,8 @@ const INTERACT = {
     if (this.seated !== SIT.busy()) { this.seated = SIT.busy(); document.getElementById('app').classList.toggle('seated', this.seated); }
     let best = null, acts = [];
     const free = !DRINK.busy() && !SHOP.open && !DRUNK.blocked();
-    if (SIT.state === 'sit') {
+    if (AID.owns()) { best = AID.entry; acts = AID.acts(); }
+    else if (SIT.state === 'sit') {
       best = SIT.seat;
       if (free) acts = best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best).concat([{ label: 'Aufstehen', run: () => SIT.stand() }])
         : [{ label: 'Aufstehen', run: () => SIT.stand() }, { label: TIME.hour() >= 19 || TIME.hour() < 5 ? 'Hier übernachten' : 'Dösen', run: () => SLEEP.show({ kind: 'nap', seat: best }) }];

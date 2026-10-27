@@ -75,6 +75,8 @@ function updatePlayer(dt) {
   PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
   PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
   if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
+  AID.update();
+  if (AID.drive(dt, mag)) return;   // kneeling by someone who bleeds
   if (DEV.fly) { PLAY.vx = PLAY.vz = 0; PLAY.speed = 0; PLAY.moving = false; PLAY.inYaw = null; return; }   // the keys fly the free camera
   const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
   const aiming = GUN.aiming();

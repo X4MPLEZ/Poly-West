@@ -37,6 +37,14 @@ const GESTURES = {
     arm: (i) => (i === 1 ? { p: [0.0, 1.62, 0.24], pole: [-1, -0.5, 0], shape: { open: 1 }, wrist: { x: -0.6, z: 0 } } : null) },
   // a shove: both palms at your chest, hard
   shove: { dur: 0.7, face: 'angry', arm: (i, t) => ({ p: [-0.15, 1.32, 0.3 + Math.sin(Math.min(1, t / 0.35) * Math.PI) * 0.3], pole: [-1, -0.6, 0], shape: { open: 1 }, wrist: { x: -1.1, z: 0 } }) },
+  // a start at a bang: the knees give a little, the head goes down, the hands jump up to the chest (in at once)
+  flinch: { dur: 0.95, in: 0.05, face: 'fear',
+    head: (t, P) => { const f = Math.exp(-t * 3.2) * Math.min(1, t / 0.05); P.hdPitch += 0.32 * f; P.spPitch += 0.14 * f; P.pel.y -= 0.06 * f; P.hdRoll = (P.hdRoll || 0) + 0.08 * f; },
+    arm: (i, t) => ({ p: [-0.13, 1.4 + Math.exp(-t * 3) * 0.05, 0.22], pole: [-1, -0.7, -0.2], shape: { open: 0.75 }, wrist: { x: -0.6, z: 0 } }) },
+  // close by: both arms up over the head, ducking away
+  cower: { dur: 1.6, in: 0.06, face: 'fear',
+    head: (t, P) => { const f = Math.min(1, t / 0.06) * (t < 1.1 ? 1 : Math.max(0, 1 - (t - 1.1) / 0.5)); P.hdPitch += 0.45 * f; P.spPitch += 0.3 * f; P.pel.y -= 0.12 * f; },
+    arm: () => ({ p: [-0.1, 1.72, 0.2], pole: [-1, 0.2, -0.2], shape: { open: 0.9 }, wrist: { x: -0.4, z: 0 } }) },
   // a small hand movement on a word (talking)
   beat: { dur: 0.75, arm: (i, t, n) => (i === n.beatSide ? { p: [-0.17, 1.13 + Math.sin(Math.min(1, t / 0.4) * Math.PI) * 0.04, 0.34], pole: [-1, -0.7, -0.3], shape: { open: 0.8 }, wrist: { x: -0.4, z: 0 } } : null) }
 };
@@ -47,7 +55,7 @@ const GESTURE = {
   IN: 0.28, OUT: 0.32,
   // how much of the gesture shows at time t (in and out)
   env(def, t, endT) {
-    const a = clamp(t / this.IN, 0, 1), d = def.dur;
+    const a = clamp(t / (def.in || this.IN), 0, 1), d = def.dur;
     if (endT !== null && endT !== undefined) return Math.min(a, 1 - clamp((t - endT) / this.OUT, 0, 1));
     if (!d) return a;
     return Math.min(a, clamp((d - t) / this.OUT, 0, 1));

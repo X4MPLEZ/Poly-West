@@ -37,6 +37,7 @@ audio/sfx.js
 audio/samples.js
 audio/voice.js
 combat/fx.js
+gfx/blood.js
 combat/gun.js
 combat/gun_sound.js
 audio/foley.js
@@ -46,6 +47,7 @@ combat/breakables.js
 interact/interact.js
 interact/sit.js
 interact/drink.js
+play/aid.js
 npc/npc.js
 npc/harm.js
 npc/nav.js
@@ -57,6 +59,7 @@ npc/direct.js
 npc/hear.js
 npc/talk.js
 npc/chat.js
+npc/sim.js
 audio/ambient.js
 ui/hud.js
 ui/menu.js

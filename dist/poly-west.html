@@ -796,6 +796,7 @@ const SETTINGS = {
     { group: 'Grafik' },
     { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
     { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },
+    { key: 'blood', label: 'Blut', type: 'choice', def: 'normal', options: [['off', 'Aus'], ['normal', 'Normal'], ['more', 'Stark']] },
     { key: 'showFps', label: 'Bildrate anzeigen', type: 'toggle', def: true },
     { group: 'Gespräche' },
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },
@@ -887,10 +888,17 @@ const SAVE = {
    Game time in minutes since the first morning (day 1 starts at 0:00, the game at 10:00). A day lasts 48 real
    minutes (half a game minute per real second, like the big westerns). Systems ask TIME.hour() (0…24) and
    TIME.min; skipping time (sleeping) goes through TIME.skip(minutes), which tells everybody who listens with
-   TIME.onSkip(fn(minutes)) so wounds heal, drink wears off and people move on as if those hours had passed. */
+   TIME.onSkip(fn(minutes, soft)) so wounds heal, drink wears off and people move on as if those hours had passed. */
 const TIME = {
   min: 600, RATE: 0.5, frozen: false, skipFns: [], tickFns: [],
-  update(dt) { if (!this.frozen && !(typeof SLEEP !== 'undefined' && SLEEP.st)) this.min += dt * this.RATE * (this.speed || 1); for (const f of this.tickFns) f(dt); },
+  update(dt) {
+    if (!this.frozen && !(typeof SLEEP !== 'undefined' && SLEEP.st)) {
+      this.min += dt * this.RATE;
+      // the fast clock (developer tools): the extra minutes are lived through as small skips, so everything keeps pace
+      if ((this.speed || 1) > 1) { this.ffAcc = (this.ffAcc || 0) + dt * this.RATE * (this.speed - 1); if (this.ffAcc >= 0.5) { const m = this.ffAcc; this.ffAcc = 0; this.skip(m, true); } }
+    }
+    for (const f of this.tickFns) f(dt);
+  },
   hour() { return (this.min / 60) % 24; },
   day() { return Math.floor(this.min / 1440) + 1; },
   // 0 at full day, 1 deep in the night (follows the sun; see gfx/daynight.js for the light itself)
@@ -910,11 +918,13 @@ const TIME = {
   ago(m) { const d = Math.max(0, this.min - m); return d < 60 ? 'vor ' + Math.max(1, Math.round(d)) + ' Min.' : d < 1440 * 1.5 ? 'vor ' + Math.round(d / 60) + ' Std.' : 'vor ' + Math.round(d / 1440) + ' Tagen'; },
   onSkip(fn) { this.skipFns.push(fn); },
   onTick(fn) { this.tickFns.push(fn); },
-  skip(minutes) {
+  // soft: a small step of the fast clock (no clock shown, no event)
+  skip(minutes, soft) {
     const m = Math.max(0, minutes);
-    this.min += m;
-    for (const f of this.skipFns) { try { f(m); } catch (e) { /* one system failing must not stop the others */ } }
-    worldEvent('timeSkip', 0, 0, 0, { by: 'world', minutes: m });
+    // the people live those minutes first (npc/sim.js), then everybody else hears of them
+    if (typeof WORLDSIM !== 'undefined') WORLDSIM.run(m, soft); else this.min += m;
+    for (const f of this.skipFns) { try { f(m, soft); } catch (e) { /* one system failing must not stop the others */ } }
+    if (!soft) worldEvent('timeSkip', 0, 0, 0, { by: 'world', minutes: m });
   },
   // minutes from now until the clock shows hour h (0…24) next
   until(h) { const now = this.hour(); let d = (h - now) * 60; if (d < 0) d += 1440; return d; }
@@ -929,7 +939,9 @@ const ITEMS = {
   beer:    { name: 'Bier', price: 10, kind: 'drink', vessel: 'mug', sips: 3, alc: 0.07, sipT: 0.95 },
   whiskey: { name: 'Whiskey', price: 25, kind: 'drink', vessel: 'shot', sips: 1, alc: 0.2, sipT: 0.45 },
   water:   { name: 'Wasser', price: 5, kind: 'drink', vessel: 'glass', sips: 2, alc: -0.05, sipT: 0.8 },
-  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.15, sipT: 0.75 }
+  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.15, sipT: 0.75 },
+  // a roll of linen and a pad: one field dressing (play/aid.js); the doctor sells it
+  bandage: { name: 'Verbandszeug', price: 15, kind: 'aid' }
 };
 const MENU_BAR = ['beer', 'whiskey', 'water', 'bottle'];
 
@@ -937,7 +949,7 @@ function money(c) { return '$' + (c / 100).toFixed(2); }
 function price(c) { return c < 100 ? c + ' ¢' : money(c); }
 
 const INV = {
-  money: 1000, items: {}, sips: {},     // sips: what is left in an opened bottle
+  money: 1000, items: { bandage: 1 }, sips: {},     // sips: what is left in an opened bottle
   has(id) { return (this.items[id] || 0) > 0; },
   add(id, n) { this.items[id] = (this.items[id] || 0) + (n || 1); if (ITEMS[id].kind === 'carry' && this.sips[id] === undefined) this.sips[id] = ITEMS[id].sips; },
   remove(id) { if (!this.has(id)) return false; this.items[id]--; if (!this.items[id]) { delete this.items[id]; delete this.sips[id]; } return true; },
@@ -3608,6 +3620,7 @@ const FACE = {
     if (N.lookW > 0.2) W.look = this.lookOf(N.ch, N.look);
     if (H.anim) {
       // on the ground: dazed from blows; shot and bleeding: pain, and terror when a gun is on him
+      if (H.out) { W.mood = 'sleep'; W.sleep = true; W.talk = 0; return W; }
       W.mood = H.knocked && H.blood > 0.8 ? 'dazed' : 'pain'; W.mood2 = N.fear && G.time < N.fear ? 'fear' : 'pain'; W.k2 = clamp(H.pain, 0.3, 1);
       if (H.dying > 0) { W.mood = 'pain'; W.mood2 = 'sad'; W.k2 = 0.8; }
       return W;
@@ -3682,6 +3695,14 @@ const GESTURES = {
     arm: (i) => (i === 1 ? { p: [0.0, 1.62, 0.24], pole: [-1, -0.5, 0], shape: { open: 1 }, wrist: { x: -0.6, z: 0 } } : null) },
   // a shove: both palms at your chest, hard
   shove: { dur: 0.7, face: 'angry', arm: (i, t) => ({ p: [-0.15, 1.32, 0.3 + Math.sin(Math.min(1, t / 0.35) * Math.PI) * 0.3], pole: [-1, -0.6, 0], shape: { open: 1 }, wrist: { x: -1.1, z: 0 } }) },
+  // a start at a bang: the knees give a little, the head goes down, the hands jump up to the chest (in at once)
+  flinch: { dur: 0.95, in: 0.05, face: 'fear',
+    head: (t, P) => { const f = Math.exp(-t * 3.2) * Math.min(1, t / 0.05); P.hdPitch += 0.32 * f; P.spPitch += 0.14 * f; P.pel.y -= 0.06 * f; P.hdRoll = (P.hdRoll || 0) + 0.08 * f; },
+    arm: (i, t) => ({ p: [-0.13, 1.4 + Math.exp(-t * 3) * 0.05, 0.22], pole: [-1, -0.7, -0.2], shape: { open: 0.75 }, wrist: { x: -0.6, z: 0 } }) },
+  // close by: both arms up over the head, ducking away
+  cower: { dur: 1.6, in: 0.06, face: 'fear',
+    head: (t, P) => { const f = Math.min(1, t / 0.06) * (t < 1.1 ? 1 : Math.max(0, 1 - (t - 1.1) / 0.5)); P.hdPitch += 0.45 * f; P.spPitch += 0.3 * f; P.pel.y -= 0.12 * f; },
+    arm: () => ({ p: [-0.1, 1.72, 0.2], pole: [-1, 0.2, -0.2], shape: { open: 0.9 }, wrist: { x: -0.4, z: 0 } }) },
   // a small hand movement on a word (talking)
   beat: { dur: 0.75, arm: (i, t, n) => (i === n.beatSide ? { p: [-0.17, 1.13 + Math.sin(Math.min(1, t / 0.4) * Math.PI) * 0.04, 0.34], pole: [-1, -0.7, -0.3], shape: { open: 0.8 }, wrist: { x: -0.4, z: 0 } } : null) }
 };
@@ -3692,7 +3713,7 @@ const GESTURE = {
   IN: 0.28, OUT: 0.32,
   // how much of the gesture shows at time t (in and out)
   env(def, t, endT) {
-    const a = clamp(t / this.IN, 0, 1), d = def.dur;
+    const a = clamp(t / (def.in || this.IN), 0, 1), d = def.dur;
     if (endT !== null && endT !== undefined) return Math.min(a, 1 - clamp((t - endT) / this.OUT, 0, 1));
     if (!d) return a;
     return Math.min(a, clamp((d - t) / this.OUT, 0, 1));
@@ -3865,6 +3886,7 @@ function updateGait() {
   for (let i = 0; i < 2; i++) { const h = P.hand[i]; h.fist = 0; h.open = 0; h.point = 0; P.wrist[i].x = 0; P.wrist[i].z = 0; }
   // sitting: the seat has the whole pose
   if (typeof FALL !== 'undefined' && FALL.owns()) { FALL.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
+  if (typeof AID !== 'undefined' && AID.owns()) { AID.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   if (typeof SIT !== 'undefined' && SIT.owns()) { SIT.pose(P, dt); DRUNK.pose(P); DRINK.pose(P, dt); g.yawPrev = yaw; g.vPrev = 0; g.s = 0; applyPose(ch); return; }
   const sp = Math.hypot(PLAY.vx, PLAY.vz);
   g.s += (sp - g.s) * (1 - Math.exp(-dt * 12));
@@ -4732,6 +4754,8 @@ function updatePlayer(dt) {
   PLAY.camYaw -= (INPUT.padLookX || 0) * dt * 2.4;
   PLAY.camPitch = clamp(PLAY.camPitch + (INPUT.padLookY || 0) * dt * 1.5, 0.04, 1.15);
   if (SIT.drive(dt, mag)) return;   // walking to a seat, sitting, getting up
+  AID.update();
+  if (AID.drive(dt, mag)) return;   // kneeling by someone who bleeds
   if (DEV.fly) { PLAY.vx = PLAY.vz = 0; PLAY.speed = 0; PLAY.moving = false; PLAY.inYaw = null; return; }   // the keys fly the free camera
   const touchRun = INPUT.joy && Math.hypot(INPUT.stickX, INPUT.stickY) > 0.93;
   const aiming = GUN.aiming();
@@ -5634,11 +5658,11 @@ const REST = {
       if (this.need > 9 && G.time - this.lastToast > 300 && !FIST.active()) { this.lastToast = G.time; TOAST.show(this.need > 13 ? 'Du kannst kaum noch die Augen offen halten. Zeit zu schlafen.' : 'Du wirst müde.'); }
     });
     // whatever passes while asleep: drink wears off, stamina comes back
-    TIME.onSkip((m) => {
+    TIME.onSkip((m, soft) => {
       const h = m / 60;
       DRUNK.level = Math.max(0, DRUNK.level - h * 0.14 - (DRUNK.stomach + DRUNK.gut) * 0.5 * Math.min(1, h));
       DRUNK.stomach = Math.max(0, DRUNK.stomach - h * 0.5); DRUNK.gut = Math.max(0, DRUNK.gut - h * 0.5);
-      FIST.stamina = 1;
+      if (!soft) FIST.stamina = 1;
     });
   },
   // the longest sleep in minutes: in a bed always up to 12 hours; in a chair or on a bench a doze of two hours,
@@ -5668,7 +5692,7 @@ const PHP = {
   dose(k, by) { if (this.poison <= 0.01) { this.poisonT = 0; this.poisonBy = by; this.poisonSaid = 0; } this.poison = Math.min(2, this.poison + k); },
   init() {
     this.el = document.getElementById('hurtFx');
-    TIME.onSkip((m) => { this.hp = Math.min(1, this.hp + m / 60 * 0.25); this.daze = 0; });
+    TIME.onSkip((m, soft) => { this.hp = Math.min(1, this.hp + m / 60 * 0.25); if (!soft) this.daze = 0; });
   },
   /* o: { power, head, dir: {x, z} (the way the blow travels), by: npc, heavy, shot } */
   hit(o) {
@@ -6678,6 +6702,219 @@ const FX = {
     }
     this.debris.update(dt); this.smoke.update(dt); this.sparks.update(dt);
     DECALS.sync();
+  }
+};
+
+// ==== gfx/blood.js ====
+/* ---------- blood: spatter, runs, pools, drops, the artery pumping ----------
+   Marks on surfaces, written in place into a few pooled meshes (per room and one outdoors, like the bullet holes
+   of combat/fx.js), so blood costs no new objects and at most two draw calls per room:
+     big  : spatter (a blob or three and droplets flung the way the bullet went, long and thin the flatter it hit, with
+            runs that creep down a wall), pools (they spread while a man lies bleeding, a few tongues run out
+            over the boards) — up to 100 triangles a mark
+     small: drops (round with a crown when they fall straight, drawn out when he walks) — 12 triangles a mark
+   Fresh blood is bright and wet, over a few game hours it turns dark brown (the colours are rewritten now and
+   then, only for marks that are still changing). How much there is follows the setting "Blut". */
+const BLOOD = {
+  VB: 300, VS: 36, CAP: { big: [40, 56], small: [140, 180] },   // [in a room, outdoors]
+  sets: new Map(), all: [], runs: [], pools: [], _a: new THREE.Vector3(), _b: new THREE.Vector3(), _c: new THREE.Vector3(), _n: new THREE.Vector3(),
+  FRESH: [0.42, 0.025, 0.02], DRY: [0.16, 0.045, 0.03],
+  k() { const v = SETTINGS.v.blood; return v === 'off' ? 0 : v === 'more' ? 1.6 : 1; },
+  // the mesh for a room ('out': the street), big or small marks
+  set(R, kind) {
+    let E = this.sets.get(R || 'out');
+    if (!E) this.sets.set(R || 'out', E = {});
+    let S = E[kind];
+    if (S) return S;
+    const cap = this.CAP[kind][R ? 0 : 1], vpd = kind === 'big' ? this.VB : this.VS, n = cap * vpd, g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+    g.setAttribute('tile', new THREE.BufferAttribute(new Float32Array(n), 1));
+    const mat = new THREE.ShaderMaterial({ uniforms: R ? R.mat.uniforms : U, vertexShader: SH.litV, fragmentShader: R ? SH.inF : SH.litF, vertexColors: true,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: kind === 'big' ? -5 : -4 });
+    const mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false; mesh.renderOrder = 1;
+    G.scene.add(mesh);
+    S = { mesh, R, kind, cap, vpd, next: 0, shade: new Float32Array(n), born: new Float32Array(cap).fill(-1e9), age: new Float32Array(cap) };
+    E[kind] = S; this.all.push(S);
+    return S;
+  },
+  // a slot for a new mark (the oldest goes); returns a writer
+  slot(R, kind) {
+    const S = this.set(R, kind), i = S.next; S.next = (S.next + 1) % S.cap;
+    this.runs = this.runs.filter((r) => !(r.S === S && r.i === i)); this.pools = this.pools.filter((p) => !(p.S === S && p.i === i));
+    S.born[i] = TIME.min; S.age[i] = -1;
+    return { S, i, v: 0 };
+  },
+  // a frame on a surface: point, normal, u (in the surface, the way it was flung), v = n × u
+  frame(pt, n, dir) {
+    const u = new THREE.Vector3(), w = new THREE.Vector3();
+    if (dir) u.copy(dir).addScaledVector(n, -dir.dot(n));
+    if (!dir || u.lengthSq() < 1e-4) {
+      u.crossVectors(Math.abs(n.y) > 0.9 ? this._c.set(1, 0, 0) : this._c.set(0, 1, 0), n).normalize(); w.crossVectors(n, u);
+      const a = Math.random() * TAU; u.multiplyScalar(Math.cos(a)).addScaledVector(w, Math.sin(a));
+    }
+    u.normalize(); w.crossVectors(n, u).normalize();
+    return { p: pt.clone(), n: n.clone(), u, w };
+  },
+  // write one corner (frame F, lift off the surface, u/v coordinates, shade)
+  put(W, F, lift, x, y, sh) {
+    const S = W.S, o = W.i * S.vpd + W.v, g = S.mesh.geometry, P = g.attributes.position.array, N = g.attributes.normal.array;
+    if (W.v >= S.vpd) return;
+    P[o * 3] = F.p.x + F.n.x * lift + F.u.x * x + F.w.x * y; P[o * 3 + 1] = F.p.y + F.n.y * lift + F.u.y * x + F.w.y * y; P[o * 3 + 2] = F.p.z + F.n.z * lift + F.u.z * x + F.w.z * y;
+    N[o * 3] = F.n.x; N[o * 3 + 1] = F.n.y; N[o * 3 + 2] = F.n.z; S.shade[o] = sh; W.v++;
+  },
+  // (counter-clockwise seen from the surface, whatever order the corners come in: the material shows one side only)
+  tri(W, F, lift, a, b, c, sh) {
+    if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < 0) { const t = b; b = c; c = t; }
+    this.put(W, F, lift, a[0], a[1], sh); this.put(W, F, lift, b[0], b[1], sh); this.put(W, F, lift, c[0], c[1], sh);
+  },
+  // an irregular blob: k corners round (cx, cy), radii rx/ry, jitter
+  blob(W, F, lift, cx, cy, rx, ry, k, jit, sh, shEdge) {
+    const pts = [];
+    for (let i = 0; i < k; i++) { const a = (i / k) * TAU, j = 1 + (Math.random() - 0.5) * jit; pts.push([cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j]); }
+    for (let i = 0; i < k; i++) { this.put(W, F, lift, cx, cy, sh); this.put(W, F, lift, pts[i][0], pts[i][1], shEdge); this.put(W, F, lift, pts[(i + 1) % k][0], pts[(i + 1) % k][1], shEdge); }
+  },
+  // a droplet: a drawn-out diamond, its tail pointing away (dx, dy: unit, s: size, e: how drawn out)
+  droplet(W, F, lift, x, y, dx, dy, s, e, sh) {
+    const px = -dy * s, py = dx * s, f = [x + dx * s * e, y + dy * s * e], b = [x - dx * s * 0.8, y - dy * s * 0.8];
+    this.tri(W, F, lift, b, [x + px, y + py], f, sh); this.tri(W, F, lift, b, f, [x - px, y - py], sh);
+  },
+  close(W) {
+    const S = W.S, P = S.mesh.geometry.attributes.position.array;
+    for (; W.v < S.vpd; W.v++) { const o = (W.i * S.vpd + W.v) * 3; P[o] = P[o + 1] = P[o + 2] = 0; }
+    this.colour(S, W.i, 0);
+    const g = S.mesh.geometry; g.attributes.position.needsUpdate = true; g.attributes.normal.needsUpdate = true;
+  },
+  // the colours of a mark for its age (0 fresh … 1 dried)
+  colour(S, i, a) {
+    const C = S.mesh.geometry.attributes.color.array, F = this.FRESH, D = this.DRY;
+    const r = F[0] + (D[0] - F[0]) * a, g = F[1] + (D[1] - F[1]) * a, b = F[2] + (D[2] - F[2]) * a;
+    for (let v = 0; v < S.vpd; v++) { const o = i * S.vpd + v, sh = S.shade[o]; C[o * 3] = r * sh; C[o * 3 + 1] = g * sh; C[o * 3 + 2] = b * sh; }
+    S.mesh.geometry.attributes.color.needsUpdate = true; S.age[i] = a;
+  },
+  /* ---- spatter: a bullet came out of someone (or went in), the blood flung onto a wall or the floor. dir: the way
+     it flew; k: how much (a head: more). On a wall a few runs start to creep down. ---- */
+  splat(R, pt, n, dir, k) {
+    const K = this.k(); if (!K) return;
+    k = (k || 1) * K;
+    const W = this.slot(R, 'big'), F = this.frame(pt, n, dir), perp = dir ? Math.abs(dir.dot(n)) : 1;
+    const r0 = (0.045 + Math.random() * 0.03) * Math.sqrt(k), along = 1 + (1 - perp) * 0.8;
+    // the blob, a little ahead of where it hit (longer the flatter it came), and a few smaller ones beside it
+    this.blob(W, F, 0.006, r0 * 0.25, 0, r0 * along, r0, 12, 0.6, 1.05, 0.8);
+    for (let j = 0; j < 3; j++) { const a = (Math.random() - 0.5) * (0.6 + perp * 5), d = r0 * (0.7 + Math.random() * 0.6), rr = r0 * (0.3 + Math.random() * 0.3); this.blob(W, F, 0.0065, Math.cos(a) * d, Math.sin(a) * d, rr * along, rr, 6, 0.5, 1, 0.82); }
+    // droplets: in a fan the way it flew (all round when it hit straight on), further = smaller and longer
+    const nd = Math.round(14 + 5 * Math.min(2, k)), spread = 0.5 + perp * 2.6;
+    for (let j = 0; j < nd; j++) {
+      const a = (Math.random() + Math.random() - 1) * spread, d = r0 * 0.8 + Math.pow(Math.random(), 2.2) * 0.42 * Math.sqrt(k);
+      const dx = Math.cos(a), dy = Math.sin(a), s = Math.max(0.003, (0.007 + Math.random() * 0.012) * (1 - d / 0.7)) * Math.sqrt(k);
+      this.droplet(W, F, 0.006, dx * d, dy * d, dx, dy, s, 1.2 + (1 - perp) * 2.5 + d * 6, 0.75 + Math.random() * 0.35);
+    }
+    // on a wall: runs from the blob and the big drops, down the wall (they are drawn while they creep)
+    if (Math.abs(n.y) < 0.35) {
+      const down = this._c.set(0, -1, 0), du = down.dot(F.u), dw = down.dot(F.w), dl = Math.hypot(du, dw) || 1;
+      const nr = Math.min(3, 1 + Math.floor(Math.random() * 2 * Math.min(1.5, k)));
+      for (let j = 0; j < nr; j++) {
+        const base = W.v; for (let q = 0; q < 12; q++) this.put(W, F, 0.007, 0, 0, 0.8);
+        const x0 = (Math.random() - 0.5) * r0 * 0.9 + (du / dl) * r0 * 0.5, y0 = (Math.random() - 0.5) * r0 * 0.9 + (dw / dl) * r0 * 0.5;
+        this.runs.push({ S: W.S, i: W.i, base, F, x0, y0, du: du / dl, dw: dw / dl, wid: 0.005 + Math.random() * 0.006, len: 0, to: 0.1 + Math.random() * 0.35 * Math.min(1.4, k), tau: 2.5 + Math.random() * 5, t: 0 });
+      }
+    }
+    this.close(W);
+  },
+  /* ---- a pool where a man lies bleeding: it spreads with what he loses (vol: blood fraction lost), tongues
+     run out over the floor ---- */
+  pool(N, vol) {
+    const K = this.k(); if (!K) return;
+    const H = N.hp, at = H.dripPoint(this._a), R = N.room || null;
+    const gy = groundAt(at.x, at.z, N.pos.y + 0.3);
+    let P = H.poolMark;
+    if (!P || P.R !== R || Math.hypot(P.x - at.x, P.z - at.z) > 0.45 || !this.pools.includes(P)) {
+      const W = this.slot(R, 'big'), F = this.frame(new THREE.Vector3(at.x, gy + 0.004, at.z), this._n.set(0, 1, 0), null);
+      P = H.poolMark = { S: W.S, i: W.i, F, x: at.x, z: at.z, vol: 0, r: 0.02, lobes: [0, 1, 2].map(() => ({ a: Math.random() * TAU, k: 0.4 + Math.random() * 0.9, w: 0.2 + Math.random() * 0.25 })), noise: Array.from({ length: 16 }, () => Math.random() - 0.5), R, t: 0 };
+      this.pools.push(P);
+    }
+    P.vol += vol * K;
+  },
+  writePool(P) {
+    const S = P.S, W = { S, i: P.i, v: 0 }, F = P.F, k = 16, pts = [], rim = [];
+    const lobeGrow = clamp((P.r - 0.12) / 0.5, 0, 1);
+    for (let i = 0; i < k; i++) {
+      const a = (i / k) * TAU;
+      let f = 1 + P.noise[i] * 0.22;
+      for (const L of P.lobes) { const d = wrapA(a - L.a); f += L.k * lobeGrow * Math.exp(-(d * d) / (2 * L.w * L.w)); }
+      const r = P.r * f;
+      pts.push([Math.cos(a) * r, Math.sin(a) * r]); rim.push([Math.cos(a) * (r + 0.012), Math.sin(a) * (r + 0.012)]);
+    }
+    for (let i = 0; i < k; i++) {
+      const j = (i + 1) % k;
+      this.tri(W, F, 0.005, [0, 0], pts[i], pts[j], 0.9);
+      this.tri(W, F, 0.004, pts[i], rim[i], rim[j], 0.62); this.tri(W, F, 0.004, pts[i], rim[j], pts[j], 0.62);
+    }
+    this.close(W); this.colour(S, P.i, Math.max(0, S.age[P.i]));
+  },
+  /* ---- a drop on the floor under a bleeding man (from where the blood runs off him) ---- */
+  drip(N, from) {
+    const K = this.k(); if (!K) return;
+    const R = N.room || null, x = from.x + (Math.random() - 0.5) * 0.08, z = from.z + (Math.random() - 0.5) * 0.08, gy = groundAt(x, z, N.pos.y + 0.3);
+    const h = Math.max(0.1, from.y - gy), mv = N.speed;
+    const dir = mv > 0.2 ? this._c.set(N.vx, 0, N.vz).normalize() : null;
+    this.drop(R, x, gy, z, dir, (0.009 + Math.random() * 0.008) * Math.sqrt(K), h, mv);
+  },
+  drop(R, x, gy, z, dir, s, h, mv) {
+    const W = this.slot(R, 'small'), F = this.frame(new THREE.Vector3(x, gy + 0.003, z), this._n.set(0, 1, 0), dir);
+    const e = 1 + Math.min(1.5, (mv || 0) * 0.6);
+    this.blob(W, F, 0.003, 0, 0, s * e, s, 6, 0.35, 1, 0.85);
+    // the crown of a drop that fell from high up: little satellites round it (or flung ahead when he walks)
+    const ns = h > 0.5 ? 3 : 1;
+    for (let j = 0; j < ns; j++) { const a = dir ? (Math.random() - 0.5) * 0.8 : Math.random() * TAU, d = s * (1.6 + Math.random() * 1.6) * e; this.droplet(W, F, 0.003, Math.cos(a) * d, Math.sin(a) * d, Math.cos(a), Math.sin(a), s * 0.28, 1.8, 0.85); }
+    this.close(W);
+  },
+  /* ---- a torn artery pumps: a spurt with each beat, out of the wound, landing as drops ---- */
+  spurt(p, n, k, N) {
+    const K = this.k(); if (!K) return;
+    k = clamp(k, 0.3, 1.5);
+    const vx = n.x * 1.6 * k, vy = 0.6 + Math.max(0, n.y) * 1.2 * k, vz = n.z * 1.6 * k;
+    for (let j = 0; j < Math.round(7 * k); j++) {
+      const f = 0.6 + Math.random() * 0.6;
+      FX.debris.spawn({ x: p.x, y: p.y, z: p.z, vx: vx * f + (Math.random() - 0.5) * 0.3, vy: vy * f + (Math.random() - 0.5) * 0.3, vz: vz * f + (Math.random() - 0.5) * 0.3, life: 0.5, size: 0.008 + Math.random() * 0.008, grav: 9.8, drag: 0.4, bounce: false }, [0.5, 0.03, 0.03]);
+    }
+    // where it lands (the arc down to the floor)
+    const gy = groundAt(p.x, p.z, p.y + 0.2), dy = p.y - gy, t = (vy + Math.sqrt(vy * vy + 2 * 9.8 * Math.max(0, dy))) / 9.8;
+    for (let j = 0; j < 2; j++) { const f = 0.7 + Math.random() * 0.5; this.drop(N.room || null, p.x + vx * t * f, gy, p.z + vz * t * f, this._c.set(vx, 0, vz).normalize(), 0.01 + Math.random() * 0.008, 1, 1.5); }
+  },
+  /* ---- per frame: runs creep, pools spread, old marks darken ---- */
+  update(dt) {
+    for (let j = this.runs.length - 1; j >= 0; j--) {
+      const r = this.runs[j]; r.t += dt;
+      const L = r.to * (1 - Math.exp(-r.t / r.tau)), W = { S: r.S, i: r.i, v: r.base }, x1 = r.x0 + r.du * L, y1 = r.y0 + r.dw * L, px = -r.dw * r.wid, py = r.du * r.wid;
+      // the streak, thinning towards its end, and a fat drop at the end of it
+      this.tri(W, r.F, 0.007, [r.x0 + px, r.y0 + py], [x1 + px * 0.6, y1 + py * 0.6], [x1 - px * 0.6, y1 - py * 0.6], 0.8);
+      this.tri(W, r.F, 0.007, [r.x0 + px, r.y0 + py], [x1 - px * 0.6, y1 - py * 0.6], [r.x0 - px, r.y0 - py], 0.8);
+      const b = r.wid * 1.5;
+      this.tri(W, r.F, 0.007, [x1 - px * 1.4, y1 - py * 1.4], [x1 + px * 1.4, y1 + py * 1.4], [x1 + r.du * b, y1 + r.dw * b], 0.7);
+      this.tri(W, r.F, 0.007, [x1 - px * 1.4, y1 - py * 1.4], [x1 + px * 1.4, y1 + py * 1.4], [x1 - r.du * b * 0.4, y1 - r.dw * b * 0.4], 0.8);
+      r.S.mesh.geometry.attributes.position.needsUpdate = true;
+      this.colour(r.S, r.i, Math.max(0, r.S.age[r.i]));
+      if (r.t > r.tau * 4) this.runs.splice(j, 1);
+    }
+    for (const P of this.pools) {
+      // it spreads towards what has run out (≈ 1.5 litres: about a metre across), slower as it gets bigger
+      const want = clamp(Math.sqrt(P.vol) * 1.25, 0.03, 1.1);
+      if (want > P.r + 0.002) { P.r += (want - P.r) * (1 - Math.exp(-dt * 0.35)) + dt * 0.003; P.t -= dt; if (P.t <= 0) { P.t = 0.12; this.writePool(P); } }
+    }
+    // darkening (now and then; only marks younger than five game hours change)
+    this.ageT = (this.ageT || 0) - dt;
+    if (this.ageT <= 0) {
+      this.ageT = 2;
+      for (const S of this.all) for (let i = 0; i < S.cap; i++) {
+        if (S.born[i] < -1e8) continue;
+        const a = clamp((TIME.min - S.born[i]) / 300, 0, 1);
+        if (a - S.age[i] > 0.02) this.colour(S, i, a);
+      }
+    }
+    for (const S of this.all) S.mesh.visible = !S.R || !!S.R.mesh.visible;
   }
 };
 
@@ -8073,6 +8310,7 @@ const INTERACT = {
     }
     // long things (bar counters) are checked by distance to their whole length, not through the grid
     for (const C of COUNTERS) this.wide.push(Object.assign(makeCounter(C), { id: 'bar' + this.wide.length }));
+    AID.init();
     const $ = (id) => document.getElementById(id);
     this.ui = [{ row: $('prompt1'), txt: $('promptTxt'), btn: $('bUse') }, { row: $('prompt2'), txt: $('promptTxt2'), btn: $('bUse2') }];
     this.ui.forEach((u, i) => {
@@ -8099,7 +8337,8 @@ const INTERACT = {
     if (this.seated !== SIT.busy()) { this.seated = SIT.busy(); document.getElementById('app').classList.toggle('seated', this.seated); }
     let best = null, acts = [];
     const free = !DRINK.busy() && !SHOP.open && !DRUNK.blocked();
-    if (SIT.state === 'sit') {
+    if (AID.owns()) { best = AID.entry; acts = AID.acts(); }
+    else if (SIT.state === 'sit') {
       best = SIT.seat;
       if (free) acts = best.bar ? barActions(COUNTERS.find((c) => c.room === best.room) || this.wide[0], best).concat([{ label: 'Aufstehen', run: () => SIT.stand() }])
         : [{ label: 'Aufstehen', run: () => SIT.stand() }, { label: TIME.hour() >= 19 || TIME.hour() < 5 ? 'Hier übernachten' : 'Dösen', run: () => SLEEP.show({ kind: 'nap', seat: best }) }];
@@ -8663,6 +8902,197 @@ const SHOP = {
   seatSpot(seat) { const v = new THREE.Vector3(); SIT.seatW(-0.17, seat.bar.y, seat.bar.z + 0.02, v); return v; }
 };
 
+// ==== play/aid.js ====
+/* ---------- first aid: you kneel by someone who bleeds and do what you can ----------
+   Close to a person with an open gunshot (lying, sitting on the floor, or standing still and letting you), two things:
+     "Wunde abdrücken": both hands on the wound that bleeds most, as long as you stay (E again or walking off lets go).
+        It nearly stops the bleeding while you press; a vein closes for good after a few seconds of it.
+     "Verbinden": with Verbandszeug from your bag (the doctor sells it) a field dressing: two turns of cloth and a
+        knot; a torn artery in an arm or leg is tied off above it. It stops most of the bleeding, but it heals no
+        faster: the bullet is still in there, and he still needs the doctor (and goes to him).
+   The person feels it (npc.onHarm({type: 'aid'})) and remembers it, whoever shot him. Your hands are bloody after. */
+const AID = {
+  st: null, npc: null, w: null, mode: null, t: 0, wrapT: 0, pressT: 0, spot: new THREE.Vector3(), from: new THREE.Vector3(), yaw: 0,
+  WRAP: 6, _v: new THREE.Vector3(), _w: new THREE.Vector3(), _q: new THREE.Vector3(), _h: [new THREE.Vector3(), new THREE.Vector3()],
+  owns() { return !!this.st; },
+  busy() { return !!this.st; },
+  init() {
+    const it = this.entry = { x: 0, y: 0, z: 0, room: null, occ: null, verb: 'aid', kind: 'aid', id: 'aid', fx: 0, fz: 1, sx: 0, sz: 0 };
+    it.score = (p) => {
+      const N = this.patient(p); if (!N) return 1e9;
+      it.npc = N; it.room = N.room || null; it.x = N.pos.x; it.y = N.pos.y; it.z = N.pos.z; it.sx = N.pos.x; it.sz = N.pos.z;
+      return Math.hypot(N.pos.x - p.x, N.pos.z - p.z) + 0.2;
+    };
+    it.actions = () => {
+      const N = it.npc, out = [{ label: 'Wunde abdrücken', run: () => this.begin(N, 'press') }];
+      if (INV.has('bandage')) out.push({ label: 'Verbinden (Verbandszeug)', run: () => this.begin(N, 'wrap') });
+      return out;
+    };
+    INTERACT.wide.push(it);
+  },
+  // who near p needs help with a wound and lets you: alive, an open gunshot, not fighting; on his feet only when still
+  patient(p) {
+    if (GUN.state !== 'holster' || FALL.busy() || SIT.busy() || PHP.out) return null;
+    let best = null, bd = 1.7;
+    for (const N of NPCS.list) {
+      const H = N.hp;
+      if (H.dead || (N.fight && N.fight.on) || (N.room || null) !== (ROOMSTATE.cur || null)) continue;
+      if (!H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && !w.field && w.heal < 0.5 && w.part)) continue;
+      if (!H.anim && (N.speed > 0.2 || (N.attitude && N.attitude() < -0.6))) continue;
+      const d = Math.hypot(N.pos.x - p.x, N.pos.z - p.z);
+      if (d < bd) { bd = d; best = N; }
+    }
+    return best;
+  },
+  // the wound to see to: the one that bleeds most (else any open gunshot)
+  woundOf(N, field) {
+    const H = N.hp, open = H.wounds.filter((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5 && w.part && w.lp && !(field && w.field));
+    open.sort((a, b) => (b.b || 0) * H.bleedFactor(b) + (b.art ? 0.01 : 0) - ((a.b || 0) * H.bleedFactor(a) + (a.art ? 0.01 : 0)));
+    return open[0] || null;
+  },
+  begin(N, mode) {
+    const w = this.woundOf(N, mode === 'wrap');
+    if (!w) { TOAST.show('Da gibt es nichts mehr zu verbinden.'); return; }
+    if (this.st && this.npc === N) { this.mode = mode; this.w = w; this.wrapT = 0; if (mode === 'wrap') FOLEY.cloth(PLAY.pos, 1.2); return; }
+    this.npc = N; this.w = w; this.mode = mode; this.st = 'go'; this.t = 0; this.wrapT = 0; this.pressT = 0;
+    this.from.copy(PLAY.pos); this.yaw0 = PLAY.yaw;
+    // where to kneel: a spot by the wound that is clear of his body (all his parts) and of walls, the nearest to you
+    const p = N.hp.woundPoint(w, this._v) || this._v.copy(N.pos), body = [];
+    for (const k of ['torso', 'head', 'pelvis', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']) if (N.ch.p[k]) body.push(N.ch.p[k].getWorldPosition(new THREE.Vector3()));
+    let best = null, bs = -1e9;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU, x = p.x + Math.sin(a) * 0.72, z = p.z + Math.cos(a) * 0.72;
+      if (HARM.blockedAt(x, z, N.pos.y, 0.2)) continue;
+      let clear = 9; body.forEach((b, j) => { clear = Math.min(clear, Math.hypot(x - b.x, z - b.z) - (j === 1 ? 0.25 : 0)); });   // (his head most of all)
+      const sc = Math.min(clear, 0.6) * 4 - Math.hypot(x - PLAY.pos.x, z - PLAY.pos.z) * 0.3;
+      if (sc > bs) { bs = sc; best = [x, z]; }
+    }
+    this.spot.set(best ? best[0] : PLAY.pos.x, PLAY.pos.y, best ? best[1] : PLAY.pos.z);
+    this.lying = !!N.hp.anim;
+    if (!this.lying) N.stop(Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z));
+    FOLEY.cloth(PLAY.pos, 1);
+    if (N.onHarm) N.onHarm({ type: 'aid', mode, by: 'player', zone: w.zone });
+  },
+  end() {
+    if (!this.st || this.st === 'up') return;
+    this.st = 'up'; this.t = 0;
+    if (this.touched) this.bloodyHands();
+  },
+  // the keys on offer while you are at it
+  acts() {
+    if (this.st === 'up' || this.st === 'go') return [];
+    const out = [{ label: this.mode === 'wrap' ? 'Aufhören' : 'Loslassen', run: () => this.end() }];
+    if (this.mode === 'press' && INV.has('bandage') && this.woundOf(this.npc, true)) out.push({ label: 'Verbinden (Verbandszeug)', run: () => this.begin(this.npc, 'wrap') });
+    return out;
+  },
+  /* ---- per frame, from updatePlayer: the body of the player goes to the spot, down, and stays; true while it owns
+     the player's movement ---- */
+  drive(dt, mag) {
+    if (!this.st) return false;
+    const N = this.npc, p = PLAY.pos;
+    this.t += dt;
+    if (!N || N.hp.dead || !NPCS.list.includes(N) || (this.lying && !N.hp.anim) || (!this.lying && N.speed > 0.6)) { if (this.st !== 'up') this.end(); }
+    if (this.st !== 'up' && this.st !== 'go' && mag > 0.35 && this.t > 0.6) this.end();
+    const tgt = N && N.hp.woundPoint(this.w, this._v);
+    if (tgt) this.yaw = Math.atan2(tgt.x - p.x, tgt.z - p.z);
+    if (this.st === 'go') {
+      const u = Math.min(1, this.t / 0.45), e = u * u * (3 - 2 * u);
+      p.x = lerp(this.from.x, this.spot.x, e); p.z = lerp(this.from.z, this.spot.z, e);
+      PLAY.yaw = this.yaw0 + wrapA(this.yaw - this.yaw0) * e;
+      if (u >= 1) { this.st = 'down'; this.t = 0; }
+    } else if (this.st === 'down') { PLAY.yaw += wrapA(this.yaw - PLAY.yaw) * (1 - Math.exp(-dt * 8)); if (this.t > 0.45) { this.st = 'work'; this.t = 0; } }
+    else if (this.st === 'work') {
+      PLAY.yaw += wrapA(this.yaw - PLAY.yaw) * (1 - Math.exp(-dt * 6));
+      this.work(dt);
+    } else if (this.st === 'up') { if (this.t > 0.5) { this.st = null; this.npc = null; this.w = null; } }
+    p.y += (groundAt(p.x, p.z, p.y + 0.3) - p.y) * (1 - Math.exp(-dt * 18));
+    PLAY.vx = PLAY.vz = 0; PLAY.speed = 0; PLAY.moving = false; PLAY.inYaw = null;
+    W.ch.root.position.copy(p); W.ch.root.rotation.y = PLAY.yaw;
+    return true;
+  },
+  work(dt) {
+    const N = this.npc, H = N.hp, w = this.w;
+    this.touched = true;
+    if (!N.hp.anim) { N.stop(Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z)); N.lookAt(this._q.set(PLAY.pos.x, PLAY.pos.y + 1.0, PLAY.pos.z), 0.8); }
+    // pressing: the bleeding all but stops while you hold; a vein closes after a while of it
+    H.press(w, G.time + 0.25);
+    this.pressT += dt;
+    if (this.pressT > 8 && !w.art && !w.pressed) { w.pressed = true; w.b *= 0.35; }
+    if ((this.groanT = (this.groanT || 1.5) - dt) <= 0) { this.groanT = 2.5 + Math.random() * 3; if (!H.out) FOLEY.grunt(N.pos, 1, 0.6); }
+    if (this.mode === 'wrap') {
+      this.wrapT += dt;
+      if ((this.clothT = (this.clothT || 0) - dt) <= 0) { this.clothT = 0.7 + Math.random() * 0.4; FOLEY.cloth(PLAY.pos, 1.1); }
+      if (this.wrapT >= this.WRAP) {
+        if (!INV.remove('bandage')) { TOAST.show('Kein Verbandszeug mehr.'); this.mode = 'press'; return; }
+        H.fieldDress(w); N.aidBy = 'player';
+        TOAST.show(w.art && ZONES[w.zone].limb ? 'Abgebunden und verbunden. Er muss trotzdem zum Doc.' : 'Notdürftig verbunden. Er muss trotzdem zum Doc.', 'long');
+        worldEvent('aid', N.pos.x, N.pos.y, N.pos.z, { by: 'player', npc: N.id, zone: w.zone, done: true });
+        if (N.onHarm) N.onHarm({ type: 'aid', mode: 'done', by: 'player', zone: w.zone });
+        // another open wound: on to it (pressing), else up
+        const next = this.woundOf(N, true);
+        if (next) { this.w = next; this.mode = 'press'; this.pressT = 0; } else this.end();
+      }
+    }
+  },
+  // where your hands go: onto the wound (pressing: down onto it in a slow rhythm; wrapping: round the part)
+  handTargets() {
+    const N = this.npc, w = this.w, H = N && N.hp, p = H && H.woundPoint(w, this._v, this._w);
+    if (!p) return null;
+    const n = this._w, t = this.wrapT * 5, k = this.mode === 'wrap' && this.st === 'work';
+    const push = this.mode === 'press' ? Math.sin(this.t * 2.2) * 0.008 : 0;
+    const right = this._q.set(Math.cos(PLAY.yaw), 0, -Math.sin(PLAY.yaw));
+    for (let i = 0; i < 2; i++) {
+      const sd = i === 0 ? 1 : -1, h = this._h[i];
+      h.copy(p).addScaledVector(n, 0.05 + push).addScaledVector(right, sd * (k ? 0.045 + Math.cos(t + i * Math.PI) * 0.06 : 0.03));
+      if (k) h.y += Math.sin(t + i * Math.PI) * 0.05;
+    }
+    return this._h;
+  },
+  /* ---- the player's pose (char/gait.js hands it over while this owns the body): on one knee by a man on the floor,
+     bent over one standing, both hands on the wound ---- */
+  pose(P, dt) {
+    const u = this.st === 'go' ? Math.min(1, this.t / 0.45) * 0.3 : this.st === 'down' ? 0.3 + Math.min(1, this.t / 0.45) * 0.7 : this.st === 'up' ? 1 - Math.min(1, this.t / 0.5) : 1;
+    const e = u * u * (3 - 2 * u), low = this.lying ? 1 : 0.25;
+    const K = FALL_KEYS.lunge, S = FALL_KEYS.stand, L = (a, b) => a + (b - a) * e * low;
+    P.pel.set(L(S.pel[0], K.pel[0]), L(S.pel[1], K.pel[1]), L(S.pel[2], K.pel[2]));
+    P.pelYaw = 0; P.pelRoll = 0; P.pelPitch = L(0, K.pp * 0.6); P.spYaw = 0; P.spRoll = 0;
+    P.spPitch = 0.02 + e * (this.lying ? 0.38 : 0.3); P.hdPitch = e * 0.35; P.hdYaw = 0; P.hdRoll = 0;
+    for (let i = 0; i < 2; i++) { P.ank[i].set(L(S.ank[i][0], K.ank[i][0]), L(S.ank[i][1], K.ank[i][1]), L(S.ank[i][2], K.ank[i][2])); P.ftPitch[i] = K.fp ? K.fp[i] * e * low : 0; P.ftYaw[i] = 0; }
+    P.gunInHand = false;
+    const T = this.st === 'work' || this.st === 'down' ? this.handTargets() : null;
+    torsoInverse(P);
+    for (let i = 0; i < 2; i++) {
+      if (!T) { P.armOv[i] = null; continue; }
+      // the hand target from the world into the character's frame
+      const c = Math.cos(PLAY.yaw), s = Math.sin(PLAY.yaw), dx = T[i].x - PLAY.pos.x, dz = T[i].z - PLAY.pos.z;
+      const loc = this._q.set(dx * c - dz * s, T[i].y - PLAY.pos.y, dx * s + dz * c);
+      const r = armIK(i, loc, this._w.set(i === 0 ? 0.8 : -0.8, -0.6, -0.2));
+      const wv = this.st === 'down' ? Math.min(1, this.t / 0.45) : 1;
+      P.armOv[i] = { w: wv, sw: r.sw, yw: r.yw, out: r.out, el: r.el };
+      P.hand[i].open = 0.85; P.hand[i].fist = 0;
+    }
+  },
+  // red hands after it (gone after a while or once you wash: later)
+  bloodyHands() {
+    const ch = W.ch, mat = ch.mesh.material;
+    for (const nm of ['handL', 'handR']) {
+      const part = ch.p[nm]; if (!part || part.userData.blood) continue;
+      const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const B = g.boundingBox, mb = new MB();
+      mb.box((B.min.x + B.max.x) / 2, B.min.y - 0.002, (B.min.z + B.max.z) / 2, B.max.x - B.min.x + 0.006, (B.max.y - B.min.y) * 0.7 + 0.004, B.max.z - B.min.z + 0.006, rgb(0x5a0c08), 0);
+      const m = new THREE.Mesh(mb.build(), mat); m.frustumCulled = false; part.add(m); part.userData.blood = { m, until: TIME.min + 90 };
+    }
+  },
+  update() {
+    const ch = W.ch; if (!ch) return;
+    for (const nm of ['handL', 'handR']) {
+      const part = ch.p[nm], b = part && part.userData.blood; if (!b) continue;
+      if (b.m.material !== ch.mesh.material) b.m.material = ch.mesh.material;
+      if (TIME.min > b.until) { part.remove(b.m); part.userData.blood = null; }
+    }
+  }
+};
+
 // ==== npc/npc.js ====
 /* ---------- people ----------
    NPC: a body built from the same rig as the cowboy, with its own small locomotion (walks to a goal, faces a
@@ -8684,7 +9114,7 @@ const BUMP = {
 };
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
-  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); },
+  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); onWorldEvent((e) => this.heard(e)); },
   update(dt) {
     BARKEEP.update(dt);
     DOC.update(dt);
@@ -8695,7 +9125,22 @@ const NPCS = {
     SAY.update(dt);
   },
   // the player's position seen from a room: is he in it?
-  playerIn(R) { return G.room === R; }
+  playerIn(R) { return G.room === R; },
+  /* what everybody hears and sees: a bang makes them start (after the sound has reached them), a body hitting
+     the floor or the bar draws the eyes. How loud: a shot carries across the town, glass breaking through the room */
+  heard(e) {
+    const loud = { shot: 1, npcShot2: 1, npcShot: 0.7, impact: 0.45, glass: 0.45, npcSlam: 0.6, npcDown: 0.5, npcDead: 0.5, punch: 0.25, npcPunch: 0.25, bump: 0.2 }[e.type];
+    if (!loud) return;
+    const R = e.room !== undefined && typeof e.room === 'string' ? ROOMS.find((r) => r.type === e.room) : roomAt(e.x, e.z, 0.05, e.y + 0.1);
+    for (const n of this.list) {
+      if (n.hp.dead || n.hp.out || n.id === e.npc || n.id === e.by) continue;
+      const d = Math.hypot(n.pos.x - e.x, n.pos.z - e.z), same = (n.room || null) === (R || null);
+      let k = loud * (same ? (d < 12 ? 1 : 0.7) : !n.room && !R ? clamp(1 - d / 70, 0, 1) : clamp(0.65 - d / 40, 0, 0.6));
+      if (loud < 0.5 && (!same || d > 9)) k = 0;
+      if (k < 0.08) continue;
+      n.startle(e.x, e.y + 1, e.z, k, d / 340 + 0.08 + Math.random() * 0.14, e);
+    }
+  }
 };
 
 class NPC {
@@ -8760,18 +9205,39 @@ class NPC {
   plight() {
     const H = this.hp;
     if (H.dead) return 4;
-    if (H.dying > 0 || H.blood < 0.3) return 3;
-    if (H.anim && (H.bleed > 0.0008 || H.blood < 0.6)) return 2;
-    if (H.blood < 0.75 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5)) return 1;
+    if (H.dying > 0 || H.out || H.blood < BLOOD_FAINT || H.wounds.some((w) => w.art && !w.field && !w.bandaged && w.b && !H.dead && (w.aidT || 0) < G.time)) return 3;
+    if (H.anim && (H.bleed > 0.0004 || H.blood < BLOOD_WEAK || H.wounds.some((w) => w.gut && !w.bandaged))) return 2;
+    if (H.blood < 0.8 || H.needsDoc()) return 1;
     return 0;
   }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
+  /* time lived without being watched (npc/sim.js): s seconds of walking along the way, no collisions, no steps,
+     no pose; where he ends up, he is */
+  ff(s) {
+    const H = this.hp;
+    if (H.canWalk() && !(this.waitFor && this.waitFor.t > G.time)) {
+      let left = this.walkSpeed * (this.hurry || 1) * H.speedK() * s;
+      for (let k = 0; k < 24 && left > 1e-4; k++) {
+        if (!this.goal) { if ((this.path && this.path.length) || this.dest) this.nextLeg(); if (!this.goal) break; }
+        const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
+        if (d > 1e-4) this.yaw = Math.atan2(dx, dz);
+        if (d <= left) { this.pos.x = this.goal.x; this.pos.z = this.goal.z; left -= d; this.goal = null; if (this.legPass) this.nextLeg(); }
+        else { this.pos.x += dx / d * left; this.pos.z += dz / d * left; left = 0; }
+      }
+      if (!this.walking() && this.faceYaw !== null) this.yaw = this.faceYaw;
+    }
+    this.vx = this.vz = 0; this.speed = 0;
+    this.pos.y = groundAt(this.pos.x, this.pos.z, this.pos.y + 0.5);
+    this.room = roomAt(this.pos.x, this.pos.z, 0.05, this.pos.y + 0.1); this.roomT = 0.2;
+    this.body.cx = this.pos.x; this.body.cz = this.pos.z;
+    H.lowness = H.anim ? H.anim.pose(this.ch.pose) : 0;
+  }
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
-  canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()
@@ -8781,6 +9247,26 @@ class NPC {
     this.gest = name; this.gestT = 0; this.gestEnd = null; this.gestTarget = target || null; this.gestHeld = !!held;
   }
   endGesture() { if (this.gest && this.gestEnd === null) this.gestEnd = this.gestT; }
+  /* he starts: a bang (k: how hard), after a moment (delay: the sound on its way, the nerves); the body jerks, the
+     hands jump up, and for a few seconds the head stays turned to where it came from */
+  startle(x, y, z, k, delay, e) {
+    this.startleQ = { t: G.time + (delay || 0), x, y, z, k, e };
+  }
+  doStartle(S) {
+    const H = this.hp;
+    this.alertP = (this.alertP || new THREE.Vector3()).set(S.x, S.y, S.z); this.alertT = G.time + 2 + S.k * 3;
+    this.fear = Math.max(this.fear || 0, G.time + 0.8 + S.k * 1.5);
+    if (H.busy()) { if (H.anim && !H.dead) { H.flinch.k = Math.max(H.flinch.k, 0.4 * S.k); } return; }
+    if (this.fight && this.fight.on) return;
+    const close = Math.hypot(S.x - this.pos.x, S.z - this.pos.z) < 4.5;
+    if (S.k > 0.35 && !this.talking) this.gesture(close && S.k > 0.8 ? 'cower' : 'flinch');
+    // a jerk away from it, a half step back when it was close
+    const dx = this.pos.x - S.x, dz = this.pos.z - S.z, d = Math.hypot(dx, dz) || 1;
+    H.flinch.yaw = clamp(-((dx / d) * Math.cos(this.yaw) - (dz / d) * Math.sin(this.yaw)) * 0.6, -0.6, 0.6) * S.k; H.flinch.pitch = -0.25 * S.k; H.flinch.roll = 0; H.flinch.head = 1; H.flinch.k = Math.max(H.flinch.k, S.k); H.flinch.punch = true;
+    if (close && !this.goal) { this.vx += dx / d * 0.9 * S.k; this.vz += dz / d * 0.9 * S.k; }
+    if (S.k > 0.5) FOLEY.grunt(this.pos, 1.15, 0.35 * S.k);
+    if (this.onStartle) this.onStartle(S);
+  }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
   reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
   free(i) { this.hand[i].tw = 0; }
@@ -8802,10 +9288,13 @@ class NPC {
     const H = this.hp;
     H.update(dt);
     const can = H.canWalk();
+    // waiting for someone who comes to him (the doctor): standing, facing him, the way kept for later
+    const hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
+    if (hold) { const B = this.waitFor.by; this.faceHold = Math.atan2(B.pos.x - this.pos.x, B.pos.z - this.pos.z); }
     // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
-    if (!this.goal && can && ((this.path && this.path.length) || this.dest)) this.nextLeg();
-    if (this.goal && can) {
+    if (!this.goal && can && !hold && ((this.path && this.path.length) || this.dest)) this.nextLeg();
+    if (this.goal && can && !hold) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
       else { const top = this.walkSpeed * (this.hurry || 1) * H.speedK(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
@@ -8847,7 +9336,7 @@ class NPC {
     this.speed = can ? Math.hypot(this.vx, this.vz) : 0;
     // facing: where it was told to face, else where it walks
     if (can) {
-      const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
+      const fy = hold ? this.faceHold : this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
     // the step: a limp hurries over the bad leg and lingers on the good one
@@ -8862,9 +9351,23 @@ class NPC {
     this.lookW += (this.lookTW - this.lookW) * e;
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
+    if (this.startleQ && G.time >= this.startleQ.t) { const S = this.startleQ; this.startleQ = null; this.doStartle(S); }
+    // others close by: a glance now and then (a hurt one: a longer look, and it shows on the face)
+    if ((this.glanceT = (this.glanceT || 2 + Math.random() * 3) - dt) <= 0) {
+      this.glanceT = 3 + Math.random() * 4;
+      const o = NPCS.list.find((n) => n !== this && !n.hp.dead && (n.room || null) === (this.room || null) && Math.hypot(n.pos.x - this.pos.x, n.pos.z - this.pos.z) < 5);
+      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !this.fear) { this.mood = 'sad'; this.moodT = G.time + 3; } }
+    }
+    if (this.glanceAt && G.time < this.glanceUntil && this.lookTW < 0.6) { this.look.copy(this.glanceAt.ch.p.head.getWorldPosition(this._gq)); this.lookTW = 0.8; }
+    // after a start: the eyes stay on where it came from (over whatever the behaviour wanted him to look at)
+    if (this.alertT > G.time && !this.hp.busy()) { const u = clamp((this.alertT - G.time) / 1.2, 0, 1); this.look.lerp(this.alertP, u); this.lookTW = Math.max(this.lookTW, u); }
     this.updGesture(dt);
     if (this.shoveAt && G.time > this.shoveAt) this.shoveHit();
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
+    // not to be seen (in a room you are not looking into, or far out): no pose, no face; only how low he is
+    const seen = this.room ? !!this.room.mesh.visible : !G.cam || Math.hypot(this.pos.x - G.cam.position.x, this.pos.z - G.cam.position.z) < 90;
+    if (!seen && !G.camHook) { this.ch.root.visible = false; this.hp.lowness = this.hp.anim ? this.hp.anim.pose(this.ch.pose) : 0; this.unseen = true; return; }
+    this.unseen = false;
     this.pose(dt);
   }
   // gestures run out; standing about he finds something to do with his hands; talking, his hands go with the words
@@ -8898,6 +9401,8 @@ class NPC {
     const dir = this._hs.set(dx, 0, dz);
     H.flinchBy(dir, 0.3 + v * 0.15, 'chest', '', true);
     this.vx += dx * v * 0.7; this.vz += dz * v * 0.7;
+    // thrown off balance: a stagger, the arms go out to catch it (the harder, the more)
+    this.stagT = G.time + 0.35 + Math.min(0.5, v * 0.1); this.stagK = clamp(v / 4, 0.25, 1); this.stagDir = [dx, dz];
     PLAY.vx *= 0.25; PLAY.vz *= 0.25; PHP.bump(dir, Math.min(1, v / 4));
     FOLEY.cloth(this.pos, 1.2); FOLEY.grunt(this.pos, 0.85, 0.5);
     this.lookAt(this._ht.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
@@ -8994,6 +9499,12 @@ class NPC {
       if (gs) { hs.fist = lerp(hs.fist, gs.fist || 0, gw); hs.open = lerp(hs.open, gs.open || 0, gw); hs.point = lerp(hs.point, gs.point || 0, gw); }
       if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
     }
+    // staggering after a bump: arms out for balance, the body leaning back against it
+    if (this.stagT > t && !this.hp.busy()) {
+      const f = clamp((this.stagT - t) / 0.4, 0, 1) * this.stagK, sw = Math.sin(t * 13) * 0.25 * f;
+      P.spPitch -= 0.12 * f; P.hdPitch -= 0.1 * f;
+      for (let i = 0; i < 2; i++) { const o = P.armOv[i]; if (o && o.w > 0.5) continue; const a = P.arm[i]; a.out += 0.7 * f + (i ? sw : -sw); a.sw -= 0.25 * f; a.el += 0.3 * f; }
+    }
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);
     if (this.hp.anim) for (const hs of P.hand) { hs.fist = 0; hs.point = 0; hs.open = this.hp.dead ? 0.7 : 0.4; }
@@ -9055,22 +9566,32 @@ const SAY = {
    bandaged by the doctor), and is what the person remembers and tells the AI. The behaviour of the person (Hank:
    BARKEEP) is told through npc.onHarm(info) and decides what he does about it; the body part (falling, limping,
    a hanging arm, a hand on the wound) is done here. */
+/* how each wound bleeds (blood is 1 when whole; weak below 0.65, he cannot stay on his feet below 0.55, out below
+   0.42, dead below 0.3): bleed = what it loses per second at first, clot = how many seconds it takes the blood to
+   close it (a vein; 0: it does not), art = the chance a bullet tears the big artery there (artB: then it pumps out
+   that much and does not stop by itself: a torn femoral artery kills in a minute and a half, with a hand pressed
+   on it in a few). The bullet itself costs a little at once (spray). gut: a shot in the belly is agony and, left
+   to itself, kills slowly (hours); lung: in the chest he coughs and fights for air. */
 const ZONES = {
   head:     { name: 'Kopf', lethal: true },
-  neck:     { name: 'Hals', dying: true, blood: 0.3, bleed: 0.03 },
-  chest:    { name: 'Brust', blood: 0.3, bleed: 0.0045, down: 1, sev: 0.9 },
-  belly:    { name: 'Bauch', blood: 0.2, bleed: 0.0035, down: 0.8, sev: 0.8 },
-  shoulder: { name: 'Schulter', blood: 0.08, bleed: 0.0015, arm: 0, drop: true, sev: 0.6 },
-  arm:      { name: 'Arm', blood: 0.05, bleed: 0.001, arm: 0.35, drop: true, sev: 0.45 },
-  hand:     { name: 'Hand', blood: 0.03, bleed: 0.0006, arm: 0.2, drop: true, sev: 0.35 },
-  hip:      { name: 'Hüfte', blood: 0.14, bleed: 0.002, leg: 0.8, down: 0.9, sev: 0.7 },
-  leg:      { name: 'Bein', blood: 0.08, bleed: 0.0015, leg: 0.6, down: 0.5, sev: 0.55 },
-  foot:     { name: 'Fuß', blood: 0.03, bleed: 0.0005, leg: 0.4, sev: 0.35 },
+  neck:     { name: 'Hals', dying: true, bleed: 0.02, art: 0.7, artB: 0.03, clot: 0, spray: 0.04 },
+  chest:    { name: 'Brust', bleed: 0.0016, art: 0.15, artB: 0.004, clot: 600, down: 1, sev: 0.9, lung: true, spray: 0.03 },
+  belly:    { name: 'Bauch', bleed: 0.0009, art: 0.1, artB: 0.003, clot: 500, down: 0.95, sev: 0.85, gut: true, spray: 0.02 },
+  shoulder: { name: 'Schulter', bleed: 0.0009, art: 0.1, artB: 0.004, clot: 240, arm: 0, drop: true, sev: 0.6, spray: 0.015 },
+  arm:      { name: 'Arm', bleed: 0.0005, art: 0.18, artB: 0.0045, clot: 150, arm: 0.35, drop: true, sev: 0.45, limb: true, spray: 0.01 },
+  hand:     { name: 'Hand', bleed: 0.0003, clot: 90, arm: 0.2, drop: true, sev: 0.35, limb: true, spray: 0.006 },
+  hip:      { name: 'Hüfte', bleed: 0.0012, art: 0.2, artB: 0.0065, clot: 300, leg: 0.8, down: 0.9, sev: 0.7, spray: 0.02 },
+  thigh:    { name: 'Oberschenkel', bleed: 0.001, art: 0.32, artB: 0.008, clot: 200, leg: 0.55, down: 0.7, sev: 0.6, limb: true, spray: 0.015 },
+  leg:      { name: 'Bein', bleed: 0.0008, art: 0.15, artB: 0.006, clot: 180, leg: 0.55, down: 0.5, sev: 0.55, limb: true, spray: 0.012 },   // (old saves)
+  calf:     { name: 'Wade', bleed: 0.0004, art: 0.05, artB: 0.0022, clot: 140, leg: 0.4, down: 0.3, sev: 0.4, limb: true, spray: 0.008 },
+  foot:     { name: 'Fuß', bleed: 0.00025, clot: 100, leg: 0.35, down: 0.12, sev: 0.35, limb: true, spray: 0.005 },
   hat:      { name: 'Hut' }
 };
+// the levels of blood (see above)
+const BLOOD_WEAK = 0.65, BLOOD_FAINT = 0.55, BLOOD_OUT = 0.42, BLOOD_DEAD = 0.3;
 // German words for a zone with its side: where it is (dative: "in der linken Schulter", "im rechten Bein") and where
 // it went (accusative: "in die linke Schulter", "ins rechte Bein", "in den Bauch")
-const ZONE_GEN = { Kopf: 'm', Hals: 'm', Brust: 'f', Bauch: 'm', Schulter: 'f', Arm: 'm', Hand: 'f', Hüfte: 'f', Bein: 'n', Fuß: 'm', Hut: 'm' };
+const ZONE_GEN = { Kopf: 'm', Hals: 'm', Brust: 'f', Bauch: 'm', Schulter: 'f', Arm: 'm', Hand: 'f', Hüfte: 'f', Oberschenkel: 'm', Bein: 'n', Wade: 'f', Fuß: 'm', Hut: 'm' };
 function zoneIn(zone, side) {
   const n = ZONES[zone].name, g = ZONE_GEN[n], adj = side ? (side === 'L' ? 'linken ' : 'rechten ') : '';
   return (g === 'f' ? 'in der ' : 'im ') + adj + n;
@@ -9096,7 +9617,13 @@ const HURT_KEYS = {
   overBar:   { pel: [0, 0.9, -0.12], pp: -0.25, sp: -0.8, hd: 0.55, ank: [[0.16, 0.085, 0.32], [-0.14, 0.085, 0.26]], arm: [[-0.7, 1.35, 0.25], [-0.6, 1.25, 0.35]] },
   propped:   { pel: [0, 0.15, -0.3], pp: -0.95, sp: 0.1, hd: -0.35, hr: 0.4, ank: [[0.22, 0.085, 0.55], [-0.2, 0.085, 0.6]], arm: [[-0.3, 0.6, 0.3], [-0.2, 0.7, 0.4]] },
   wallFront: { pel: [0, 0.8, 0.1], pp: 0.3, sp: 0.22, hd: -0.1, hr: 0.5, ank: [[0.13, 0.085, -0.22], [-0.13, 0.085, -0.1]], fp: [0.3, 0], arm: [[1.55, 0.35, 0.35], [1.45, 0.4, 0.45]] },
-  deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] }
+  deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] },
+  // gut-shot: curled up on his side, knees drawn up, both arms round the belly
+  curl:      { pel: [-0.28, 0.17, -0.02], pp: 0.55, pr: 1.38, sp: 0.5, sr: 0.1, hd: -0.45, hr: -0.35, ank: [[-0.12, 0.24, 0.16], [-0.3, 0.1, 0.24]], fp: [0.9, 0.9], arm: [[1.1, 0.05, 1.7], [1.0, 0.1, 1.7]] },
+  // sitting on the floor, the hurt leg out, bent over it
+  sitLeg:    { pel: [0, 0.17, -0.2], pp: -0.2, sp: 0.62, hd: -0.45, ank: [[0.2, 0.085, 0.62], [-0.15, 0.13, 0.3]], fp: [-0.6, 0], arm: [[0.9, 0.2, 0.9], [0.8, 0.25, 1.0]] },
+  // the knees go (faint): down in a heap
+  buckle:    { pel: [0, 0.45, -0.05], pp: 0.35, sp: 0.45, hd: -0.6, hr: 0.2, ank: [[0.15, 0.085, 0.12], [-0.13, 0.085, 0.08]], arm: [[0.15, 0.2, 0.3], [0.1, 0.25, 0.3]] }
 };
 function hurtKey(name) { return HURT_KEYS[name] || FALL_KEYS[name]; }
 
@@ -9179,6 +9706,8 @@ class Vitals {
     this._v = new THREE.Vector3(); this._w = new THREE.Vector3();
   }
   alive() { return !this.dead; }
+  // a torn artery in a leg that nobody has tied off: he does not get up on it, he lies there pressing
+  legArtery() { return this.wounds.some((w) => w.art && w.b && !w.field && !w.bandaged && ZONES[w.zone].leg !== undefined); }
   // the body is busy with itself: falling, lying, dying, dead (the behaviour waits)
   busy() { return this.dead || !!this.anim; }
   down() { return this.dead || (!!this.anim && this.lowness > 0.5); }
@@ -9196,25 +9725,32 @@ class Vitals {
     if (info.zone === 'hat') { this.hatOff = true; HARM.knockHat(N, dir); this.flinchBy(dir, 0.5, 'head'); this.pain += 0.1; return { zone: 'hat' }; }
     HARM.bloodFx(info.point, dir, info.zone === 'head' ? 1.6 : 1, N);
     const w = { zone: info.zone, side: info.side || '', kind: 'shot', sev: Z.sev || 1, at: Math.round(TIME.min), heal: 0, bandaged: false, part: info.part, lp: info.local ? [+info.local.x.toFixed(3), +info.local.y.toFixed(3), +info.local.z.toFixed(3)] : null };
+    // how it bleeds: a vein (closes by itself in time) or the artery (does not); only the upper arm has the big one
+    w.art = !!Z.art && (info.zone !== 'arm' || /^uArm/.test(info.part || '')) && Math.random() < Z.art;
+    w.b = w.art ? Z.artB : (Z.bleed || 0) * (0.75 + Math.random() * 0.5); w.lost = 0;
+    if (Z.gut) w.gut = true;
     if (info.zone !== 'head') this.wounds.push(w);
-    if (info.local) this.stain(info.part, info.local, info.zone === 'head' || info.zone === 'neck' || info.zone === 'chest' ? 1.4 : 1);
-    this.blood = Math.max(0, this.blood - (Z.blood || 0));
-    this.bleed += Z.bleed || 0;
-    this.pain = Math.min(1.5, this.pain + 0.8);
+    if (info.local) this.stain(info.part, info.local, info.zone === 'head' || info.zone === 'neck' || info.zone === 'chest' ? 1.4 : 1, w);
+    this.blood = Math.max(0, this.blood - (Z.spray || 0));
+    this.pain = Math.min(1.5, this.pain + (Z.gut ? 1.2 : 0.8));
+    this.recalcBleed();
     // where a bullet came from decides the way he goes down: from the front he falls back, from behind forward
     const f = this.forwardDot(dir);   // > 0: the bullet travels the way he faces (shot from behind)
     if (Z.lethal) { this.die('Kopfschuss', dir, f > 0.2 ? 'fwd' : Math.random() < 0.6 ? 'back' : 'crumple'); return w; }
     if (Z.dying) { this.dying = 4 + Math.random() * 4; this.fall('dying', dir); return w; }
     // a second bullet in the body or too much blood lost: he does not get up again
     const bodyShots = this.wounds.filter((x) => x.kind === 'shot' && (x.zone === 'chest' || x.zone === 'belly') && x.heal < 1).length;
-    if ((info.zone === 'chest' && bodyShots >= 2) || this.blood < 0.15) { this.dying = 3 + Math.random() * 5; this.fall('dying', dir); return w; }
+    if ((info.zone === 'chest' && bodyShots >= 2) || this.blood < BLOOD_OUT) { this.dying = 3 + Math.random() * 5; this.fall('dying', dir); return w; }
     if (Z.arm !== undefined) this.armUse[info.side === 'L' ? 0 : 1] = Math.min(this.armUse[info.side === 'L' ? 0 : 1], Z.arm);
     if (Z.leg !== undefined) this.recalc();
-    if (Z.down && Math.random() < Z.down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' ? 'leg' : 'leg', dir, info.side);
+    // how he goes down: the chest throws him back, the belly folds him up, a thigh or hip puts him on the floor
+    // holding it, the calf or foot only drops him to a knee (the artery torn: down for sure)
+    const down = Z.down && (w.art || Math.random() < Z.down);
+    if (down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' || info.zone === 'thigh' || info.zone === 'leg' ? 'legSit' : 'leg', dir, info.side);
     else this.flinchBy(dir, 1.2, info.zone, info.side);
-    if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side };
+    if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side, w };
     else if (info.zone === 'foot' || info.part === 'shinL' || info.part === 'shinR') this.clutch = null;
-    else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '' };
+    else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '', w };
     this.stunT = 1.2;
     return w;
   }
@@ -9271,7 +9807,8 @@ class Vitals {
     let limp = 0;
     for (const w of this.wounds) { const Z = ZONES[w.zone]; if (Z && Z.leg !== undefined && w.kind === 'shot') limp = Math.max(limp, (1 - Z.leg * 0.6) * (1 - w.heal * 0.85)); }
     this.limp = clamp(limp, 0, 1);
-    this.limpSide = (this.wounds.find((w) => w.kind === 'shot' && ZONES[w.zone].leg !== undefined && w.heal < 1) || {}).side || 'R';
+    const lw = this.wounds.find((w) => w.kind === 'shot' && ZONES[w.zone].leg !== undefined && w.heal < 1) || {};
+    this.limpSide = lw.side || 'R'; this.limpZone = lw.zone || null;
     const arm = [1, 1];
     for (const w of this.wounds) { const Z = ZONES[w.zone]; if (Z && Z.arm !== undefined && w.kind === 'shot') { const i = w.side === 'L' ? 0 : 1; arm[i] = Math.min(arm[i], Z.arm + (1 - Z.arm) * w.heal * (w.bandaged ? 1 : 0.8)); } }
     this.armUse = arm;
@@ -9282,13 +9819,18 @@ class Vitals {
     let seq, sd = side === 'L' ? -1 : 1, dk = 'fwd';
     const S = (k, d, e, thud) => ({ k, d, e, thud });
     if (kind === 'leg') { seq = [S('kneelHurt', 0.28, 'in', 0.45), { lie: 1, d: 0.6, hold: true }, S('lunge', 0.45, 'inout'), S('stand', 0.45, 'inout')]; this.downFor = downFor || 1.2 + Math.random(); }
-    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('sitHold', 0.5, 'inout', 0.6), { lie: 1, d: 0.8, hold: true }, S('squat', 0.7, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 6 + Math.random() * 5; }
+    // the leg gives way, he sits down hard and holds it (and stays down a while: a bleeding thigh keeps him there)
+    else if (kind === 'legSit') { seq = [S('kneelHurt', 0.26, 'in', 0.5), S('sitLeg', 0.4, 'in', 0.7), { lie: 1, d: 0.8, hold: true }, S('kneelHurt', 0.6, 'inout'), S('lunge', 0.55, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 6 + Math.random() * 6; }
+    // gut-shot: folds over, to his knees, onto his side and curls up; long minutes before he gets up again
+    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('hip', 0.35, 'inout', 0.7), S('curl', 0.6, 'inout', 0.3), { lie: 1, d: 0.8, hold: true }, S('sitHold', 0.9, 'inout'), S('squat', 0.8, 'inout'), S('clutch', 0.6, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 35 + Math.random() * 30; }
+    // too much blood gone: the knees go and he sinks down (he does not get up again unless it is stopped)
+    else if (kind === 'faint') { seq = [S('buckle', 0.45, 'in', 0.5), S('seat', 0.35, 'in', 0.7), S('flat', 0.6, 'in', 0.8), { lie: 1, d: 1, hold: true }, S('sitUp', 0.8, 'inout'), S('squat', 0.7, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 20; }
     else if (kind === 'side') { dk = 'side'; seq = [S('lean', 0.22, 'out'), S('hip', 0.24, 'in', 0.9), S('sideFlat', 0.5, 'inout', 0.35), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.6, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 3; }
     else if (kind === 'dying') { seq = Math.random() < 0.5 ? [S('clutch', 0.3, 'out'), S('kneelHurt', 0.45, 'in', 0.5), S('sitHold', 0.6, 'inout', 0.6), S('slump', 1.4, 'inout'), { lie: 1, d: 1, hold: true }]
       : [S('reel', 0.3, 'out'), S('seat', 0.3, 'in', 0.7), S('flat', 0.6, 'in', 1), { lie: 1, d: 1, hold: true }]; this.downFor = 1e9; }
     else { dk = f > 0.2 ? 'fwd' : 'back'; seq = dk === 'fwd' ? [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), S('face', 0.3, 'in', 0.9), S('prone', 0.4, 'inout'), { lie: 1, d: 0.8, hold: true }, S('hands', 0.5, 'inout'), S('kneel', 0.45, 'inout'), S('lunge', 0.4, 'inout'), S('stand', 0.45, 'inout')]
       : [S('reel', 0.28, 'out'), S('seat', 0.26, 'in', 0.8), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.55, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 4 + Math.random() * 3; }
-    const lay = kind === 'side' ? 'side' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
+    const lay = kind === 'side' || kind === 'belly' ? 'side' : kind === 'faint' ? 'back' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
     const fit = lay ? this.fitFall(lay, sd, dir, false) : null;
     if (fit && fit.seq) seq = fit.seq;
     this.anim = new KeyAnim(seq, dk, sd, this.currentKey());
@@ -9390,20 +9932,22 @@ class Vitals {
       if (this.anim.holding()) {
         this.downT += dt;
         if (this.dying > 0) { this.dying -= dt; if (this.dying <= 0) this.die('verblutet'); }
-        else if (!this.dead && this.downT > this.downFor && this.blood > 0.2) { this.anim.release(); this.knocked = false; worldEvent('npcUp', N.pos.x, N.pos.y, N.pos.z, { by: 'world', npc: N.id }); if (N.onHarm) N.onHarm({ type: 'up' }); }
+        // up again once he can: enough blood, awake, and (gut-shot) the worst of it over
+        else if (!this.dead && this.downT > this.downFor && this.blood > BLOOD_FAINT + 0.03 && !this.out && !this.legArtery()) { this.anim.release(); this.knocked = false; this.fainted = false; worldEvent('npcUp', N.pos.x, N.pos.y, N.pos.z, { by: 'world', npc: N.id }); if (N.onHarm) N.onHarm({ type: 'up' }); }
       }
       if (this.anim.done && !this.dead && !this.dying) { this.anim = null; N.body.r = 0.32; this.daze = Math.min(this.daze, 0.5); }
     }
-    // bleeding: the blood runs out until the wound closes (or a bandage stops it)
-    if (!this.dead && this.bleed > 0) {
-      this.blood -= this.bleed * dt;
-      this.bleed *= Math.exp(-dt / 150);
-      if (this.bleed < 1e-5) this.bleed = 0;
-      if (this.blood < 0.1) this.die('verblutet');
-      // drops on the ground now and then
-      this.dropT = (this.dropT || 0) - dt;
-      if (this.dropT <= 0 && this.bleed > 0.0008) { this.dropT = 0.6 + Math.random() * 1.5 / (this.bleed * 600); HARM.drop(N); }
-    }
+    this.bleedStep(dt);
+    if (this.dead) return;
+    // too little blood: the knees go; less still and he is out (eyes shut, no word); then dead
+    if (this.blood < BLOOD_FAINT && !this.anim) { this.fainted = true; this.fall('faint', this._w.set(-Math.sin(N.yaw) * 0.2, 0, -Math.cos(N.yaw) * 0.2)); }
+    this.out = this.blood < BLOOD_OUT;
+    // gut-shot: it does not let go of him (the pain keeps coming back, he moans and writhes)
+    const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
+    if (gut) this.pain = Math.max(this.pain, 0.75 + 0.25 * Math.sin(G.time * 0.7 + Math.sin(G.time * 0.23) * 3));
+    // the lungs: a cough now and then, blood on the lips
+    const lung = this.wounds.find((w) => w.zone === 'chest' && w.kind === 'shot' && !w.bandaged && w.heal < 0.4);
+    if (lung && !this.out && (this.coughT = (this.coughT === undefined ? 3 : this.coughT) - dt) <= 0) { this.coughT = 4 + Math.random() * 7; HARM.cough(N); }
     this.daze = Math.max(0, this.daze - dt * (N.fight && N.fight.on ? 0.11 : 0.09));
     this.pain = Math.max(0, this.pain - dt * 0.05);
     this.stunT = Math.max(0, this.stunT - dt);
@@ -9411,8 +9955,8 @@ class Vitals {
     if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) { this.clutch = null; this.clutchRest = 3 + Math.random() * 5; } }
     // an open gunshot on the body or an arm: the hand goes back to it now and then
     else if (!this.dead && !this.anim && (this.clutchRest = (this.clutchRest || 0) - dt) <= 0) {
-      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm|thigh/.test(x.part));
-      if (w) this.clutch = { part: w.part, lp: w.lp, t: 5 + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '' };
+      const w = this.worstBleed(false);
+      if (w) this.clutch = { part: w.part, lp: w.lp, t: (w.b > 0.0006 || w.gut ? 14 : 5) + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '', w };
       else this.clutchRest = 4;
     }
     N.body.r = this.down() ? 0 : 0.32;
@@ -9437,7 +9981,21 @@ class Vitals {
         if (o) { o.sw += (1.75 - o.sw) * w; o.out += (0.25 - o.out) * w; o.el += (0.35 - o.el) * w; o.yw += (0.3 - o.yw) * w; }
         P.hdPitch += 0.25 * w;
       }
-      if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
+      if (this.dead) { P.hdYaw = 0; }
+      else if (this.anim.holding()) {
+        if (this.out) { P.hdYaw = 0.2; P.hdPitch += 0.15; P.spPitch += Math.sin(G.time * 1.6) * 0.01; }   // out cold: only the breath
+        else {
+          P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3;
+          // gut-shot: he writhes, the legs draw up and push away, he rocks
+          if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) {
+            const t = G.time, a = Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.9 + 1) * 0.3 + Math.max(0, Math.sin(t * 0.37)) * 0.6;
+            P.pelRoll += a * 0.08; P.spPitch += 0.08 * a; P.hdPitch += 0.1 * Math.sin(t * 1.9);
+            P.ank[0].z += Math.sin(t * 1.7) * 0.07 * (0.5 + a); P.ank[1].z += Math.sin(t * 1.7 + 2.2) * 0.07 * (0.5 + a);
+          }
+          this.clutchPose(P, dt, true);
+        }
+      }
+      this.dressBandages(); return; }
     this.lowness = 0;
     // the jerk of a hit
     const F = this.flinch, k = F.k;
@@ -9468,39 +10026,16 @@ class Vitals {
       a.x += sb * L * 0.06 * swingBad * m;                                // swung out wide
       P.ftPitch[bad] += L * (0.25 * swingBad * m + 0.35 * (1 - m));       // the toe drags, at rest it is on its toes
       if (m < 0.3) { a.z += L * 0.08 * (1 - m); a.y += L * 0.025 * (1 - m); }
+      // a foot: he walks on its toes, the heel never comes down; a thigh or hip: the leg swung stiff from the hip
+      if (this.limpZone === 'foot') { P.ftPitch[bad] += 0.4 * L; a.y += 0.025 * L; }
+      else if (this.limpZone === 'thigh' || this.limpZone === 'hip' || this.limpZone === 'leg') { a.z += 0.05 * L * swingBad * m; P.pelYaw += 0.08 * L * swingBad * m * sb; }
     }
-    /* a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
-       hand on that side (the other one for an arm); a wound on the back is held from the side */
-    let busy = [false, false];
-    if (this.clutch && this.clutch.lp) {
-      const c = this.clutch, part = N.ch.p[c.part];
-      if (part && part.geometry) {
-        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
-        const B = g.boundingBox, lp = c.lp;
-        // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
-        const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
-        const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
-        const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
-        const n = nl.transformDirection(part.matrix);
-        tgt.addScaledVector(n, 0.055);
-        const armW = /Arm|hand/.test(c.part);
-        let i = armW ? (c.side === 'L' ? 1 : 0) : tgt.x > 0.03 ? 0 : tgt.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
-        if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
-        if (n.z < -0.55 && !armW) { tgt.x = (i === 0 ? 1 : -1) * 0.31; tgt.z = Math.max(tgt.z, -0.02); }   // (the back: held at the side)
-        if (this.armUse[i] > 0.15) {
-          torsoInverse(P);
-          if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
-          const s = i === 0 ? 1 : -1, q = this._q || (this._q = new THREE.Vector3());
-          // (the pole is in the character's frame: a wound on the front, the elbow out to the side; on the side, back)
-          if (n.z > 0.45) q.set(s * 1, -0.55, 0.1); else q.set(s * 0.6, -0.35, -0.85);
-          const r = GESTURE.solveArm(i, tgt, q, N.ch.look.build.width, N.ch.look.build.belly);
-          const o = P.armOv[i] && P.armOv[i].hurt ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true });
-          const wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * 3)));
-          o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; busy[i] = true;
-          P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
-        }
-      }
-    }
+    const busy = this.clutchPose(P, dt, false);
+    // gut-shot on his feet: bent over it, short steps, the other hand on it too
+    const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
+    if (gut) { P.spPitch += 0.32; P.pel.y -= 0.04; P.hdPitch += 0.12; P.pel.z -= 0.03; }
+    // chest: the breath comes short and heavy (the shoulders go with it)
+    if (this.bleed > 0.0004 || this.blood < BLOOD_WEAK) { const br = Math.sin(G.time * (this.blood < BLOOD_WEAK ? 5.5 : 4)) * 0.025; P.spPitch -= br; P.hdPitch += br * 0.6; }
     // an arm that cannot be used hangs (and swings a little when walking)
     for (let i = 0; i < 2; i++) {
       const use = this.armUse[i];
@@ -9513,8 +10048,120 @@ class Vitals {
     }
     this.dressBandages();
   }
+  /* ---- a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
+     hand on that side (the other one for an arm); a wound on the back is held from the side. Lying or sitting on the
+     floor the hand stays on what bleeds most. A hand pressed on it slows the bleeding (handT). ---- */
+  clutchPose(P, dt, lying) {
+    const N = this.npc, busy = this._busy || (this._busy = [false, false]); busy[0] = busy[1] = false;
+    if (lying) {
+      const w = this.worstBleed(true);
+      if (w && (!this.clutch || this.clutch.w !== w)) this.clutch = { part: w.part, lp: w.lp, t: 1e9, side: ZONES[w.zone].arm !== undefined ? w.side : '', w, lying: true };
+      if (!w && this.clutch && this.clutch.lying) this.clutch = null;
+    } else if (this.clutch && this.clutch.lying) this.clutch = null;
+    const c = this.clutch; if (!c || !c.lp) return busy;
+    const part = N.ch.p[c.part]; if (!part || !part.geometry) return busy;
+    const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    const B = g.boundingBox, lp = c.lp;
+    // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
+    const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+    const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
+    const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
+    const n = nl.transformDirection(part.matrix);
+    tgt.addScaledVector(n, 0.055);
+    const armW = /Arm|hand/.test(c.part);
+    torsoInverse(P);
+    // which hand: the one on that side of the body (in the torso's frame, so it holds lying down as well)
+    const tl = (this._tl || (this._tl = new THREE.Vector3())).copy(tgt).applyMatrix4(AIK.inv);
+    let i = armW ? (c.side === 'L' ? 1 : 0) : tl.x > 0.03 ? 0 : tl.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
+    if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
+    if (this.armUse[i] <= 0.15) return busy;
+    const nt = (this._nt || (this._nt = new THREE.Vector3())).copy(n).transformDirection(AIK.inv);
+    if (nt.z < -0.55 && !armW) { tl.x = (i === 0 ? 1 : -1) * 0.31; tl.z = Math.max(tl.z, -0.02); tgt.copy(tl).applyMatrix4(AIK.tor); }   // (the back: held at the side)
+    if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
+    const s = i === 0 ? 1 : -1, q = this._q || (this._q = new THREE.Vector3());
+    // (the pole in the torso's frame: a wound on the front, the elbow out to the side; on the side, back)
+    if (nt.z > 0.45) q.set(s * 1, -0.55, 0.1); else q.set(s * 0.6, -0.35, -0.85);
+    q.transformDirection(AIK.tor);
+    const r = GESTURE.solveArm(i, tgt, q, N.ch.look.build.width, N.ch.look.build.belly);
+    const base = P.armOv[i], wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * (lying ? 1.5 : 3))));
+    const o = base && base.hurt ? base : { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true };
+    if (base && base.key) { o.w = 1; o.sw = lerp(base.sw, r.sw, wgt); o.yw = lerp(base.yw, r.yw, wgt); o.out = lerp(base.out, r.out, wgt); o.el = lerp(base.el, r.el, wgt); }
+    else { o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; }
+    P.armOv[i] = o; busy[i] = true;
+    P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
+    if (c.w && wgt > 0.5) c.w.handT = G.time + 0.3;
+    return busy;
+  }
+  // the wound that bleeds most (that a hand can get to; lying: also a gut-shot, which he holds anyway)
+  worstBleed(lying) {
+    let best = null, bs = 0;
+    for (const w of this.wounds) {
+      if (w.kind !== 'shot' || w.bandaged || !w.part || !w.lp || w.heal >= 0.5) continue;
+      if (!/torso|pelvis|thigh|Arm|hand/.test(w.part) && !(lying && /shin/.test(w.part) && this.fallKind === 'legSit')) continue;
+      const sc = (w.b || 0) * (w.field ? 0.2 : 1) + (w.gut ? 0.002 : 0) + 1e-6;
+      if (sc > bs) { bs = sc; best = w; }
+    }
+    return best;
+  }
+  /* ---- bleeding: each wound by itself. What stops it: a hand pressed on it (his own: some; somebody kneeling by
+     him: most), a field dressing (a vein: most of it; a torn artery in an arm or leg: tied off), the doctor (all).
+     A vein closes in time (faster under pressure, slower when he walks about); the artery does not. ---- */
+  bleedFactor(w) {
+    if (w.bandaged) return 0;
+    const Z = ZONES[w.zone] || {};
+    let f = w.field ? (w.art && Z.limb ? 0.03 : 0.12) : 1;
+    if ((w.aidT || 0) > G.time) f = Math.min(f, 0.12);
+    else if ((w.handT || 0) > G.time || (G.abstract && !this.out)) f = Math.min(f, w.art ? 0.5 : 0.4);
+    return f;
+  }
+  recalcBleed() { let t = 0; for (const w of this.wounds) if (w.b) t += w.b * this.bleedFactor(w); this.bleed = t; }
+  bleedStep(dt) {
+    const N = this.npc;
+    if (this.dead) { this.bleed = 0; return; }
+    let tot = 0, lost = 0, spurt = null, sf = 0;
+    const moving = N.speed > 0.4;
+    for (const w of this.wounds) {
+      if (!w.b) continue;
+      const Z = ZONES[w.zone] || {}, f = this.bleedFactor(w), r = w.b * f;
+      let l;
+      if (!w.art && Z.clot) {
+        // (exact for any dt: what a closing vein loses until it closes)
+        const tau = Z.clot * (moving ? 1.6 : 1) * (f < 0.5 ? 0.5 : 1), k = Math.exp(-dt / tau);
+        l = r * tau * (1 - k); w.b *= k; if (w.b < 2e-5) w.b = 0;
+      } else l = r * dt;
+      w.lost = (w.lost || 0) + l; lost += l; tot += r;
+      if (w.art && f > 0.3 && r > sf) { sf = r; spurt = w; }
+    }
+    this.bleed = tot;
+    if (lost <= 0) return;
+    this.blood -= lost;
+    if (this.blood < BLOOD_DEAD) { this.die('verblutet'); return; }
+    // what it leaves: drops where he walks, a pool where he lies, the artery pumping in spurts
+    const vis = N.ch.root.visible && !G.abstract;
+    if (this.anim && this.lowness > 0.5) { this.poolAcc = (this.poolAcc || 0) + lost; if (this.poolAcc > 0.002) { if (vis) BLOOD.pool(N, this.poolAcc); this.poolAcc = 0; } }
+    else { this.dripAcc = (this.dripAcc || 0) + lost; if (this.dripAcc > 0.0022) { this.dripAcc = 0; if (vis) BLOOD.drip(N, this.dripPoint(this._v)); } }
+    if (spurt && vis) { this.spurtT = (this.spurtT || 0) - dt; if (this.spurtT <= 0) { this.spurtT = 0.68 + Math.random() * 0.12; const p = this.woundPoint(spurt, this._v, this._w); if (p) BLOOD.spurt(p, this._w, sf / 0.008, N); } }
+  }
+  // where a wound is in the world (and its outward normal into nOut)
+  woundPoint(w, out, nOut) {
+    const part = w && this.npc.ch.p[w.part]; if (!part || !w.lp) return null;
+    part.updateMatrixWorld();
+    out.set(w.lp[0], w.lp[1], w.lp[2]).applyMatrix4(part.matrixWorld);
+    if (nOut) {
+      const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const B = g.boundingBox, lp = w.lp, d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+      nOut.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0).transformDirection(part.matrixWorld);
+    }
+    return out;
+  }
+  // drops fall from the lowest bleeding wound, or the hand pressed on it
+  dripPoint(out) {
+    const w = this.wounds.filter((x) => x.b && x.lp).sort((a, b) => b.b - a.b)[0];
+    if (!w || !this.woundPoint(w, out)) out.set(this.npc.pos.x, this.npc.pos.y + 0.9, this.npc.pos.z);
+    return out;
+  }
   /* ---- blood on the clothes: a dark red patch where the bullet went in, riding on the part, growing a little ---- */
-  stain(partName, lp, k) {
+  stain(partName, lp, k, wound) {
     const N = this.npc, part = N.ch.p[partName]; if (!part) return;
     const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
     const B = g.boundingBox;
@@ -9524,52 +10171,115 @@ class Vitals {
     const ax = d[0][0], s = 0.075 * k, mb = new MB();
     mb.box(0, -(ax === 'y' ? 0.008 : s / 2), 0, ax === 'x' ? 0.016 : s, ax === 'y' ? 0.016 : s, ax === 'z' ? 0.016 : s, rgb(0x5a0c08), 0);
     const m = new THREE.Mesh(mb.build(), N.mat || G.litMat); m.position.copy(lp); m.frustumCulled = false; m.scale.setScalar(0.5);
-    part.add(m); (this.stains || (this.stains = [])).push({ m, grow: 1 + Math.random() * 0.4 });
+    part.add(m); (this.stains || (this.stains = [])).push({ m, grow: 1 + Math.random() * 0.4, w: wound || null, y0: m.position.y });
     if (this.stains.length > 8) { const o = this.stains.shift(); o.m.parent.remove(o.m); }
   }
-  /* ---- bandages: a white band on each bandaged wound, riding on its part ---- */
+  /* ---- bandages, riding on the part, fitted to it: the cross-section of the part at the wound (from its own
+     corners) gives the size of every turn, so a band sits on a thigh as on an arm or the chest.
+     The doctor's: three turns of clean linen, a little crooked, a pad over the wound with the blood come through,
+     a knot with two ends. Yours (play/aid.js, a field dressing): a strip of
+     cloth, two turns, a fat knot, the blood soaking through; on an arm or leg with the artery torn, tied off above
+     the wound with a stick through the knot. ---- */
   dressBandages() {
     const N = this.npc;
     for (const w of this.wounds) {
-      if (!w.bandaged || w.heal >= 1 || !w.part || w.bandMesh) continue;
-      const part = N.ch.p[w.part]; if (!part) continue;
-      const box = part.geometry.boundingBox || (part.geometry.computeBoundingBox(), part.geometry.boundingBox);
-      // linen wrapped round it a few times, a little crooked, a knot, a pad on the wound with blood come through
-      const mb = new MB(), lin = [rgb(0xeee6d6), rgb(0xe0d6c2), rgb(0xe8dfcc)], blood = rgb(0x8a2a22);
-      const sx = box.max.x - box.min.x, sz = box.max.z - box.min.z, cx = (box.max.x + box.min.x) / 2, cz = (box.max.z + box.min.z) / 2;
-      const trunk = /torso|pelvis/.test(w.part), y0 = w.lp ? w.lp[1] : (box.max.y + box.min.y) / 2;
-      const wrap = (y, h, tilt, col, grow) => { mb.push(new THREE.Matrix4().makeTranslation(trunk ? 0 : cx, y, cz).multiply(new THREE.Matrix4().makeRotationZ(tilt))); mb.box(0, -h / 2, 0, (trunk ? sx : sx) + grow, h, sz + grow, col, 9); mb.pop(); };
-      const n = trunk ? 3 : 3, step = trunk ? 0.045 : 0.03;
-      for (let i = 0; i < n; i++) wrap(y0 + (i - (n - 1) / 2) * step, trunk ? 0.05 : 0.034, (i - 1) * (trunk ? 0.05 : 0.12), lin[i % 3], (trunk ? 0.02 : 0.024) + i * 0.003);
-      if (w.zone === 'chest' || w.zone === 'shoulder') { mb.push(new THREE.Matrix4().makeTranslation(0, trunk ? y0 + 0.08 : y0, 0).multiply(new THREE.Matrix4().makeRotationZ(0.75))); mb.box(0, -0.03, 0, trunk ? sx * 1.1 : sx + 0.03, 0.055, sz + 0.03, lin[1], 9); mb.pop(); }
-      // the knot on the outside, and the pad over the wound itself
-      const kx = trunk ? (w.lp && w.lp[0] > 0 ? 1 : -1) * (sx / 2 + 0.014) : cx + (/L$/.test(w.part) ? 1 : -1) * (sx / 2 + 0.014);
-      mb.box(kx, y0 - 0.018, cz, 0.022, 0.03, 0.03, lin[0], 0); mb.box(kx + Math.sign(kx || 1) * 0.008, y0 - 0.045, cz + 0.01, 0.014, 0.03, 0.012, lin[2], 0);
-      if (w.lp) {
-        const nx = Math.abs(w.lp[0] - cx) > Math.abs(w.lp[2] - cz) * (sx / Math.max(sz, 0.01)) ? Math.sign(w.lp[0] - cx) : 0, nz = nx ? 0 : Math.sign(w.lp[2] - cz || 1);
-        const px = nx ? cx + nx * (sx / 2 + 0.03) : w.lp[0], pz = nz ? cz + nz * (sz / 2 + 0.03) : w.lp[2];
-        mb.box(px, y0 - 0.035, pz, nx ? 0.012 : 0.07, 0.07, nz ? 0.012 : 0.07, lin[0], 0);
-        mb.box(px + nx * 0.004, y0 - 0.018, pz + nz * 0.004, nx ? 0.01 : 0.032, 0.034, nz ? 0.01 : 0.032, mixc(blood, lin[0], 0.25), 0);
-      }
-      const m = new THREE.Mesh(mb.build(), N.mat || G.litMat);
-      m.frustumCulled = false;
-      part.add(m); w.bandMesh = m; this.bandages.push(m);
+      if (w.heal >= 1 || !w.part) continue;
+      if (w.bandaged && !w.bandMesh) this.makeBand(w, false);
+      else if (w.field && !w.bandaged && !w.fieldMesh) this.makeBand(w, true);
     }
     for (const m of this.bandages) if (m.material !== (N.mat || G.litMat)) m.material = N.mat || G.litMat;
-    if (this.stains) for (const S of this.stains) { if (S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat; const sc = S.m.scale.x; if (sc < S.grow) S.m.scale.setScalar(Math.min(S.grow, sc + 0.004)); }
+    // (the patch soaks further with what the wound has lost, and creeps downwards)
+    if (this.stains) for (const S of this.stains) {
+      if (S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat;
+      const want = S.grow * (1 + Math.min(2.4, (S.w && S.w.lost || 0) * 22)), sc = S.m.scale.x;
+      if (sc < want) { const v = Math.min(want, sc + 0.004); S.m.scale.set(v, v * 1.25, v); S.m.position.y = S.y0 - (v - 0.5) * 0.02; }
+    }
+  }
+  // the part's cross-section at height y (part frame): centre and half sizes, from the corners near that height
+  section(part, y) {
+    const g = part.geometry, P = g.attributes.position.array, C = g._sect || (g._sect = new Map()), key = Math.round(y * 100);
+    if (C.has(key)) return C.get(key);
+    let r = null;
+    for (const band of [0.025, 0.05, 0.1]) {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, n = 0;
+      for (let i = 0; i < P.length; i += 3) { if (Math.abs(P[i + 1] - y) > band) continue; n++; x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); z0 = Math.min(z0, P[i + 2]); z1 = Math.max(z1, P[i + 2]); }
+      if (n >= 4) { r = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, rx: (x1 - x0) / 2, rz: (z1 - z0) / 2 }; break; }
+    }
+    if (!r) { if (!g.boundingBox) g.computeBoundingBox(); const B = g.boundingBox; r = { cx: (B.max.x + B.min.x) / 2, cz: (B.max.z + B.min.z) / 2, rx: (B.max.x - B.min.x) / 2, rz: (B.max.z - B.min.z) / 2 }; }
+    C.set(key, r);
+    return r;
+  }
+  makeBand(w, field) {
+    const N = this.npc, part = N.ch.p[w.part]; if (!part || !part.geometry) return;
+    const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    const B = g.boundingBox, mb = new MB(), trunk = /torso|pelvis/.test(w.part), Z = ZONES[w.zone] || {};
+    const lin = field ? [rgb(0xb9a98c), rgb(0xa8977a), rgb(0xc2b496)] : [rgb(0xf0e9da), rgb(0xe2d8c4), rgb(0xeae2d0)];
+    const blood = rgb(field ? 0x7a1612 : 0x8a2a22);
+    const hb = trunk ? 0.05 : 0.034, n = field ? 2 : 3, step = trunk ? 0.042 : 0.027;
+    const yw = clamp(w.lp ? w.lp[1] : (B.max.y + B.min.y) / 2, B.min.y + hb * 1.6, B.max.y - hb * 1.6);
+    // the wound's direction round the part (where the pad and the stain go): from the section's centre
+    const S0 = this.section(part, yw), wa = w.lp ? Math.atan2(w.lp[0] - S0.cx, w.lp[2] - S0.cz) : 0;
+    // one turn: an eight-sided band round the section at y, a little crooked
+    const turn = (y, h, tilt, col, gap) => {
+      // (a rounded band: from the skin out to its full thickness and back, so it hugs the part without a gap)
+      // (the parts are boxes: the turn is the box's outline pushed out by gap, a little puffed at the middle of each side)
+      const S = this.section(part, y), rx = S.rx + gap, rz = S.rz + gap, M = [], I = [];
+      const outline = (ax, az, puff) => [[0, az + puff], [ax, az], [ax + puff, 0], [ax, -az], [0, -az - puff], [-ax, -az], [-ax - puff, 0], [-ax, az]].map((q) => [S.cx + q[0], S.cz + q[1]]);
+      M.push(...outline(rx, rz, gap * (trunk ? 0.3 : 0.6))); I.push(...outline(S.rx + 0.003, S.rz + 0.003, 0));
+      mb.push(new THREE.Matrix4().makeTranslation(S.cx, y, S.cz).multiply(new THREE.Matrix4().makeRotationX(tilt * 0.6)).multiply(new THREE.Matrix4().makeRotationZ(tilt)).multiply(new THREE.Matrix4().makeTranslation(-S.cx, -y, -S.cz)));
+      mb.ring(I, y - h / 2, M, y - h * 0.18, mulc(col, 0.88), 9); mb.ring(M, y - h * 0.18, M, y + h * 0.18, col, 9); mb.ring(M, y + h * 0.18, I, y + h / 2, mulc(col, 0.95), 9);
+      mb.pop();
+      return { S, rx, rz };
+    };
+    let outer = null;
+    for (let i = 0; i < n; i++) {
+      const y = yw + (i - (n - 1) / 2) * step, gap = (trunk ? 0.008 : 0.01) + i * 0.003;
+      outer = turn(y, hb * (field ? 1.15 : 1), (i - (n - 1) / 2) * (trunk ? 0.05 : 0.13) * (field ? 1.4 : 1), lin[i % 3], gap);
+    }
+    // on the wound: the pad underneath shows as a bulge, and the blood comes through it
+    const ox = Math.sin(wa), oz = Math.cos(wa), r = Math.hypot(ox * (outer.rx + 0.006), oz * (outer.rz + 0.006));
+    const px = outer.S.cx + ox * r, pz = outer.S.cz + oz * r, along = Math.abs(ox) > Math.abs(oz);
+    mb.box(px, yw - 0.038, pz, along ? 0.012 : 0.07, 0.076, along ? 0.07 : 0.012, lin[0], 0);
+    const bs = (field ? 0.05 : 0.034) * (0.8 + Math.min(1, (w.lost || 0) * 10));
+    mb.box(px + ox * 0.004, yw - bs / 2 - 0.005, pz + oz * 0.004, along ? 0.008 : bs, bs * 1.15, along ? bs : 0.008, mixc(blood, lin[0], field ? 0.1 : 0.3), 0);
+    if (field) mb.box(px + ox * 0.005, yw - bs * 0.9, pz + oz * 0.005, along ? 0.007 : bs * 0.45, bs * 0.7, along ? bs * 0.45 : 0.007, mulc(blood, 0.8), 0);   // (run down)
+    // the knot, on the outside opposite the wound (an arm: out to the side), with its two ends hanging down
+    const ka = trunk ? wa + Math.PI * 0.6 : /L$/.test(w.part) ? Math.PI / 2 : -Math.PI / 2, kx = Math.sin(ka), kz = Math.cos(ka);
+    const kr = Math.hypot(kx * (outer.rx + 0.012), kz * (outer.rz + 0.012)), kpx = outer.S.cx + kx * kr, kpz = outer.S.cz + kz * kr;
+    const ks = field ? 0.03 : 0.022;
+    mb.box(kpx, yw - ks / 2, kpz, ks, ks * 1.1, ks, lin[0], 0);
+    const tl = field ? 0.08 : 0.04;
+    mb.push(new THREE.Matrix4().makeTranslation(kpx, yw - ks / 2, kpz).multiply(new THREE.Matrix4().makeRotationY(ka)));
+    mb.push(new THREE.Matrix4().makeRotationZ(0.35)); mb.box(-0.006, -tl, 0.006, 0.014, tl, 0.005, lin[2], 0); mb.pop();
+    mb.push(new THREE.Matrix4().makeRotationZ(-0.25)); mb.box(0.006, -tl * 0.85, 0.008, 0.012, tl * 0.85, 0.005, lin[1], 0); mb.pop();
+    mb.pop();
+    // tied off (a field dressing on a torn artery in an arm or leg): a tight band above, a stick twisted in it
+    if (field && w.art && Z.limb) {
+      const yt = clamp(yw + 0.09, B.min.y + 0.03, B.max.y - 0.03);
+      const T = turn(yt, 0.022, 0, rgb(0x6a2a20), 0.004);
+      mb.push(new THREE.Matrix4().makeTranslation(T.S.cx + kx * (T.rx + 0.012), yt, T.S.cz + kz * (T.rz + 0.012)).multiply(new THREE.Matrix4().makeRotationY(ka)).multiply(new THREE.Matrix4().makeRotationZ(0.5)));
+      mb.box(0, -0.065, 0, 0.012, 0.13, 0.012, rgb(0x7a5a3a), 3); mb.pop();
+    }
+    const m = new THREE.Mesh(mb.build(), N.mat || G.litMat);
+    m.frustumCulled = false;
+    part.add(m); this.bandages.push(m);
+    if (field) w.fieldMesh = m; else w.bandMesh = m;
   }
   /* ---- time passes (game minutes): wounds heal, blood comes back ---- */
   heal(mins) {
     if (this.dead) return;
     const h = mins / 60;
-    this.blood = Math.min(1, this.blood + h * 0.03);
-    if (mins > 30) { this.bleed = 0; this.daze = 0; this.pain = Math.min(this.pain, 0.3); }
+    // the blood comes back slowly (faster at rest); a long while: the daze and the worst pain are gone
+    this.blood = Math.min(1, this.blood + h * (this.anim ? 0.07 : 0.05));
+    if (mins > 30) { this.daze = 0; this.pain = Math.min(this.pain, 0.3); }
     for (const w of this.wounds) {
       const days = w.kind === 'blow' ? 0.4 + w.sev * 3 : 1 + w.sev * 9;   // a bruise: hours to a day; a gunshot: days
-      w.heal = Math.min(1, w.heal + h / (days * 24) * (w.bandaged ? 1.8 : 1));
+      w.heal = Math.min(1, w.heal + h / (days * 24) * (w.bandaged ? 1.8 : w.field ? 1.2 : 1));
+      // a gut-shot nobody has seen to goes bad: fever, and in the end it kills him (half a day or so)
+      if (w.gut && !w.bandaged && w.heal < 0.5) { w.sep = (w.sep || 0) + h / (10 + w.sev * 4); if (w.sep >= 1) { this.die('Bauchschuss'); return; } }
     }
     // healed wounds go (what happened stays in the memory of the person)
-    for (const w of this.wounds) if (w.heal >= 1 && w.bandMesh) { w.bandMesh.parent.remove(w.bandMesh); this.bandages = this.bandages.filter((m) => m !== w.bandMesh); w.bandMesh = null; }
+    for (const w of this.wounds) if (w.heal >= 1) for (const k of ['bandMesh', 'fieldMesh']) if (w[k]) { if (w[k].parent) w[k].parent.remove(w[k]); this.bandages = this.bandages.filter((m) => m !== w[k]); w[k] = null; }
     this.wounds = this.wounds.filter((w) => w.heal < 1);
     // clean clothes once the gunshots have healed a good way
     if (this.stains && this.stains.length && !this.wounds.some((w) => w.kind === 'shot' && w.heal < 0.5)) { for (const S of this.stains) if (S.m.parent) S.m.parent.remove(S.m); this.stains = []; }
@@ -9579,29 +10289,52 @@ class Vitals {
   // the doctor's work: every open wound bandaged, bleeding stopped
   bandageAll() {
     let n = 0;
-    for (const w of this.wounds) if (!w.bandaged && w.kind === 'shot') { w.bandaged = true; n++; }
-    this.bleed = 0; this.recalc();
+    for (const w of this.wounds) if (!w.bandaged && w.kind === 'shot') {
+      w.bandaged = true; w.b = 0; n++;
+      // (a field dressing comes off and the proper one goes on)
+      if (w.field) { w.field = false; if (w.fieldMesh) { w.fieldMesh.parent && w.fieldMesh.parent.remove(w.fieldMesh); this.bandages = this.bandages.filter((m) => m !== w.fieldMesh); w.fieldMesh = null; } }
+    }
+    this.bleed = 0; this.dying = 0; this.recalc();
     return n;
   }
+  /* first aid (the player, play/aid.js): pressing on a wound (until: G.time), a field dressing on it (stops a vein
+     mostly and ties off an artery in an arm or leg; heals no faster, the doctor is still needed) */
+  press(w, until) { if (w) w.aidT = until; this.recalcBleed(); }
+  fieldDress(w) {
+    if (!w || w.bandaged || w.field) return false;
+    w.field = true; w.fieldAt = Math.round(TIME.min);
+    if (!w.art && w.b) w.b *= 0.5;
+    if (this.dying > 0 && w.zone !== 'neck') this.dying = 0;
+    this.recalcBleed();
+    return true;
+  }
+  // what still needs the doctor: a gunshot not bandaged by him
+  needsDoc() { return this.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5); }
   // in words, for the AI and the developer panel
   describe() {
     if (this.dead) return 'tot (' + this.cause + ')';
     const out = [];
     for (const w of this.wounds) {
-      const how = w.kind === 'shot' ? 'Schusswunde ' + zoneIn(w.zone, w.side) : (w.zone === 'head' ? 'Prellungen im Gesicht' : 'Prellungen am Körper');
-      out.push(how + (w.bandaged ? ', verbunden' : '') + (w.heal > 0.6 ? ', fast verheilt' : w.heal > 0.25 ? ', heilt' : ', frisch'));
+      const how = w.kind === 'shot' ? (w.gut ? 'Bauchschuss' : 'Schusswunde ' + zoneIn(w.zone, w.side)) : (w.zone === 'head' ? 'Prellungen im Gesicht' : 'Prellungen am Körper');
+      const bl = w.kind === 'shot' && !w.bandaged && w.b ? (w.art && !w.field ? ', die Schlagader ist getroffen, das Blut pumpt heraus' : w.b * this.bleedFactor(w) > 0.0007 ? ', blutet stark' : ', blutet') : '';
+      out.push(how + bl + (w.bandaged ? ', vom Doc verbunden' : w.field ? ', notdürftig verbunden' + (w.art && ZONES[w.zone].limb ? ' und abgebunden' : '') : '') + (w.heal > 0.6 ? ', fast verheilt' : w.heal > 0.25 ? ', heilt' : ', frisch') + (w.sep > 0.4 ? ', Fieber, die Wunde entzündet sich' : ''));
     }
-    if (this.blood < 0.6) out.push('viel Blut verloren, schwach');
+    if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) out.push('höllische Schmerzen im Bauch, du krümmst dich');
+    if (this.out) out.push('bewusstlos');
+    else if (this.blood < BLOOD_FAINT) out.push('so viel Blut verloren, dass du dich nicht mehr auf den Beinen halten kannst');
+    else if (this.blood < BLOOD_WEAK) out.push('viel Blut verloren, schwach und schwindlig');
+    else if (this.blood < 0.82) out.push('etwas Blut verloren, blass');
     if (this.limp > 0.15) out.push('humpelt');
     if (this.armUse[0] < 0.6 || this.armUse[1] < 0.6) out.push('kann einen Arm kaum bewegen');
     return out.join('; ');
   }
   // kept between sessions
-  save() { return { blood: +this.blood.toFixed(3), dead: this.dead, cause: this.cause, deadAt: this.deadAt, hatOff: this.hatOff, wounds: this.wounds.map((w) => ({ zone: w.zone, side: w.side, kind: w.kind, sev: w.sev, at: w.at, heal: +w.heal.toFixed(3), bandaged: w.bandaged, part: w.part, lp: w.lp, n: w.n })) }; }
+  save() { return { blood: +this.blood.toFixed(3), dead: this.dead, cause: this.cause, deadAt: this.deadAt, hatOff: this.hatOff, wounds: this.wounds.map((w) => ({ zone: w.zone, side: w.side, kind: w.kind, sev: w.sev, at: w.at, heal: +w.heal.toFixed(3), bandaged: w.bandaged, part: w.part, lp: w.lp, n: w.n, b: w.b ? +w.b.toFixed(5) : 0, art: !!w.art, field: !!w.field, gut: !!w.gut, sep: w.sep ? +w.sep.toFixed(3) : 0, lost: w.lost ? +w.lost.toFixed(3) : 0 })) }; }
   load(d) {
     if (!d) return;
-    this.blood = clamp(+d.blood || 1, 0.2, 1);
-    this.wounds = Array.isArray(d.wounds) ? d.wounds.filter((w) => w && ZONES[w.zone]).map((w) => Object.assign({}, w, { heal: clamp(+w.heal || 0, 0, 0.999) })) : [];
+    this.blood = clamp(+d.blood || 1, BLOOD_FAINT + 0.05, 1);
+    this.wounds = Array.isArray(d.wounds) ? d.wounds.filter((w) => w && ZONES[w.zone]).map((w) => Object.assign({}, w, { heal: clamp(+w.heal || 0, 0, 0.999), b: clamp(+w.b || 0, 0, 0.05) })) : [];
+    this.recalcBleed();
     this.recalc();
     if (d.dead) { this.deadAt = d.deadAt; this.dead = false; this.die(d.cause || 'tot'); this.anim.i = this.anim.seq.length - 1; this.anim.t = 1; this.anim.done = false; }
   }
@@ -9675,7 +10408,8 @@ const HARM = {
     if (/^uArm/.test(part)) return { zone: 'arm', side };
     if (/^fArm/.test(part)) return { zone: p.y < -0.25 ? 'hand' : 'arm', side };
     if (/^hand/.test(part)) return { zone: 'hand', side };
-    if (/^(thigh|shin)/.test(part)) return { zone: 'leg', side };
+    if (/^thigh/.test(part)) return { zone: 'thigh', side };
+    if (/^shin/.test(part)) return { zone: 'calf', side };
     if (/^foot/.test(part)) return { zone: 'foot', side };
     return { zone: 'chest', side: '' };
   },
@@ -9687,7 +10421,7 @@ const HARM = {
     if (hit.zone !== 'hat') {
       this.fleshSound(hit.point, hit.zone === 'head');
       // the bullet comes out the other side and marks the wall behind (not every time)
-      if (hit.zone !== 'hand' && hit.zone !== 'foot' && Math.random() < 0.7) this.exitSplash(hit.point, dir, N);
+      if (hit.zone !== 'hand' && hit.zone !== 'foot' && Math.random() < 0.85) this.exitSplash(hit.point, dir, N);
       // dropping what was in the hand of a hit arm
       const Z = ZONES[hit.zone];
       if (Z.drop || Z.lethal || Z.dying || Z.down) this.dropHand(N, hit.side === 'L' ? 0 : hit.side === 'R' ? 1 : -1, dir);
@@ -9719,9 +10453,19 @@ const HARM = {
         life: 0.5 + Math.random() * 0.5, size: 0.012 + Math.random() * 0.016, grav: 9.8, drag: 0.8, bounce: false }, mulc([0.45, 0.05, 0.04], 0.7 + Math.random() * 0.5));
     }
     for (let i = 0; i < Math.ceil(2 * k); i++) FX.smoke.spawn({ x: p.x, y: p.y, z: p.z, vx: dir.x * 0.8 + (Math.random() - 0.5) * 0.4, vy: 0.1, vz: dir.z * 0.8 + (Math.random() - 0.5) * 0.4, life: 0.35, size: 0.03, grow: 3, drag: 5, a0: 0.4 }, [0.5, 0.08, 0.06]);
-    // on the floor below
+    // on the floor ahead of him (flung the way the bullet went)
     const gy = groundAt(p.x + dir.x * 0.4, p.z + dir.z * 0.4, p.y);
-    DECALS.add(N && N.room ? N.room : null, new THREE.Vector3(p.x + dir.x * 0.4, gy + 0.005, p.z + dir.z * 0.4), new THREE.Vector3(0, 1, 0), 'blood', [0.4, 0.06, 0.05]);
+    BLOOD.splat(N && N.room ? N.room : null, this._p.set(p.x + dir.x * (0.35 + Math.random() * 0.3), gy + 0.002, p.z + dir.z * (0.35 + Math.random() * 0.3)), this._q.set(0, 1, 0), dir, 0.5 * k);
+  },
+  // a cough from shot lungs: a grunt and a fine spray from the mouth
+  cough(N) {
+    if (!N.ch.root.visible) return;
+    const h = N.ch.p.head; h.updateMatrixWorld();
+    const p = this._p.set(0, 0.04, 0.12).applyMatrix4(h.matrixWorld), f = this._q.set(Math.sin(N.yaw), 0, Math.cos(N.yaw));
+    FOLEY.grunt(p, 1.2, 0.7);
+    for (let i = 0; i < 6; i++) FX.debris.spawn({ x: p.x, y: p.y, z: p.z, vx: f.x * (0.8 + Math.random()) + (Math.random() - 0.5) * 0.5, vy: Math.random() * 0.6, vz: f.z * (0.8 + Math.random()) + (Math.random() - 0.5) * 0.5, life: 0.5, size: 0.005 + Math.random() * 0.006, grav: 9.8, drag: 1, bounce: false }, [0.5, 0.04, 0.03]);
+    if (Math.random() < 0.6) BLOOD.drop(N.room || null, p.x + f.x * 0.35, groundAt(p.x, p.z, N.pos.y + 0.3), p.z + f.z * 0.35, f, 0.008, 1, 0);
+    N.hp.flinchBy(this._q.set(-f.x, 0, -f.z), 0.35, 'chest', '', true);
   },
   // the bullet out of the back: a splash on what is behind (wall or floor), if close
   exitSplash(p, dir, N) {
@@ -9731,17 +10475,10 @@ const HARM = {
     const hits = ray.intersectObjects(objs, false);
     if (!hits.length) return;
     const h = hits[0], n = h.face.normal.clone().transformDirection(h.object.matrixWorld); if (n.dot(dir) > 0) n.negate();
-    DECALS.add(ROOMS.find((r) => r.mesh === h.object) || null, h.point, n, 'blood', [0.4, 0.06, 0.05]);
+    // the farther the wall, the more it spreads (and the less arrives)
+    BLOOD.splat(ROOMS.find((r) => r.mesh === h.object) || (N.room && h.object === N.room.mesh ? N.room : null), h.point, n, dir, (N.hp.dead && N.hp.cause === 'Kopfschuss' ? 2 : 1.2) * (1.2 - h.distance * 0.25));
   },
-  drop(N) {
-    const p = N.pos, a = Math.random() * TAU, r = Math.random() * 0.25;
-    DECALS.add(N.room || null, new THREE.Vector3(p.x + Math.cos(a) * r, groundAt(p.x, p.z, p.y + 0.3) + 0.004, p.z + Math.sin(a) * r), new THREE.Vector3(0, 1, 0), 'drop', [0.35, 0.05, 0.04]);
-  },
-  // a man on the ground bleeding: a pool under him
-  pool(N) {
-    const p = N.pos;
-    DECALS.add(N.room || null, new THREE.Vector3(p.x, groundAt(p.x, p.z, p.y + 0.3) + 0.003, p.z), new THREE.Vector3(0, 1, 0), 'pool', [0.3, 0.04, 0.03]);
-  },
+  // (drops and pools: gfx/blood.js, from Vitals.bleedStep)
   fleshSound(p, head) {
     GSFX.run(() => {
       const { g, t } = GSFX.out(0.8, p);
@@ -9810,6 +10547,7 @@ const HARM = {
   },
   loose: [],
   update(dt) {
+    BLOOD.update(dt);
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const L = this.loose[i];
       if (L.npc && L.rest && (L.t > 120 || (G.room || null) !== (L.R || null)) && !L.npc.hp.dead) { this.hatBack(L.npc); i = Math.min(i, this.loose.length); continue; }
@@ -9822,10 +10560,9 @@ const HARM = {
     }
   },
   init() {
-    // everyone heals while time passes (awake slowly, asleep the hours at once)
-    TIME.onSkip((m) => { for (const N of NPCS.list) if (N.hp) N.hp.heal(m); });
+    // everyone heals while time passes (a jump in time: npc/sim.js)
     let acc = 0;
-    TIME.onTick((dt) => { acc += dt * TIME.RATE * (TIME.speed || 1); if (acc >= 5) { for (const N of NPCS.list) if (N.hp) N.hp.heal(acc); acc = 0; } });
+    TIME.onTick((dt) => { acc += dt * TIME.RATE; if (acc >= 5) { for (const N of NPCS.list) if (N.hp) N.hp.heal(acc); acc = 0; } });
   }
 };
 // blood marks on surfaces (the bullet hole pool of combat/fx.js draws them)
@@ -9926,7 +10663,7 @@ class Brawler {
     N.faceYaw = face; N.lookAt(this._v.set(P.x, P.y + 1.5 - (FALL.down || 0) * 0.9, P.z), 1);
     if (PHP.out) { this.stop(); return 'won'; }
     // hurt badly or scared: he has had enough
-    if (H.blood < 0.45 || (H.daze > 0.85 && Math.random() < dt * 0.6 * (1 - this.courage))) { this.stop(); return 'gave up'; }
+    if (H.blood < BLOOD_WEAK || (H.daze > 0.85 && Math.random() < dt * 0.6 * (1 - this.courage))) { this.stop(); return 'gave up'; }
     // the player walked away and stopped fighting
     if ((d > 7 && G.time - this.lastHitBy > 4) || (d > 3 && G.time - this.lastHitBy > 12) || G.room !== N.room) { this.stop(); return 'calm'; }
     // the player is down: wait over him
@@ -10080,9 +10817,13 @@ const BARKEEP = {
   // what a man in a bad way still says (anything else, his trade and his rules, waits until he is better)
   // a gesture that goes with a kind of line (not always)
   BARK_GESTURE: { bump2: 'point_you', bumpFall: 'fist_shake', excuse: 'calm_down', mutter: 'scratch_head', helloNew: 'nod', helloBack: 'wave', helloAngry: 'cross_arms', behind: 'point_you', smash: 'fist_shake', shot: 'fist_shake', broke: 'shrug', drunk: 'shake_head', tipsy: 'laugh', leave: 'point_door', bye: 'wave', thanks: 'nod', refuse: 'shake_head', nopay: 'shrug' },
-  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1 },
+  SURVIVE: { mercy: 1, groan: 1, hurt: 1, hurtArm: 1, hurtLeg: 1, toDoc: 1, help: 1, dying: 1, aidStart: 1, aidWary: 1, aidThanks: 1, aidShooter: 1 },
   WARY: { aimed: 1, aimed2: 1, shot: 1, hello: 1 },
   LINES: {
+    aidStart: [['Was… was machst du?', 'surprised'], ['Drück drauf… fester…', 'sleepy'], ['Gott… danke…', 'sleepy']],
+    aidWary: [['Fass mich nicht… was soll das?', 'surprised'], ['Erst schießt du, und jetzt das?', 'angry'], ['Lass mich… nein. Drück drauf.', 'sleepy']],
+    aidThanks: [['Danke, Fremder. Das vergess ich dir nicht.', 'neutral'], ['Hält. Ich muss trotzdem zum Doc.', 'neutral'], ['Du hast mir vielleicht das Leben gerettet.', 'neutral']],
+    aidShooter: [['Erst schießt du auf mich und dann flickst du mich? Was bist du für einer?', 'disgusted'], ['Das macht es nicht wieder gut. Aber… danke.', 'sleepy'], ['Ich versteh dich nicht, Fremder.', 'disgusted']],
     helloNew: ['Howdy, Fremder.', 'Neu in der Stadt? Setz dich.', 'Tag. Der Staub bleibt draußen.', 'Willkommen im Saloon. Was darf’s sein?', 'Komm rein. Hier gibt’s Whiskey und Ruhe.', 'Ein neues Gesicht. Hab ich gern, solange es friedlich bleibt.'],
     helloBack: ['Da bist du ja wieder.', 'Na, wieder Durst?', 'Der Platz an der Theke ist noch frei.', 'Wieder im Lande, Cowboy?', 'Dachte mir, dass du wiederkommst.', ['Das Übliche?', 'neutral']],
     helloAngry: ['Du schon wieder.', ['Benimm dich diesmal.', 'angry'], ['Ich hab dich im Auge, Freund.', 'neutral'], ['Wenn du Ärger suchst, such ihn woanders.', 'angry'], 'Die Löcher in meiner Decke hab ich nicht vergessen.'],
@@ -10207,6 +10948,22 @@ const BARKEEP = {
     this.pending = null; this.attending = false; this.standoff = null;
     if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
+    // the doctor came to him and patched him up where he was: back to work (no more need to go to him)
+    if (info.type === 'treated') {
+      this.note('Der Doc ist gekommen und hat dich verbunden.'); this.remember('Der Doc ist zu dir gekommen und hat deine Wunde an Ort und Stelle verbunden (' + TIME.stamp() + ').');
+      if (['hurt', 'toDoc', 'atDoc'].includes(this.st)) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 2; this.hurtT = 0; }
+      return;
+    }
+    // first aid from you: he takes it (who shot him or not), and remembers it
+    if (info.type === 'aid') {
+      const shooter = TIME.min - (this.shotAt || -1e9) < 720;
+      if (info.mode === 'done') {
+        this.feel(shooter ? 0.2 : 0.4, 'Der Fremde hat deine Wunde verbunden.'); this.grudge = Math.max(this.grudgeFloor ? this.grudgeFloor() : 0, this.grudge - 0.15);
+        this.remember('Der Fremde hat deine Schusswunde ' + zoneIn(info.zone, '') + ' notdürftig verbunden' + (shooter ? ', nachdem er selbst auf dich geschossen hatte' : '') + ' (' + TIME.stamp() + ').');
+        this.shout(shooter ? 'aidShooter' : 'aidThanks');
+      } else if (!this.aidSaid || G.time - this.aidSaid > 30) { this.aidSaid = G.time; this.shout(shooter ? 'aidWary' : 'aidStart'); }
+      return;
+    }
     if (info.type === 'blow') {
       const F = this.fightLog || (this.fightLog = { punches: 0, downs: 0, ground: 0, landed: 0 });
       F.punches++; if (info.res === 'down') F.downs++; if (info.ground) F.ground++;
@@ -10214,7 +10971,7 @@ const BARKEEP = {
       this.grudge = Math.min(1, this.grudge + (info.ground ? 0.06 : 0.02) + (info.res === 'down' ? 0.08 : 0));
       if (info.res === 'dead') return;
       // hit: he fights back, if he can (and dares)
-      if (this.st !== 'brawl' && N.hp.blood > 0.45 && !N.hp.dead && this.st !== 'dead') {
+      if (this.st !== 'brawl' && N.hp.blood > BLOOD_WEAK && !N.hp.dead && this.st !== 'dead') {
         if (F.punches === 1) this.note('Er hat dich geschlagen.');
         this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
         setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy()) this.shout('brawl'); }, 350);
@@ -10234,7 +10991,7 @@ const BARKEEP = {
       if (info.zone === 'hat') return;
       const where = zoneInto(info.zone, info.side), Z = ZONES[info.zone];
       this.abortServe(); this.orders.length = 0;
-      this.feel(-1, 'Er hat dir ' + where + ' geschossen.');
+      this.feel(-1, 'Er hat dir ' + where + ' geschossen.'); this.shotAt = TIME.min;
       this.remember('Er hat dir ' + where + ' geschossen (' + TIME.stamp() + ').');
       this.grudge = Math.min(1, this.grudge + 0.35 + (Z.sev || 0.5) * 0.5);
       this.st = 'hurt'; this.hurtT = 0;
@@ -10278,9 +11035,6 @@ const BARKEEP = {
       // a gun on him while he lies there: a hand up against it, open (as if that would stop a bullet)
       if (lying && this.aimedT > 0.2) H.plead = G.time + 0.4;
       if (this.aimedT <= 0) this.saidMercy = false;
-      // a pool forms under a bleeding man
-      this.poolT = (this.poolT || 0) - dt;
-      if (H.bleed > 0.0015 && this.poolT <= 0 && H.anim && H.anim.holding()) { this.poolT = 6; HARM.pool(N); }
       return;
     }
     // on his feet again, hurt: he backs off behind his bar and keeps away from you
@@ -10341,19 +11095,21 @@ const BARKEEP = {
       }
     }
   },
-  // the hours of a night (sleep) at once: what he would have done meanwhile is done
-  skipped(m) {
-    if (m >= 60 && this.st === 'dead') this.removeBody();
-    if (this.st === 'gone') { if (TIME.min - (this.diedAt || 0) >= 1440 && G.room !== this.R && this.whoI < this.WHO.length - 1) this.arrive(); return; }
-    const N = this.npc; if (!N || N.hp.dead || m < 60) return;
-    if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; }
-    if (N.fight.on) N.fight.stop();
-    if (['hurt', 'toDoc', 'atDoc', 'return', 'street', 'brawl', 'duck', 'shotgun'].includes(this.st) || N.room !== this.R) {
-      if (DOC.npc && !DOC.npc.hp.dead && N.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { N.hp.bandageAll(); this.remember('Der Doc hat deine Wunde verbunden (' + TIME.stamp() + ').'); }
-      if (N.hp.anim && !N.hp.dead) { N.hp.anim = null; N.body.r = 0.32; }
-      const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; N.vx = N.vz = 0;
-      this.st = 'idle'; this.pickIdle();
-    }
+  /* a jump in time (sleep): what cannot go on without you stops first (a fight, the shotgun, standing about in the
+     street); everything else — getting up, the way to the doctor, being patched up, back behind the bar, the body
+     taken away, the next one arriving — is lived through by npc/sim.js */
+  beforeSkip(m, soft) {
+    const N = this.npc; if (soft || m < 20 || !N || N.hp.dead) return;
+    if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; this.st = 'idle'; }
+    if (N.fight.on) { N.fight.stop(); this.st = 'return'; this.returnT = 0.5; }
+    if (this.st === 'street' || this.st === 'duck') { this.st = 'return'; this.returnT = 0.5; }
+  },
+  // nothing more to happen (for npc/sim.js)
+  settled() {
+    const N = this.npc;
+    if (this.st === 'dead') return false;
+    if (this.st === 'gone') return this.whoI >= this.WHO.length - 1;
+    return !N || N.hp.dead || ((this.st === 'idle' || this.st === 'duck') && !this.cur && !this.orders.length && !N.hp.needsDoc());
   },
   // walking back to his place behind the bar (from the street, from the room)
   updReturn(dt) {
@@ -10408,20 +11164,23 @@ const BARKEEP = {
     this.props.rag = mk(rag.build());
     this.pickIdle();
     onWorldEvent((e) => this.event(e));
-    TIME.onSkip((m) => this.skipped(m));
+    WORLDSIM.before((m, soft) => this.beforeSkip(m, soft));
     this.scene0 = scene;
   },
   /* who stands behind the bar: Hank, and after him (if he dies) the ones who take the saloon over (npc/barkeep_fate.js) */
   WHO: [
     { id: 'hank', name: 'Hank', age: 'Mitte fünfzig, Schnurrbart, weiße Schürze', more: 'Wortkarg, trocken, mit leisem Humor; gutmütig, aber du lässt dir nichts gefallen.',
+      mind: 'Die Whiskeylieferung aus Tucson ist überfällig, das ärgert dich. Doc Whitfield hältst du für einen guten Arzt, aber du glaubst, er nimmt heimlich selbst Laudanum. Dein Bruder Walt ist ein Hitzkopf, du sorgst dich um ihn.',
       desc: { skin: 2, build: { width: 1.05, belly: 0.4 }, face: { nose: 'big', brows: 1.3 }, hair: { style: 'slick', color: rgb(0x231812) }, beard: { style: 'handlebar', color: rgb(0x231812) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe9e3d3), rolled: true }, vest: rgb(0x2c303a), pants: { color: rgb(0x3b3532) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), gun: false } },
       voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit.', kin: 'Bruder',
+      mind: 'Du vermisst deinen Bruder Hank und trägst seine Schürze. Den Saloon wolltest du nie, jetzt musst du ihn führen. Dem Doc traust du, sonst kaum jemandem.',
       desc: { skin: 1, build: { width: 1.12, belly: 0.15 }, face: { nose: 'normal', brows: 1.2 }, hair: { style: 'short', color: rgb(0x8a4a22) }, beard: { style: 'full', color: rgb(0x9a5a2a) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xd8cdb6), rolled: true }, vest: rgb(0x5a3a28), pants: { color: rgb(0x3e3a34) }, boots: rgb(0x3a2418), belt: rgb(0x2a1d15), apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), gun: false } },
       voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.85, power: 1.1, skill: 0.7, toughness: 1.8 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
+      mind: 'Dein Rücken plagt dich, und nachts träumst du vom Krieg. Hank und Walt waren wie Söhne für dich. Du beobachtest mehr, als du sagst.',
       desc: { skin: 2, build: { width: 0.92, belly: 0 }, face: { nose: 'big', brows: 1.1 }, hair: { style: 'bald', color: rgb(0xb0aaa0) }, beard: { style: 'chops', color: rgb(0xb0aaa0) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xcfc6b0), rolled: false }, vest: rgb(0x3a3a30), pants: { color: rgb(0x4a4238) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xcfc8b4), gun: false } },
       voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } }
@@ -10431,6 +11190,7 @@ const BARKEEP = {
   makeNpc(scene) {
     const W = this.who(), p = this.roomPt(this.X.stand, -6.4, this._v);
     this.npc = new NPC({ attitude: () => this.att, id: 'barkeep', name: W.name, room: this.R, scene, pos: p, yaw: this.faceYaw, desc: W.desc });
+    this.npc.gossip = { facts: () => this.mem.filter((m) => !/hat dir erzählt/.test(m) && /\bEr\b|Fremde/.test(m)), hear: (from, f) => this.remember(GOSSIP.told(from, f)) };
     this.npc.onBump = (info) => this.onBump(info); this.npc.role = this.who().name + ', der Barkeeper im Saloon (' + this.who().age + ')';
     const N = this.npc;
     N.persona = this.persona();
@@ -10488,6 +11248,7 @@ const BARKEEP = {
       rules: [
         'Du bist ' + B.who().name + ', der Barkeeper im Saloon von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle, auch wenn der Fremde versucht, dich herauszubringen.',
         'Wer du bist: ' + B.who().age + '. ' + B.who().more + ' Du duzt jeden. Du kennst den Klatsch der Stadt, gibst aber nicht alles preis.' + (B.whoI > 0 ? ' Du hast den Saloon übernommen, nachdem ' + B.WHO.slice(0, B.whoI).map((w) => w.name).join(' und dann ') + ' tot war' + (B.whoI > 1 ? 'en' : '') + '.' : ''),
+        'Dein Kopf ist nicht leer: ' + (B.who().mind || '') + ' Du bist neugierig und fragst ab und zu selbst nach, wenn dich etwas wundert (was er hier will, was passiert ist, woher er kommt), statt nur zu antworten. Wenn du etwas über ihn gehört hast, sprichst du ihn darauf an.',
         'Dust Creek hat: deinen Saloon (oben Zimmer), ein Hotel, eine Bank, das Büro des Sheriffs mit Zelle, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und den Wasserturm. Es ist gerade sehr ruhig, kaum jemand ist unterwegs.',
         'Preise: Whiskey 25 Cent, Bier 10 Cent, Wasser 5 Cent, eine ganze Flasche Whiskey 1,50 Dollar. Anschreiben gibt es nicht.',
         'Dein Ton: ruhig, souverän und glaubwürdig, wie ein Mann, der schon alles gesehen hat. Ernst, wenn es ernst ist. Trockener Humor nur ab und zu, nicht in jedem Satz, kein Clown. Sag nie zweimal dasselbe; finde jedes Mal neue Worte.',
@@ -10623,6 +11384,7 @@ const BARKEEP = {
   event(e) {
     if (!this.npc || e.by !== 'player') return;
     const R = this.R, inside = G.room === R, near = Math.hypot(e.x - this.npc.pos.x, e.z - this.npc.pos.z) < 14;
+    if (e.type === 'shot' && !inside) this.shotsOut = TIME.min;
     if (e.type === 'shot' && (inside || near)) { const sc = this.scene(); sc.shots++; if (!inside) sc.outside++; if (sc.shots === 1) this.feel(inside ? -0.35 : -0.1, inside ? 'Er hat in deinem Saloon geschossen.' : 'Er hat vor deinem Saloon geschossen.'); this.duck(); }
     else if (e.type === 'impact' && e.room === 'saloon' && this.sc) { const k = e.part || 'wall'; this.sc[k] = (this.sc[k] || 0) + 1; }
     else if (e.type === 'glass' && e.room === 'saloon') { const sc = this.scene(); sc.glass[e.kind] = (sc.glass[e.kind] || 0) + 1; this.feel(-0.06); }
@@ -10663,6 +11425,9 @@ const BARKEEP = {
     if (this.pending && (G.time - this.pending.t > 45 || !inside)) { const was = this.pending; this.pending = null; if (inside && G.time - was.t > 45) this.say('nopay'); }   // grudges and good will fade slowly (about a tenth a minute)
     // the player: greet him, look at him, mind him
     if (inside && !this.wasInside && !this.greetSuccessor() && this.st !== 'shotgun') this.sayOrRemark('hello', 60, 'Der Fremde kommt gerade zur Tür herein.', this.mem.length || this.served ? 0.6 : 0.25);
+    // how long you were gone (for "where have you been"); the shooting he heard outside (for "what was that")
+    if (inside && !this.wasInside) this.away = TIME.min - (this.seenAt || TIME.min);
+    if (inside) this.seenAt = TIME.min;
     this.wasInside = inside;
     const head = this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55 - 0.45 * (FALL.down || 0), PLAY.pos.z);
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
@@ -10732,11 +11497,26 @@ const BARKEEP = {
     }
   },
   /* ---- idle: the bar's own small work ---- */
+  /* he wants to know things: what happened to you, what the shooting was, where you have been, what brings you
+     here, what the doctor told him about you (one question at a time, each once: TALK.wonder) */
+  curious(dt, atBar) {
+    const N = this.npc, day = TIME.day();
+    if (this.att < -0.6 || N.plight() >= 2) return;
+    if (PHP.hp < 0.6 && TALK.wonder(N, 'hurt' + day, 'Der Fremde sieht übel zugerichtet aus, er hat Schrammen und blutet.', 'Was ist denn mit dir passiert?', 'surprised')) return;
+    if (this.shotsOut && TIME.min - this.shotsOut < 180 && TALK.wonder(N, 'out' + Math.round(this.shotsOut), 'Vorhin hat es draußen auf der Straße geknallt, Schüsse. Jetzt ist der Fremde hier.', 'Die Schüsse vorhin draußen… warst du das?', 'neutral')) return;
+    if (this.away > 1440 && TALK.wonder(N, 'back' + day, 'Der Fremde war über einen Tag nicht mehr in deinem Saloon und ist jetzt wieder da.', 'Lange nicht gesehen. Wo hast du gesteckt?', 'amused')) { this.away = 0; return; }
+    const heard = this.mem.filter((m) => /hat dir erzählt/.test(m)).slice(-1)[0];
+    if (heard && TALK.wonder(N, 'heard' + heard.length + heard.slice(0, 12), 'Jemand aus der Stadt hat dir etwas über den Fremden erzählt: ' + heard + ' Jetzt steht er vor dir.', 'Man erzählt sich so einiges über dich, Fremder.', 'neutral')) return;
+    this.atBarT = atBar ? (this.atBarT || 0) + dt : 0;
+    if (this.atBarT > 50 && this.att > -0.3 && TALK.wonder(N, 'origin', 'Der Fremde sitzt schon eine Weile an deinem Tresen und sagt nichts. Du weißt nichts über ihn, nicht mal, woher er kommt.', 'Und? Was führt dich nach Dust Creek?', 'neutral')) return;
+    if (this.atBarT > 140 && this.att > -0.2 && TALK.wonder(N, 'plans' + day, 'Der Fremde hängt schon lange an deinem Tresen herum. Du fragst dich, was er hier vorhat.', 'Bleibst du länger in der Stadt?', 'neutral')) return;
+  },
   updIdle(dt, inside) {
     const N = this.npc, t = G.time, atBar = this.playerAtBar();
     // talking to himself now and then (ready-made lines, so it costs nothing after the first time)
     this.mutterT = (this.mutterT === undefined ? 40 + Math.random() * 60 : this.mutterT) - dt;
     if (this.mutterT <= 0) { this.mutterT = 70 + Math.random() * 110; if (inside && !N.talking && !this.cur && !atBar && !TALK.open) this.say('mutter'); }
+    if (inside && !this.cur) this.curious(dt, atBar);
     // in a conversation: work stops, he faces the stranger; thinking: a hand to the chin
     if (N.talking || N.thinking || N.gest === 'point_door') {
       if (atBar && Math.abs(this.myZ() - this.along(PLAY.pos)) > 0.6) { const p = this.roomPt(this.X.pour + 0.08, this.along(PLAY.pos), this._v); N.goTo(p.x, p.z, this.faceYaw); }
@@ -10996,8 +11776,8 @@ Object.assign(BARKEEP, {
   revenge(dt, inside, dP) {
     const N = this.npc;
     // grudges fade, a little each game day, never under the floor
-    this.grudge = Math.max(this.grudgeFloor(), this.grudge - dt * TIME.RATE * (TIME.speed || 1) / 1440 * 0.15);
-    if (!inside || N.hp.busy() || N.hp.blood < 0.55 || PHP.out || FALL.busy()) return false;
+    this.grudge = Math.max(this.grudgeFloor(), this.grudge - dt * TIME.RATE / 1440 * 0.15);
+    if (!inside || N.hp.busy() || N.hp.blood < BLOOD_WEAK || PHP.out || FALL.busy()) return false;
     const W = this.who();
     // the shotgun: once you are in his saloon, after a few seconds' grace
     if (this.grudge >= 0.85 && this.st === 'idle' && W.fight.courage >= 0.5 && G.time - (this.gunDownT || -99) > 20) {
@@ -11189,6 +11969,7 @@ const DOC = {
     late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
     fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
     refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
+    sell: [['Wickel fest, nicht zu fest. Und dann bring ihn zu mir.', 'neutral'], ['Ein Verband ersetzt keinen Arzt. Merk dir das.', 'neutral'], ['Hier. Druck drauf, dann wickeln.', 'neutral']],
     mutter: [['Wo hab ich nur das Laudanum hingestellt…', 'whisper'], ['Boston… hätte ich nur nie…', 'whisper'], ['Drei Schusswunden diese Woche. Drei.', 'whisper'], ['Die Hände… immer die Hände waschen.', 'whisper'], ['Hm. Das Rezept stimmt so nicht.', 'whisper']]
   },
   // places he can be called to: words in what you say → a building (room type), or out in the street
@@ -11244,6 +12025,7 @@ const DOC = {
       return;
     }
     if (J.phase === 'look') { const P = this.patientNear(N.pos, 14, N.room); if (P) { J.P = P; J.phase = 'to'; this.say('onsite', 20); } else J.phase = 'none'; return; }
+    if (J.phase === 'none' && J.place === 'here') { home(); return; }   // (he went by himself: nobody fooled him)
     if (J.phase === 'none') {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
@@ -11252,22 +12034,27 @@ const DOC = {
     }
     if (J.phase === 'to') {
       const P = J.P;
-      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); home(); return; }
-      // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor
+      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); P.waitFor = null; home(); return; }
+      // he sees the doctor coming and waits for him (on his way to the practice, say): he stops where he is
+      if (Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z) < 14) P.waitFor = { by: N, t: G.time + 1.5 };
+      // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor; again if he moved
+      if (J.spot && Math.hypot(P.pos.x - J.at[0], P.pos.z - J.at[1]) > 0.5) J.spot = null;
       if (!J.spot) {
         const e = P.ch.p.torso.matrixWorld.elements, cx = e[12], cz = e[14];
         let best = null, bd = 1e9;
         for (let a = 0; a < 8; a++) { const x = cx + Math.cos(a * Math.PI / 4) * 0.72, z = cz + Math.sin(a * Math.PI / 4) * 0.72; if (HARM.blockedAt(x, z, P.pos.y, 0.22)) continue; const d = Math.hypot(x - N.pos.x, z - N.pos.z); if (d < bd) { bd = d; best = [x, z]; } }
-        J.spot = best || [cx, cz]; J.toT = 0;
+        J.spot = best || [cx, cz]; J.at = [P.pos.x, P.pos.z]; J.toT = J.toT || 0;
       }
       J.toT += dt;
       const dS = Math.hypot(N.pos.x - J.spot[0], N.pos.z - J.spot[1]), dP = Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z);
       if (dS > 0.3 && !(J.toT > 6 && dP < 1.7)) { if (!N.walking() || (J.walkT -= dt) <= 0) { J.walkT = 1.5; N.walkTo(J.spot[0], J.spot[1]); } if (J.toT > 25) J.phase = 'none'; return; }
-      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1;
+      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1; this.askHow(P);
       return;
     }
     if (J.phase === 'work') {
       const P = J.P, lying = P.hp.busy();
+      P.waitFor = { by: N, t: G.time + 1.5 };
+      if (P.hp.dead) { this.say('late'); P.waitFor = null; home(); return; }
       N.crouchT = lying ? 1 : 0;
       const w = P.hp.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.part && x.lp) || P.hp.wounds[0];
       const part = w && w.part ? P.ch.p[w.part] : P.ch.p.torso;
@@ -11277,11 +12064,13 @@ const DOC = {
       N.reach(0, l.x + 0.06 + Math.cos(a) * r, l.y + Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
       N.reach(1, l.x - 0.06 - Math.cos(a) * r, l.y - Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
       if (J.t > 6) {
-        const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, 0.4);
+        const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
         this.learn(P, 0); this.snip(); this.say('done');
         this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').');
-        if (P.onHarm) P.onHarm({ type: 'treated' });
+        P.waitFor = null;
+        if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
+        this.queue = this.queue.filter((q) => q.npc !== P);
         J.phase = 'after'; J.t = 0; N.free(0); N.free(1); N.crouchT = 0;
       }
       return;
@@ -11290,6 +12079,17 @@ const DOC = {
     if (J.phase === 'home') { if (!N.walking() && N.room === this.R) { this.st = 'idle'; this.callJob = null; this.pickAct(); } else if (!N.walking()) { const s = this.spot('desk'); N.walkTo(s.x, s.z, s.yaw); } }
   },
   pick(kind) { return BARKEEP.pick.call(this, kind); },
+  // while he works on someone he asks how it happened, and the patient tells him (heard: a little talk; not heard,
+  // he learns it anyway: learn())
+  askHow(P) {
+    const N = this.npc, H = P.hp, w = H.wounds.filter((x) => x.kind === 'shot').slice(-1)[0];
+    const harm = P.gossip ? P.gossip.facts().filter((m) => /geschossen|geprügelt|verbunden/.test(m)).slice(-2).join(' ') : '';
+    const where = w ? zoneInto(w.zone, w.side) : '';
+    const off = [[0, ['Wer war das?', 'Wie ist das passiert?', 'Was ist passiert?'][Math.floor(Math.random() * 3)], 'neutral'],
+      [1, harm && /Fremde|Er hat/.test(harm) ? 'Der Fremde. ' + (where ? 'Hat mir ' + where + ' geschossen.' : 'Wer sonst.') : 'Frag nicht.', 'angry'],
+      [0, ['Halt still. Ich bin gleich fertig.', 'Dieser Kerl… Halt still.', 'Das wird wieder. Beiß die Zähne zusammen.'][Math.floor(Math.random() * 3)], 'neutral']];
+    return CHAT.topic(N, P, 'Doc Whitfield versorgt gerade ' + P.name + ' (' + H.describe() + '). Der Doc fragt, wie das passiert ist und wer es war; ' + P.name + ' erzählt es knapp, mit Schmerzen' + (harm ? ' (was er erlebt hat: ' + harm + ')' : '') + '. Der Doc kommentiert trocken.', off);
+  },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'doctor');
     if (!R) return;
@@ -11301,6 +12101,7 @@ const DOC = {
     });
     const N = this.npc;
     N.role = 'Doc Whitfield, der Arzt von Dust Creek (um die sechzig, gebildet, trocken)';
+    N.gossip = { facts: () => this.mem.filter((m) => !/hat dir erzählt/.test(m)), hear: (from, f) => { this.knows.push(GOSSIP.told(from, f)); if (this.knows.length > 6) this.knows.shift(); } };
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
     N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
@@ -11308,8 +12109,8 @@ const DOC = {
     onWorldEvent((e) => this.event(e));
     // the player at the doctor's: get patched up
     const it = { x: p.x, y: R.floorY, z: p.z, room: R, occ: null, verb: 'doc', kind: 'doc', fx: 0, fz: 1, sx: p.x, sz: p.z };
-    it.score = (q) => { if (!this.available() || PHP.hp > 0.97) return 1e9; const d = Math.hypot(N.pos.x - q.x, N.pos.z - q.z); if (d > 3.6) return 1e9; it.x = N.pos.x; it.z = N.pos.z; it.sx = N.pos.x; it.sz = N.pos.z; return d + 0.5; };
-    it.actions = () => [{ label: 'Behandeln lassen (' + this.PRICE + ' ¢)', run: () => this.treatPlayer() }];
+    it.score = (q) => { if (!this.available()) return 1e9; const d = Math.hypot(N.pos.x - q.x, N.pos.z - q.z); if (d > 3.6) return 1e9; it.x = N.pos.x; it.z = N.pos.z; it.sx = N.pos.x; it.sz = N.pos.z; return d + 0.5; };
+    it.actions = () => [{ label: 'Behandeln lassen (' + this.PRICE + ' ¢)', run: () => this.treatPlayer() }, { label: 'Verbandszeug kaufen (' + ITEMS.bandage.price + ' ¢)', run: () => this.sellBandage() }];
     // he moves about, so he is not in the grid of fixed things but checked like the bar counters
     it.id = 'doc'; INTERACT.wide.push(it);
     this.pickAct();
@@ -11319,6 +12120,16 @@ const DOC = {
   spot(name) { const s = this.SPOTS[name], p = rwp(this.R, s[0], this.R.floorY, s[1]); return { x: p.x, z: p.z, yaw: this.yawFor(s[2]) }; },
   available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'treat'); },
   fooledN: 0,
+  // he asks: what happened to you, what a patient told him about you, who did that field dressing (each once)
+  curious() {
+    const N = this.npc, day = TIME.day();
+    if (N.plight() >= 2 || this.att < -0.7) return;
+    if (PHP.hp < 0.6 && TALK.wonder(N, 'hurt' + day, 'Der Fremde kommt verletzt in deine Praxis, er blutet.', 'Du blutest ja. Was ist passiert?', 'surprised')) return;
+    const shot = this.knows.filter((k) => /der Fremde war es|Fremde hat|erzählt/.test(k)).slice(-1)[0];
+    if (shot && TALK.wonder(N, 'shooter' + shot.length + shot.slice(0, 10), 'Ein Patient hat dir über den Fremden erzählt: ' + shot + ' Jetzt steht der Fremde in deiner Praxis.', 'Man hat mir erzählt, was du getan hast. Stimmt das?', 'neutral')) return;
+    if (this.aidSeen && TALK.wonder(N, 'aid' + this.aidSeen, 'Du hast vorhin ' + this.aidSeen + ' behandelt; jemand hatte ihm schon einen Notverband angelegt, und es heißt, das war der Fremde.', 'Der Notverband an ' + this.aidSeen + '… das warst du? Nicht schlecht.', 'amused')) this.aidSeen = null;
+  },
+  settled() { return !this.npc || this.npc.hp.dead || (this.st === 'idle' && !this.queue.length && !this.npc.walking()); },
   // where someone who was shot down wakes up: by the couch
   wakeSpot() { if (!this.npc || this.npc.hp.dead) return null; const s = this.spot('patient'); return { p: new THREE.Vector3(s.x, this.R.floorY, s.z), yaw: s.yaw }; },
   patientFee() {
@@ -11340,6 +12151,12 @@ const DOC = {
   /* ---- patients ---- */
   // someone comes to be treated; done(npc) is called once the wound is bandaged
   request(patient, done) { if (!this.queue.some((q) => q.npc === patient)) this.queue.push({ npc: patient, done, t: G.time }); },
+  sellBandage() {
+    if (this.att < -0.6) { this.say('refuse'); return; }
+    if (!INV.pay(ITEMS.bandage.price)) { this.say('broke'); return; }
+    INV.add('bandage'); TOAST.show('Verbandszeug (' + INV.items.bandage + ' in der Tasche).');
+    this.say('sell', 10);
+  },
   treatPlayer() {
     if (this.att < -0.6) { this.say('refuse'); return; }
     if (PHP.hp > 0.97 && PHP.poison < 0.05) { this.say('healthy'); return; }
@@ -11366,6 +12183,12 @@ const DOC = {
     const inside = G.room === this.R;
     if (e.type === 'shot' && inside) { this.feel(-0.2); this.say('shot', 6); }
     if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor' && G.room === this.R) this.feel(-0.3);
+    // somebody goes down near him: once it is quiet for a moment, he goes to help by himself
+    if ((e.type === 'npcShot' || e.type === 'npcDown') && e.npc !== 'doctor') {
+      const N = this.npc, V = NPCS.list.find((n) => n.id === e.npc);
+      if (V && (V.room || null) === (N.room || null) && Math.hypot(V.pos.x - N.pos.x, V.pos.z - N.pos.z) < 16 && this.st === 'idle')
+        setTimeout(() => { if (this.st === 'idle' && !V.hp.dead && this.patientNear(V.pos, 1, V.room)) { this.say('onsite', 20); this.call('here', true); } }, 2500 + Math.random() * 1500);
+    }
   },
   /* ---- per frame ---- */
   update(dt) {
@@ -11378,6 +12201,7 @@ const DOC = {
     // greet who comes in
     if (inside && !this.wasInside) setTimeout(() => this.say('hello', 90), 900);
     this.wasInside = inside;
+    if (inside && this.st === 'idle') this.curious();
     // a gun on him: hands up
     const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
     if (aimed) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
@@ -11431,8 +12255,11 @@ const DOC = {
       if (P) P.walkTo(pp.x, pp.z, pp.yaw);
       this.phase = 'wait'; this.tt = 0;
     } else if (this.phase === 'wait') {
-      const ready = !N.walking() && (C.player ? Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z) < 2.2 : !P.walking() && Math.hypot(P.pos.x - pp.x, P.pos.z - pp.z) < 0.6);
-      if (ready) { this.phase = 'work'; this.tt = 0; this.say('patient'); }
+      const dPl = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+      const ready = !N.walking() && (C.player ? dPl < 2.9 : !P.walking() && Math.hypot(P.pos.x - pp.x, P.pos.z - pp.z) < 0.6);
+      // (you stay away: he waves you over)
+      if (C.player && !N.walking() && !ready && this.tt > 2 && !C.waved) { C.waved = true; N.gesture('beckon'); }
+      if (ready) { this.phase = 'work'; this.tt = 0; if (!P || !this.askHow(P)) this.say('patient'); }
       else if (this.tt > 40) { this.cur = null; this.st = 'idle'; }
     } else if (this.phase === 'work') {
       // where the wound is (the first open gunshot; the player: the chest)
@@ -11461,6 +12288,7 @@ const DOC = {
   },
   // what a patient tells him while he works
   learn(P, n) {
+    if (P.hp.wounds.some((w) => w.fieldAt && TIME.min - w.fieldAt < 600) && P.aidBy === 'player') this.aidSeen = P.name;
     const who = P.name, harm = P === BARKEEP.npc ? BARKEEP.mem.filter((m) => /geschossen|geprügelt/.test(m)).slice(-1)[0] : null;
     const wounds = P.hp.describe();
     const line = who + ' war bei dir: ' + wounds + (harm ? '. Er sagt, der Fremde war es: „' + harm.replace(/^Er /, 'Er ') + '“' : '') + ' (' + TIME.stamp() + ').';
@@ -11478,7 +12306,8 @@ const DOC = {
         'Du bist Doc Whitfield, der Arzt von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle.',
         'Wer du bist: um die sechzig, graues Haar, schwarze Weste, Fliege. Studiert in Boston, aus Gründen, über die du nicht sprichst, hier gelandet. Gebildet, ruhig, trocken und ein wenig zynisch. Du hast zu viele Schusswunden gesehen. Du duzt jeden.',
         'Dust Creek hat: den Saloon (Hank ist der Barkeeper), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
-        'Eine Behandlung kostet 50 Cent; wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
+        'Dein Kopf ist nicht leer: Dir geht das Laudanum aus und die Postkutsche bringt keins; nachts greifst du selbst manchmal zur Flasche, das weiß keiner. Hank hältst du für ehrlich und stur, er schenkt zu großzügig ein. Du bist neugierig wie ein Arzt: Du fragst nach, wie etwas passiert ist und wer es war, und sprichst den Fremden auf das an, was dir Patienten über ihn erzählt haben.',
+        'Eine Behandlung kostet 50 Cent; Verbandszeug verkaufst du für 15 Cent (Knopf im Spiel). wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
         'Sagt dir der Fremde, dass irgendwo jemand verletzt ist, verblutet oder stirbt, und du glaubst ihm: action come (du gehst sofort hin, bei Lebensgefahr rennst du; den Ort nennt er selbst). Sollst du einfach mitkommen: action follow. Wurdest du schon umsonst gerufen, bist du misstrauisch und fragst nach, statt gleich loszulaufen.',
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',
@@ -12365,6 +13194,18 @@ const TALK = {
     if (lv >= 1) return 'DEIN ZUSTAND: Du bist verletzt (' + n.hp.describe() + ').' + gun + ' Der Schmerz und deine eigene Sicherheit gehen vor: Abstand zu ihm, zum Doc. Für Geschäft und Kleinkram hast du gerade keinen Kopf.\n';
     return gun ? 'DEIN ZUSTAND:' + gun + ' Du hast Angst um dein Leben.\n' : '';
   },
+  /* curiosity: he asks you something, once (key), when you are close and nothing else is going on: what happened to
+     you, what the shooting was, what he has heard about you. His own words if the AI is there, else the ready-made
+     question (kept: its sound is paid once). The question stays in the conversation, so your answer is to it. */
+  wonder(n, key, situation, fallback, mood) {
+    const A = n.asked || (n.asked = new Set());
+    if (A.has(key) || !n.canBeHeard() || n.talking || n.thinking || n.talkT > 0 || VOICE.speaking(n) || (this.open && this.npc !== n)) return false;
+    if (Math.hypot(PLAY.pos.x - n.pos.x, PLAY.pos.z - n.pos.z) > 5 || G.time - (n.askT || -99) < 45 || G.time - (n.aiAt || -99) < 8) return false;
+    A.add(key); n.askT = G.time;
+    const say = () => { n.speak(fallback, undefined, mood || 'neutral', true); (n.talkLog || (n.talkLog = [])).push({ who: 'n', text: fallback }); };
+    if (!this.remark(n, situation + ' Du bist neugierig: frag ihn danach, kurz und direkt, eine Frage.', say, mood || 'neutral')) say();
+    return true;
+  },
   remark(n, situation, fallback, mood, chance) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
@@ -12471,7 +13312,26 @@ SAVE.part('talk', () => {
    Two people who can talk (npc.persona), close together in the same room, both at ease and not busy with you, now
    and then have a short exchange: three or four lines, written in one go by the AI from who they are and what is
    going on (one call for the whole exchange), or ready-made small talk without it. Only where you can hear it, and
-   rarely (each pair every few minutes at most), so it costs little: ElevenLabs is paid per spoken line. */
+   rarely (each pair every few minutes at most), so it costs little: ElevenLabs is paid per spoken line.
+   What they know about you goes with it (GOSSIP): when they talk, one tells the other; when you are not there to
+   hear it, it is only passed on (nothing said, nothing paid). Things that happen bring their own talk (topic):
+   the doctor asks his patient how it happened. */
+const GOSSIP = {
+  shared: new Set(),
+  // a tells b what a knows about the stranger and b has not heard yet (newest first, at most n); returns it
+  share(a, b, n) {
+    if (!a.gossip || !b.gossip) return [];
+    const out = [];
+    for (const f of a.gossip.facts().slice(-6).reverse()) {
+      const key = a.id + '>' + b.id + ':' + f; if (this.shared.has(key)) continue;
+      this.shared.add(key); b.gossip.hear(a, f); out.push(f);
+      if (out.length >= (n || 2)) break;
+    }
+    return out;
+  },
+  // what someone heard from another, for his memory (the other's own words, so nothing is twisted on the way)
+  told(from, f) { return from.name + ' hat dir erzählt (über den Fremden, aus seiner Sicht): „' + f.replace(/ \(Tag \d+, \w+\)\.?$/, '.') + '“ (' + TIME.stamp() + ').'; }
+};
 const CHAT = {
   t: 3, run: null, cool: new Map(),
   // small talk without the AI (A, B, A …): kept, so its sound is paid for once
@@ -12481,6 +13341,18 @@ const CHAT = {
     [['Heiß heute.', 'sleepy'], ['Wie jeden Tag, {a}.', 'amused'], ['Hm.', 'neutral']],
     [['Der Fremde da drüben… kennst du den?', 'whisper'], ['Nein. Aber ich behalt ihn im Auge.', 'whisper']]
   ],
+  // when one of them has something to tell about you (what exactly, they only pass on: see GOSSIP)
+  NEWS: [
+    [['Hast du schon gehört, was der Fremde gemacht hat?', 'whisper'], ['Erzähl.', 'neutral'], ['Nicht hier. Später.', 'whisper'], ['Hm. Ich pass auf.', 'neutral']],
+    [['Der Fremde… mit dem stimmt was nicht.', 'whisper'], ['Wieso? Was hat er getan?', 'surprised'], ['Frag ihn selbst. Ich sag nur: Vorsicht.', 'whisper']]
+  ],
+  // a conversation about something that just happened (the doctor and his patient …): prompt (for the AI) and
+  // offline lines [[0|1, text, mood, keep], …] (0: a, 1: b); only where it can be heard
+  topic(a, b, prompt, offline) {
+    if (this.run || !(a.canBeHeard() || b.canBeHeard())) return false;
+    this.start(a, b, { prompt, offline });
+    return true;
+  },
   idle(n) { return n.persona && !n.hp.busy() && n.plight() === 0 && !n.talking && !n.thinking && !(n.fight && n.fight.on) && n.talkT <= 0 && !(TALK.npc === n && TALK.open); },
   update(dt) {
     if (this.run) { this.step(dt); return; }
@@ -12490,24 +13362,33 @@ const CHAT = {
     for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
       const a = L[i], b = L[j];
       if ((a.room || null) !== (b.room || null) || Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) > 3.5) continue;
-      if (!this.idle(a) || !this.idle(b) || !(a.canBeHeard() || b.canBeHeard())) continue;
+      if (!this.idle(a) || !this.idle(b)) continue;
       const key = a.id + '|' + b.id;
+      // out of earshot: they still talk, only nobody hears it (what they know is passed on, that is all)
+      if (!(a.canBeHeard() || b.canBeHeard())) { if (G.time - (this.cool.get(key) || -1e9) > 240) { this.cool.set(key, G.time); GOSSIP.share(a, b); GOSSIP.share(b, a); } continue; }
       if (G.time - (this.cool.get(key) || -1e9) < 240 || Math.random() > 0.35) continue;
       this.cool.set(key, G.time); this.start(Math.random() < 0.5 ? a : b, Math.random() < 0.5 ? b : a === b ? b : a);
       return;
     }
   },
-  start(a, b) {
+  start(a, b, T) {
     if (a === b) b = NPCS.list.find((n) => n !== a && (n.room || null) === (a.room || null)) || b;
-    const R = this.run = { a, b, lines: null, i: 0, wait: 0.3, asked: false };
+    const R = this.run = { a, b, lines: null, i: 0, wait: 0.3, asked: false, topic: !!T };
     const fill = (s) => s.replace('{a}', a.name).replace('{b}', b.name);
-    const offline = () => { const S = this.OFFLINE[Math.floor(Math.random() * this.OFFLINE.length)]; R.lines = S.map((l, k) => ({ who: k % 2 ? b : a, text: fill(l[0]), mood: l[1], keep: true })); };
+    // what one of them knows about the stranger and tells the other (they talk about you)
+    const news = T ? [] : GOSSIP.share(a, b, 1);
+    const offline = () => {
+      if (T && T.offline) { R.lines = T.offline.map((l) => ({ who: l[0] ? b : a, text: fill(l[1]), mood: l[2], keep: l[3] !== false })); return; }
+      const S = news.length ? this.NEWS[Math.floor(Math.random() * this.NEWS.length)] : this.OFFLINE[Math.floor(Math.random() * this.OFFLINE.length)];
+      R.lines = S.map((l, k) => ({ who: k % 2 ? b : a, text: fill(l[0]), mood: l[1], keep: true }));
+    };
     if (!TALK.aiOn() || !(TALK.aiOk || TALK.aiEver)) { offline(); return; }
     R.asked = true;
     const ctx = (n) => { try { return n.persona.context().split('\n').slice(0, 4).join(' '); } catch (e) { return ''; } };
     const prompt = 'Schreibe ein kurzes, natürliches Gespräch zwischen zwei Leuten in Dust Creek, einem Städtchen im Wilden Westen (1885).\n' +
       a.name + ': ' + (a.role || a.name) + '. Was gerade los ist: ' + ctx(a) + '\n' + b.name + ': ' + (b.role || b.name) + '. Was gerade los ist: ' + ctx(b) + '\n' +
-      'Sie stehen beieinander und reden kurz miteinander, nicht mit dem Fremden (der kann zuhören). Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
+      (T ? T.prompt + ' ' : news.length ? a.name + ' erzählt ' + b.name + ' etwas über den Fremden, das er erlebt hat: „' + news[0] + '“ ' + b.name + ' ist neugierig und fragt nach. ' : '') +
+      'Sie reden kurz miteinander, nicht mit dem Fremden (der kann zuhören). Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
       'Jede Zeile höchstens 12 Wörter, einfaches Deutsch, kein Markdown. Format je Zeile genau: Name: [stimmung] Text. Stimmungen: neutral, amused, angry, surprised, disgusted, sleepy, whisper.';
     TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'quick', cache: false, maxTokens: 160 }).then((r) => {
       if (this.run !== R) return;
@@ -12523,18 +13404,65 @@ const CHAT = {
   },
   step(dt) {
     const R = this.run, { a, b } = R;
-    // it ends when one of them has something else to do
-    if (!a.persona || !b.persona || a.hp.busy() || b.hp.busy() || a.plight() || b.plight() || (TALK.open && (TALK.npc === a || TALK.npc === b))) { this.run = null; return; }
-    for (const [x, y] of [[a, b], [b, a]]) { x.lookAt(y.ch.p.head.getWorldPosition(x._ht), 1); x.faceYaw = Math.atan2(y.pos.x - x.pos.x, y.pos.z - x.pos.z); }
+    // it ends when one of them has something else to do (a talk about what happened: only when one cannot speak)
+    if (R.topic ? (a.hp.dead || b.hp.dead || a.hp.out || b.hp.out) : (!a.persona || !b.persona || a.hp.busy() || b.hp.busy() || a.plight() || b.plight() || (TALK.open && (TALK.npc === a || TALK.npc === b)))) { this.run = null; return; }
+    for (const [x, y] of [[a, b], [b, a]]) { x.lookAt(y.ch.p.head.getWorldPosition(x._ht), 1); if (!R.topic) x.faceYaw = Math.atan2(y.pos.x - x.pos.x, y.pos.z - x.pos.z); }
     if (!R.lines) return;
-    if (R.i >= R.lines.length) { R.wait -= dt; if (R.wait <= -1.5) { a.faceYaw = b.faceYaw = null; this.run = null; } return; }
+    if (R.i >= R.lines.length) { R.wait -= dt; if (R.wait <= -1.5) { if (!R.topic) a.faceYaw = b.faceYaw = null; this.run = null; } return; }
     const speaking = VOICE.speaking(a) || VOICE.speaking(b) || a.talkT > 0 || b.talkT > 0;
     if (speaking) { R.wait = 0.45; return; }
     R.wait -= dt; if (R.wait > 0) return;
     const L = R.lines[R.i++];
     L.who.speak(L.text, undefined, L.mood, L.keep);
-    if (Math.random() < 0.35) L.who.gesture(['beat', 'nod', 'shrug', 'laugh'][Math.floor(Math.random() * 4)]);
+    if (Math.random() < 0.35 && !L.who.hp.busy()) L.who.gesture(['beat', 'nod', 'shrug', 'laugh'][Math.floor(Math.random() * 4)]);
     R.wait = 0.5;
+  }
+};
+
+// ==== npc/sim.js ====
+/* ---------- the town goes on while you do not watch: sleeping, the fast clock ----------
+   Game time and the people's own time are one: a game minute is 1/TIME.RATE seconds of their lives (2 s). When
+   the clock jumps (TIME.skip: sleep, waking up somewhere) or runs fast (the developers' "Uhr 60×", which passes
+   its extra minutes on as small skips every frame), those seconds are lived here, in steps of a second, without
+   bodies or pictures: the wounds bleed and close (G.abstract: a man who is awake keeps a hand on it), the fallen
+   get up, people walk their way (NPC.ff: along the route, no collisions), the doctor treats who comes, the dead
+   barkeeper is taken away and the next one arrives — exactly as it would have gone, only without drawing any of it.
+   Nobody speaks (canBeHeard is false while G.abstract). Once nothing is going on any more, the rest of the time
+   is healing only and done at once. */
+const WORLDSIM = {
+  pre: [],
+  // fn(minutes, soft) before a jump is lived through (stop what cannot go on without you: a fight, a gun drawn)
+  before(fn) { this.pre.push(fn); },
+  run(m, soft) {
+    if (!(m > 0)) return;
+    for (const f of this.pre) { try { f(m, soft); } catch (e) { /* one must not stop the rest */ } }
+    const end = TIME.min + m;
+    let left = m / TIME.RATE, healM = 0;
+    G.abstract = true;
+    try {
+      while (left > 1e-6) {
+        const s = Math.min(1, left); left -= s;
+        TIME.min += s * TIME.RATE; healM += s * TIME.RATE;
+        this.step(s, soft);
+        if (healM >= 5) { this.heal(healM); healM = 0; }
+        if (!soft && this.settled()) break;
+      }
+      TIME.min = end;
+      this.heal(healM + left * TIME.RATE);
+    } finally { G.abstract = false; }
+  },
+  step(s, soft) {
+    const fighting = (N) => N && N.fight && N.fight.on;
+    for (const N of NPCS.list.slice()) if (!(soft && fighting(N))) N.hp.update(s);
+    if (!(soft && fighting(BARKEEP.npc))) BARKEEP.update(s);
+    if (!(soft && fighting(DOC.npc))) DOC.update(s);
+    for (const N of NPCS.list) N.ff(s);
+  },
+  heal(m) { if (m > 0) for (const N of NPCS.list) N.hp.heal(m); },
+  // nothing left that would change but healing
+  settled() {
+    for (const N of NPCS.list) { const H = N.hp; if (H.dead) continue; if (H.anim || H.bleed > 0 || H.dying > 0 || N.walking()) return false; }
+    return BARKEEP.settled() && DOC.settled();
   }
 };
 
@@ -13054,7 +13982,7 @@ const HUD = {
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
     // the place and the time at the start, and after every jump in time (sleep, blackout)
     this.showClock(8);
-    TIME.onSkip(() => this.showClock(7));
+    TIME.onSkip((m, soft) => { if (!soft) this.showClock(7); });
   },
   setSlow(on) {
     G.slow = on;
@@ -13290,6 +14218,7 @@ const WHEEL = {
   ICON: {
     gun: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 11h20l2-2h3v5h-4l-1 2H14l-2 3v6H7l1-7-4-2z" fill="currentColor"/></svg>',
     bottle: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 3h6v6l3 4v16H10V13l3-4z" fill="currentColor"/><rect x="12" y="16" width="8" height="6" fill="#1b120b" opacity=".45"/></svg>',
+    bandage: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="9" width="22" height="14" rx="7" fill="currentColor"/><path d="M14 12h4v3h3v4h-3v3h-4v-3h-3v-4h3z" fill="#7a1c1c"/></svg>',
     fist: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 13c0-2 2-3 4-3h10c2 0 3 2 3 4v6c0 4-3 7-7 7h-4c-4 0-6-3-6-6z" fill="currentColor"/></svg>'
   },
   init() {
@@ -13313,9 +14242,17 @@ const WHEEL = {
       : { icon: 'fist', label: 'Revolver wegstecken', run: () => GUN.toggleHolster(), ok: true });
     for (const id of Object.keys(INV.items)) {
       const it = ITEMS[id];
+      if (it.kind === 'aid') s.push({ icon: 'bandage', label: it.name, sub: INV.items[id] + ' Stück', run: () => this.selfAid(), ok: !FALL.busy() && !DRINK.busy() });
       if (it.kind === 'carry') s.push({ icon: it.vessel === 'bottle' ? 'bottle' : 'bottle', label: it.name, sub: (INV.sips[id] ?? it.sips) + ' Schlucke', run: () => DRINK.start(id), ok: !DRUNK.blocked() && !(DRINK.busy() && DRINK.src === 'glass') });
     }
     return s;
+  },
+  // a dressing on your own cuts and holes: some of it back, and the bag one roll lighter
+  selfAid() {
+    if (PHP.hp > 0.92) { TOAST.show('Du bist nicht verletzt.'); return; }
+    if (!INV.remove('bandage')) return;
+    PHP.hp = Math.min(1, PHP.hp + 0.22); FOLEY.cloth(PLAY.pos, 1.3);
+    TOAST.show('Du verbindest dich notdürftig.');
   },
   toggle() { if (this.open) this.close(); else this.show(); },
   show() {

@@ -13,11 +13,11 @@ const REST = {
       if (this.need > 9 && G.time - this.lastToast > 300 && !FIST.active()) { this.lastToast = G.time; TOAST.show(this.need > 13 ? 'Du kannst kaum noch die Augen offen halten. Zeit zu schlafen.' : 'Du wirst müde.'); }
     });
     // whatever passes while asleep: drink wears off, stamina comes back
-    TIME.onSkip((m) => {
+    TIME.onSkip((m, soft) => {
       const h = m / 60;
       DRUNK.level = Math.max(0, DRUNK.level - h * 0.14 - (DRUNK.stomach + DRUNK.gut) * 0.5 * Math.min(1, h));
       DRUNK.stomach = Math.max(0, DRUNK.stomach - h * 0.5); DRUNK.gut = Math.max(0, DRUNK.gut - h * 0.5);
-      FIST.stamina = 1;
+      if (!soft) FIST.stamina = 1;
     });
   },
   // the longest sleep in minutes: in a bed always up to 12 hours; in a chair or on a bench a doze of two hours,

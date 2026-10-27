@@ -10,7 +10,7 @@ const PHP = {
   dose(k, by) { if (this.poison <= 0.01) { this.poisonT = 0; this.poisonBy = by; this.poisonSaid = 0; } this.poison = Math.min(2, this.poison + k); },
   init() {
     this.el = document.getElementById('hurtFx');
-    TIME.onSkip((m) => { this.hp = Math.min(1, this.hp + m / 60 * 0.25); this.daze = 0; });
+    TIME.onSkip((m, soft) => { this.hp = Math.min(1, this.hp + m / 60 * 0.25); if (!soft) this.daze = 0; });
   },
   /* o: { power, head, dir: {x, z} (the way the blow travels), by: npc, heavy, shot } */
   hit(o) {

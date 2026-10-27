@@ -746,7 +746,7 @@ HARM_SHOOT = '''(a) => { const N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.toStre
   const o = new THREE.Vector3(-8, 1.5, 2), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
   if (hit) GUN.hitResult(hit, d, 0);
   for (let k = 0; k < 60 * 3; k++) G.stepFrame(1/60);
-  return { zone: hit && hit.zone, side: hit && hit.side, dead: N.hp.dead, mem: BARKEEP.mem[BARKEEP.mem.length - 1] || '', limp: +N.hp.limp.toFixed(2), arm: N.hp.armUse.slice(), blood: +N.hp.blood.toFixed(2), st: BARKEEP.st }; }'''
+  return { zone: hit && hit.zone, side: hit && hit.side, dead: N.hp.dead, mem: BARKEEP.mem[BARKEEP.mem.length - 1] || '', limp: +N.hp.limp.toFixed(2), arm: N.hp.armUse.slice(), blood: +N.hp.blood.toFixed(2), st: BARKEEP.st, down: !!N.hp.anim, pain: +N.hp.pain.toFixed(2), bleed: +(N.hp.bleed * 1000).toFixed(2) }; }'''
 async def check_harm(g):
     """a bullet knows where it hit: zone and side from the part of the body; each zone does its own thing; it is remembered"""
     await g.js(RESET)
@@ -766,8 +766,8 @@ async def check_harm(g):
     await g.js('''() => { BARKEEP.revive(); BARKEEP.forget(); const N = BARKEEP.npc; N.pos.copy(BARKEEP.roomPt(BARKEEP.X.stand, -6.4, new THREE.Vector3())); N.room = BARKEEP.R; BARKEEP.st = 'idle'; G.noRender = false; }''')
     r = out
     ok = (r['head']['zone'] == 'head' and r['head']['dead'] and r['shoulderR']['zone'] == 'shoulder' and r['shoulderR']['side'] == 'R' and r['shoulderR']['arm'][1] < 0.2
-          and 'rechte Schulter' in r['shoulderR']['mem'] and r['legL']['zone'] == 'leg' and r['legL']['side'] == 'L' and r['legL']['limp'] > 0.3 and 'linke Bein' in r['legL']['mem']
-          and r['handR']['zone'] == 'hand' and r['belly']['zone'] == 'belly' and r['belly']['blood'] < 0.85 and not r['belly']['dead']
+          and 'rechte Schulter' in r['shoulderR']['mem'] and r['legL']['zone'] == 'thigh' and r['legL']['side'] == 'L' and r['legL']['limp'] > 0.3 and 'linken Oberschenkel' in r['legL']['mem']
+          and r['handR']['zone'] == 'hand' and r['belly']['zone'] == 'belly' and r['belly']['blood'] < 0.99 and r['belly']['down'] and r['belly']['pain'] > 0.6 and not r['belly']['dead']
           and r['item']['item'] == 'glass' and r['item']['wounds'] == 0 and r['item']['gone'] and 'aus der Hand' in (r['item']['mem'] or ''))
     return ok, json.dumps(r, ensure_ascii=False)
 
@@ -810,7 +810,7 @@ async def check_doctor(g):
     """shot in the shoulder, Hank walks to the doctor (out of the saloon, down the street, into the practice), gets
        bandaged and walks back behind his bar; the player can be treated for 50 cents"""
     await g.js(RESET)
-    r = await g.js('''() => { const N = BARKEEP.npc, R = BARKEEP.R, out = { trip: [] }; BARKEEP.revive(); BARKEEP.forget();
+    r = await g.js('''() => { const N = BARKEEP.npc, R = BARKEEP.R, out = { trip: [] }; BARKEEP.revive(); BARKEEP.forget(); DOC.att = 0; DOC.fooledN = 0;
       const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); PLAY.yaw = R.ry + Math.PI; GAIT.init = false; G.noRender = true;
       for (let k = 0; k < 60; k++) G.stepFrame(1/60);
       N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(-0.19, 0.38, 0.13).applyMatrix4(N.ch.p.torso.matrixWorld);
@@ -829,7 +829,7 @@ async def check_doctor(g):
       out.offer = (INTERACT.acts.find((a) => /Behandeln/.test(a.label)) || {}).label || null;
       if (!out.offer) out.why = { acts: INTERACT.acts.map((a) => a.label), st: DOC.st, avail: DOC.available(), room: G.room && G.room.type, sit: SIT.state, d: Math.hypot(D.pos.x - PLAY.pos.x, D.pos.z - PLAY.pos.z), y: PLAY.pos.y, drunk: DRUNK.blocked(), fist: FIST.st, out: !!PHP.out, fall: FALL.busy() };
       DOC.treatPlayer(); for (let k = 0; k < 60 * 12 && PHP.hp < 1; k++) G.stepFrame(1/60);
-      out.healed = PHP.hp === 1; out.paid = m0 - INV.money;
+      out.healed = PHP.hp === 1; out.paid = m0 - INV.money; if (!out.healed) out.docSt = [DOC.st, DOC.phase, DOC.npc.walking(), DOC.npc.speed, DOC.npc.goal && [DOC.npc.goal.x, DOC.npc.goal.z], [DOC.npc.pos.x, DOC.npc.pos.z], DOC.spot("treat"), [PLAY.pos.x, PLAY.pos.z], DOC.npc.waitFor && DOC.npc.waitFor.t - G.time, DOC.npc.hp.busy(), CHAT.run && CHAT.run.topic];
       BARKEEP.revive(); BARKEEP.forget(); DOC.persona().forget(); G.noRender = false;
       return out; }''')
     trip = '>'.join(r['trip'])
@@ -957,7 +957,7 @@ async def check_figure(g):
        (what he says, fear when aimed at, pain, dead), blink, the mouth follows the voice; hands close to fists
        in a fight; a shot at a hand finds the hand"""
     await g.js(RESET)
-    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true;
+    r = await g.js('''() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); G.noRender = true; PLAY.pos.copy(rwp(B.R, 1.5, B.R.floorY, -5)); GAIT.init = false;
       const meshes = (ch) => { let n = 0; ch.root.traverse((o) => { if (o.isMesh) n++; }); return n; };
       out.meshes = [meshes(W.ch), meshes(N.ch)]; out.skinned = !!N.ch.mesh.isSkinnedMesh; out.bones = N.ch.parts.length;
       const I = (ch, k) => +ch.mesh.morphTargetInfluences[ch.mi[k]].toFixed(2);
@@ -1140,8 +1140,139 @@ async def check_deepgram(g):
     ok = r['prov'] == 'deepgram' and r['url'] and r['binary'] and 'Gib mir' in r['partial'] and r['sentToHank'] and r['dead']
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_bleed(g):
+    """each wound bleeds by itself: a torn thigh artery much faster than a calf, a calf faster than a foot; a torn
+       leg artery keeps him down; a gut-shot curls up in agony, holding his belly; pressing (the own hand) helps"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, out = {}; G.noRender = true; PLAY.pos.set(-20, 0, 8); GAIT.init = false;
+      const shoot = (zone, part, side, lp, art) => { B.revive(); B.toStreet(); N.pos.set(-8, 0, 2); for (let k = 0; k < 10; k++) G.stepFrame(1/60);
+        const r0 = Math.random; Math.random = () => art ? 0.001 : 0.5;
+        N.hp.shot({ zone, side, part, local: new THREE.Vector3(lp[0], lp[1], lp[2]), dir: new THREE.Vector3(0, 0, -1), point: N.pos.clone() }); Math.random = r0; B.st = 'street';
+        const b0 = N.hp.blood; for (let k = 0; k < 60 * 20; k++) { G.stepFrame(1/60); if (B.st !== 'street' && B.st !== 'hurt') B.st = 'street'; }
+        return { lost: +N.hp.wounds.reduce((a, w) => a + (w.lost || 0), 0).toFixed(4), down: !!N.hp.anim, pain: +N.hp.pain.toFixed(2), clutch: !!(N.hp.clutch && N.hp.clutch.lying), dead: N.hp.dead }; };
+      out.thighArt = shoot('thigh', 'thighR', 'R', [-0.02, -0.2, 0.09], true);
+      out.thigh = shoot('thigh', 'thighR', 'R', [-0.02, -0.2, 0.09], false);
+      out.calf = shoot('calf', 'shinL', 'L', [0, -0.2, 0.06], false);
+      out.foot = shoot('foot', 'footL', 'L', [0, -0.05, 0.08], false);
+      out.belly = shoot('belly', 'torso', '', [-0.06, 0.1, 0.13], false);
+      out.words = N.hp.describe();
+      B.revive(); G.noRender = false; return out; }""")
+    ok = (r['thighArt']['lost'] > 0.08 and r['thighArt']['down'] and r['thighArt']['lost'] > r['thigh']['lost'] * 1.5 and r['thigh']['lost'] > r['calf']['lost'] > r['foot']['lost']
+          and r['belly']['down'] and r['belly']['pain'] > 0.45 and r['belly']['clutch'] and 'Bauch' in r['words'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_aid(g):
+    """first aid: kneel by Hank (a torn thigh artery), press on it (the bleeding all but stops), dress it with the
+       bandage from the bag (tied off); he remembers it, your hands are bloody, and he still goes to the doctor"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, out = {}; B.revive(); B.forget(); G.noRender = true; INV.items.bandage = 1;
+      PLAY.pos.set(-9.2, 0, 2.6); PLAY.yaw = 2; GAIT.init = false; B.toStreet(); N.pos.set(-8, 0, 2); for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      const r0 = Math.random; Math.random = () => 0.001;
+      N.hp.shot({ zone: 'thigh', side: 'R', part: 'thighR', local: new THREE.Vector3(-0.02, -0.2, 0.09), dir: new THREE.Vector3(0, 0, -1), point: N.pos.clone() });
+      Math.random = r0; N.onHarm({ type: 'shot', zone: 'thigh', side: 'R' });
+      for (let k = 0; k < 60 * 2; k++) G.stepFrame(1/60);
+      out.bleed0 = +(N.hp.bleed * 1000).toFixed(2);
+      PLAY.pos.set(N.pos.x - 0.9, N.pos.y, N.pos.z + 0.2); PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); GAIT.init = false; G.stepFrame(1/60);
+      INTERACT.update(true); out.offer = INTERACT.acts.map((a) => a.label);
+      const press = INTERACT.acts.find((a) => /abdrücken/.test(a.label)); if (press) press.run();
+      for (let k = 0; k < 60 * 2; k++) G.stepFrame(1/60);
+      out.pressing = AID.st; out.bleedPress = +(N.hp.bleed * 1000).toFixed(2);
+      INTERACT.update(true); const wrap = INTERACT.acts.find((a) => /Verbinden/.test(a.label)); out.wrapOffer = !!wrap; if (wrap) wrap.run();
+      for (let k = 0; k < 60 * 8; k++) G.stepFrame(1/60);
+      const w = N.hp.wounds.find((x) => x.zone === 'thigh');
+      out.field = !!(w && w.field); out.mesh = !!(w && w.fieldMesh); out.bag = INV.items.bandage || 0; out.bleedAfter = +(N.hp.bleed * 1000).toFixed(3);
+      out.mem = B.mem.filter((m) => /verbunden/.test(m)).slice(-1)[0] || ''; out.hands = !!(W.ch.p.handR.userData.blood);
+      if (AID.st) AID.end(); for (let k = 0; k < 40; k++) G.stepFrame(1/60);
+      // he gets up on it now and goes to the doctor all the same
+      let k = 0; for (; k < 60 * 60 && !['toDoc', 'atDoc'].includes(B.st); k++) G.stepFrame(1/60);
+      out.after = B.st; out.needsDoc = N.hp.needsDoc();
+      B.revive(); B.forget(); G.noRender = false; return out; }""")
+    ok = (r['bleed0'] > 3 and 'Wunde abdrücken' in r['offer'] and r['pressing'] == 'work' and r['bleedPress'] < 1.5 and r['wrapOffer'] and r['field'] and r['mesh']
+          and r['bag'] == 0 and r['bleedAfter'] < 0.5 and 'notdürftig verbunden' in r['mem'] and r['hands'] and r['after'] in ('toDoc', 'atDoc') and r['needsDoc'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_docmeet(g):
+    """Hank, shot, is on his way to the doctor when you call the doctor to the saloon: they meet in the street, Hank
+       stops and waits, the doctor patches him up there, and Hank goes back to his bar instead of on to the practice"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, R = B.R, D = DOC, out = { trip: [] }; B.revive(); B.forget(); G.noRender = true; D.fooledN = 0; D.att = 0;
+      const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0;
+      PLAY.pos.set(10, 0, 9); GAIT.init = false;
+      N.hp.shot({ zone: 'shoulder', side: 'R', part: 'torso', local: new THREE.Vector3(-0.19, 0.38, 0.13), dir: new THREE.Vector3(1, 0, 0), point: N.pos.clone() });
+      N.onHarm({ type: 'shot', zone: 'shoulder', side: 'R' });
+      let k = 0; for (; k < 60 * 60 && !(B.st === 'toDoc' && !N.room); k++) G.stepFrame(1/60);
+      out.onWay = B.st + '/' + (N.room ? N.room.type : 'street');
+      TALK.lastText = 'Doc, schnell, Hank verblutet im Saloon!'; D.callFromTalk('come');
+      let stopped = 0, met = null;
+      for (k = 0; k < 60 * 120 && !N.hp.wounds.some((w) => w.bandaged); k++) { const p0 = N.pos.clone(); G.stepFrame(1/60); if (D.callJob && D.callJob.phase === 'work') { met = met || [B.st, N.room ? N.room.type : 'street']; if (N.pos.distanceTo(p0) < 0.002) stopped++; } }
+      out.met = met; out.stoppedFrames = stopped; out.bandaged = N.hp.wounds.some((w) => w.bandaged);
+      for (k = 0; k < 60 * 120 && !(B.st === 'idle' && N.room === R); k++) { G.stepFrame(1/60); const st = B.st; if (out.trip[out.trip.length - 1] !== st) out.trip.push(st); }
+      out.home = B.st === 'idle' && N.room === R; out.neverAtDoc = !out.trip.includes('atDoc');
+      for (k = 0; k < 60 * 60 && D.st === 'call'; k++) G.stepFrame(1/60);
+      out.docHome = D.st;
+      B.revive(); B.forget(); D.att = 0; D.knows = []; G.noRender = false; return out; }""")
+    ok = r['onWay'].startswith('toDoc/street') and r['met'] is not None and r['stoppedFrames'] > 120 and r['bandaged'] and r['home'] and r['neverAtDoc'] and r['docHome'] == 'idle'
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_fastclock(g):
+    """time is one: with the clock at 60× (and when sleeping) the town lives those minutes: Hank, shot, gets to the
+       doctor, is patched up and back at his bar within game minutes; dead, he is taken away and the next one arrives
+       a day later; a night's sleep takes little computing"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, R = B.R, D = DOC, out = {}; B.revive(); B.forget(); G.noRender = true;
+      const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle'; D.callJob = null; D.queue.length = 0;
+      PLAY.pos.set(60, 0, 9); GAIT.init = false; G.room = null;
+      N.hp.shot({ zone: 'shoulder', side: 'R', part: 'torso', local: new THREE.Vector3(-0.19, 0.38, 0.13), dir: new THREE.Vector3(1, 0, 0), point: N.pos.clone() });
+      N.onHarm({ type: 'shot', zone: 'shoulder', side: 'R' });
+      const m0 = TIME.min; TIME.speed = 60; let k = 0;
+      for (; k < 60 * 20 && !(B.st === 'idle' && N.hp.wounds.some((w) => w.bandaged) && N.room === R); k++) G.stepFrame(1/60);
+      out.realSecs = +(k / 60).toFixed(1); out.gameMin = Math.round(TIME.min - m0); out.back = B.st === 'idle' && N.room === R; out.bandaged = N.hp.wounds.some((w) => w.bandaged);
+      // the one at the bar dies; the town takes it from there
+      const who0 = B.whoI; N.hp.die('Test', null, 'back'); B.killedBy = 'player';
+      for (k = 0; k < 60 * 70 && B.whoI === who0; k++) G.stepFrame(1/60);
+      TIME.speed = 1;
+      out.next = B.whoI > who0 ? B.who().name : null; out.dayLater = Math.round(TIME.min - m0);
+      // a night's sleep: how long it takes to compute
+      B.npc.hp.shot({ zone: 'arm', side: 'L', part: 'uArmL', local: new THREE.Vector3(0, -0.14, 0.06), dir: new THREE.Vector3(1, 0, 0), point: B.npc.pos.clone() });
+      B.npc.onHarm({ type: 'shot', zone: 'arm', side: 'L' });
+      const t0 = performance.now(); TIME.skip(600); out.skipMs = Math.round(performance.now() - t0);
+      out.afterSleep = [B.st, B.npc.hp.wounds.some((w) => w.bandaged), B.npc.room === R];
+      // put Hank back for the other checks (and the town as it was: no graves, nobody knows)
+      B.whoI = 0; B.npc.dispose(); B.makeNpc(B.scene0); B.st = 'idle'; B.temper = null; B.grudge = 0; B.poisonNext = false; B.killedBy = null; B.diedAt = null; B.cause = null; B.metNew = false; B.pickIdle();
+      for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.meshes = []; GRAVES.list = []; D.knows = []; D.att = 0; D.mem = [];
+      G.noRender = false; return out; }""")
+    ok = (r['back'] and r['bandaged'] and r['gameMin'] < 400 and r['next'] and r['dayLater'] >= 1440 and r['skipMs'] < 1500
+          and r['afterSleep'][0] == 'idle' and r['afterSleep'][1] and r['afterSleep'][2])
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_react(g):
+    """people start at a shot (hands up to the chest, eyes to where it came from); Hank asks a hurt stranger what
+       happened; what Hank knows about you reaches the doctor when they are together (without a word when you are not there)"""
+    await g.js(RESET)
+    r = await g.js(r"""() => { const B = BARKEEP, N = B.npc, R = B.R, D = DOC, out = {}; B.revive(); B.forget(); G.noRender = true; const aiWas = SETTINGS.v.aiTalk; SETTINGS.v.aiTalk = false;
+      // a shot in the practice: the doctor starts
+      const sd = D.spot('desk'); D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.stop(); D.npc.room = D.R; D.st = 'idle';
+      const pp = rwp(D.R, 0, D.R.floorY, -2); PLAY.pos.set(pp.x, pp.y, pp.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      worldEvent('shot', pp.x, pp.y + 1.4, pp.z, { by: 'player', room: 'doctor' });
+      let g1 = null; for (let k = 0; k < 40; k++) { G.stepFrame(1/60); g1 = g1 || D.npc.gest; }
+      out.start = g1; out.alert = D.npc.alertT > G.time;
+      // hurt, at the bar: Hank asks
+      const bp = rwp(R, 2.6, R.floorY, -6.4); PLAY.pos.set(bp.x, bp.y, bp.z); GAIT.init = false; PHP.hp = 0.4; N.asked = new Set(); N.askT = -99; N.aiAt = -99;
+      const said = []; const sp = N.speak; N.speak = function (t, d, m, kk) { said.push(t); return sp.call(this, t, d, m, kk); };
+      for (let k = 0; k < 60 * 8 && !said.some((t) => /passiert/.test(t)); k++) G.stepFrame(1/60);
+      N.speak = sp; out.asked = said.filter((t) => /passiert|Schüsse/.test(t)); PHP.hp = 1;
+      // gossip: Hank remembers something, then stands by the doctor where you cannot hear them
+      B.remember('Er hat dir in die rechte Schulter geschossen (Tag 1, mittags).');
+      PLAY.pos.set(60, 0, 9); GAIT.init = false; G.room = null; B.st = 'street'; N.pos.set(-30, 0, 2); N.room = null; D.npc.pos.set(-29, 0, 2); D.npc.room = null; D.st = 'call'; D.callJob = { phase: 'after', t: -999 };
+      CHAT.cool.clear(); CHAT.t = 0; CHAT.run = null; GOSSIP.shared.clear(); const k0 = D.knows.length; N.talkT = 0; SAY.hide(N); D.npc.talkT = 0;
+      for (let k = 0; k < 60 * 8 && D.knows.length === k0; k++) G.stepFrame(1/60);
+      out.docHeard = D.knows.slice(k0).filter((x) => /Hank hat dir erzählt/.test(x));
+      SETTINGS.v.aiTalk = aiWas; B.revive(); B.forget(); D.st = 'idle'; D.callJob = null; D.att = 0; D.knows = []; CHAT.run = null; D.npc.pos.set(sd.x, D.R.floorY, sd.z); D.npc.room = D.R; G.noRender = false; return out; }""")
+    ok = r['start'] in ('flinch', 'cower') and r['alert'] and len(r['asked']) > 0 and len(r['docHeard']) > 0
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

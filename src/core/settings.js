@@ -14,6 +14,7 @@ const SETTINGS = {
     { group: 'Grafik' },
     { key: 'quality', label: 'Bildqualität', type: 'choice', def: 'high', options: [['low', 'Niedrig'], ['mid', 'Mittel'], ['high', 'Hoch']] },
     { key: 'camDist', label: 'Kamera-Abstand', type: 'range', min: 3.2, max: 12, step: 0.1, def: 7.5, unit: ' m' },
+    { key: 'blood', label: 'Blut', type: 'choice', def: 'normal', options: [['off', 'Aus'], ['normal', 'Normal'], ['more', 'Stark']] },
     { key: 'showFps', label: 'Bildrate anzeigen', type: 'toggle', def: true },
     { group: 'Gespräche' },
     { key: 'aiTalk', label: 'KI-Gespräche (Claude)', type: 'toggle', def: true },

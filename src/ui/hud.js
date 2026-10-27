@@ -83,7 +83,7 @@ const HUD = {
     this.hintTimer = setTimeout(() => this.hideHint(), 14000);
     // the place and the time at the start, and after every jump in time (sleep, blackout)
     this.showClock(8);
-    TIME.onSkip(() => this.showClock(7));
+    TIME.onSkip((m, soft) => { if (!soft) this.showClock(7); });
   },
   setSlow(on) {
     G.slow = on;

@@ -5,7 +5,9 @@ const ITEMS = {
   beer:    { name: 'Bier', price: 10, kind: 'drink', vessel: 'mug', sips: 3, alc: 0.07, sipT: 0.95 },
   whiskey: { name: 'Whiskey', price: 25, kind: 'drink', vessel: 'shot', sips: 1, alc: 0.2, sipT: 0.45 },
   water:   { name: 'Wasser', price: 5, kind: 'drink', vessel: 'glass', sips: 2, alc: -0.05, sipT: 0.8 },
-  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.15, sipT: 0.75 }
+  bottle:  { name: 'Flasche Whiskey', price: 150, kind: 'carry', vessel: 'bottle', sips: 6, alc: 0.15, sipT: 0.75 },
+  // a roll of linen and a pad: one field dressing (play/aid.js); the doctor sells it
+  bandage: { name: 'Verbandszeug', price: 15, kind: 'aid' }
 };
 const MENU_BAR = ['beer', 'whiskey', 'water', 'bottle'];
 
@@ -13,7 +15,7 @@ function money(c) { return '$' + (c / 100).toFixed(2); }
 function price(c) { return c < 100 ? c + ' ¢' : money(c); }
 
 const INV = {
-  money: 1000, items: {}, sips: {},     // sips: what is left in an opened bottle
+  money: 1000, items: { bandage: 1 }, sips: {},     // sips: what is left in an opened bottle
   has(id) { return (this.items[id] || 0) > 0; },
   add(id, n) { this.items[id] = (this.items[id] || 0) + (n || 1); if (ITEMS[id].kind === 'carry' && this.sips[id] === undefined) this.sips[id] = ITEMS[id].sips; },
   remove(id) { if (!this.has(id)) return false; this.items[id]--; if (!this.items[id]) { delete this.items[id]; delete this.sips[id]; } return true; },

@@ -18,7 +18,7 @@ const BUMP = {
 };
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
-  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); },
+  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); onWorldEvent((e) => this.heard(e)); },
   update(dt) {
     BARKEEP.update(dt);
     DOC.update(dt);
@@ -29,7 +29,22 @@ const NPCS = {
     SAY.update(dt);
   },
   // the player's position seen from a room: is he in it?
-  playerIn(R) { return G.room === R; }
+  playerIn(R) { return G.room === R; },
+  /* what everybody hears and sees: a bang makes them start (after the sound has reached them), a body hitting
+     the floor or the bar draws the eyes. How loud: a shot carries across the town, glass breaking through the room */
+  heard(e) {
+    const loud = { shot: 1, npcShot2: 1, npcShot: 0.7, impact: 0.45, glass: 0.45, npcSlam: 0.6, npcDown: 0.5, npcDead: 0.5, punch: 0.25, npcPunch: 0.25, bump: 0.2 }[e.type];
+    if (!loud) return;
+    const R = e.room !== undefined && typeof e.room === 'string' ? ROOMS.find((r) => r.type === e.room) : roomAt(e.x, e.z, 0.05, e.y + 0.1);
+    for (const n of this.list) {
+      if (n.hp.dead || n.hp.out || n.id === e.npc || n.id === e.by) continue;
+      const d = Math.hypot(n.pos.x - e.x, n.pos.z - e.z), same = (n.room || null) === (R || null);
+      let k = loud * (same ? (d < 12 ? 1 : 0.7) : !n.room && !R ? clamp(1 - d / 70, 0, 1) : clamp(0.65 - d / 40, 0, 0.6));
+      if (loud < 0.5 && (!same || d > 9)) k = 0;
+      if (k < 0.08) continue;
+      n.startle(e.x, e.y + 1, e.z, k, d / 340 + 0.08 + Math.random() * 0.14, e);
+    }
+  }
 };
 
 class NPC {
@@ -94,18 +109,39 @@ class NPC {
   plight() {
     const H = this.hp;
     if (H.dead) return 4;
-    if (H.dying > 0 || H.blood < 0.3) return 3;
-    if (H.anim && (H.bleed > 0.0008 || H.blood < 0.6)) return 2;
-    if (H.blood < 0.75 || H.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5)) return 1;
+    if (H.dying > 0 || H.out || H.blood < BLOOD_FAINT || H.wounds.some((w) => w.art && !w.field && !w.bandaged && w.b && !H.dead && (w.aidT || 0) < G.time)) return 3;
+    if (H.anim && (H.bleed > 0.0004 || H.blood < BLOOD_WEAK || H.wounds.some((w) => w.gut && !w.bandaged))) return 2;
+    if (H.blood < 0.8 || H.needsDoc()) return 1;
     return 0;
   }
   walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
+  /* time lived without being watched (npc/sim.js): s seconds of walking along the way, no collisions, no steps,
+     no pose; where he ends up, he is */
+  ff(s) {
+    const H = this.hp;
+    if (H.canWalk() && !(this.waitFor && this.waitFor.t > G.time)) {
+      let left = this.walkSpeed * (this.hurry || 1) * H.speedK() * s;
+      for (let k = 0; k < 24 && left > 1e-4; k++) {
+        if (!this.goal) { if ((this.path && this.path.length) || this.dest) this.nextLeg(); if (!this.goal) break; }
+        const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
+        if (d > 1e-4) this.yaw = Math.atan2(dx, dz);
+        if (d <= left) { this.pos.x = this.goal.x; this.pos.z = this.goal.z; left -= d; this.goal = null; if (this.legPass) this.nextLeg(); }
+        else { this.pos.x += dx / d * left; this.pos.z += dz / d * left; left = 0; }
+      }
+      if (!this.walking() && this.faceYaw !== null) this.yaw = this.faceYaw;
+    }
+    this.vx = this.vz = 0; this.speed = 0;
+    this.pos.y = groundAt(this.pos.x, this.pos.z, this.pos.y + 0.5);
+    this.room = roomAt(this.pos.x, this.pos.z, 0.05, this.pos.y + 0.1); this.roomT = 0.2;
+    this.body.cx = this.pos.x; this.body.cz = this.pos.z;
+    H.lowness = H.anim ? H.anim.pose(this.ch.pose) : 0;
+  }
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
   // say something out loud: the bubble and the voice
   // he speaks only where you can hear him: in his room (or near him outdoors)
-  canBeHeard() { if (this.hp && this.hp.dead) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
+  canBeHeard() { if (G.abstract || (this.hp && (this.hp.dead || this.hp.out))) return false; return this.room ? G.room === this.room : !G.room && Math.hypot(PLAY.pos.x - this.pos.x, PLAY.pos.z - this.pos.z) < 20; }
   // keep: a ready-made line (its sound is kept in the browser, so ElevenLabs is paid for it once)
   speak(text, dur, mood, keep) { this.mood = mood || 'neutral'; this.moodT = G.time + (dur || clamp(1 + text.length * 0.06, 2, 8)) + 2.5; if (!this.canBeHeard()) return false; SAY.show(this, text, dur); VOICE.line(this, text, mood, keep); return true; }
   /* a gesture (char/gesture.js GESTURES): name, what it points at (a world point, or null), held: until endGesture()
@@ -115,6 +151,26 @@ class NPC {
     this.gest = name; this.gestT = 0; this.gestEnd = null; this.gestTarget = target || null; this.gestHeld = !!held;
   }
   endGesture() { if (this.gest && this.gestEnd === null) this.gestEnd = this.gestT; }
+  /* he starts: a bang (k: how hard), after a moment (delay: the sound on its way, the nerves); the body jerks, the
+     hands jump up, and for a few seconds the head stays turned to where it came from */
+  startle(x, y, z, k, delay, e) {
+    this.startleQ = { t: G.time + (delay || 0), x, y, z, k, e };
+  }
+  doStartle(S) {
+    const H = this.hp;
+    this.alertP = (this.alertP || new THREE.Vector3()).set(S.x, S.y, S.z); this.alertT = G.time + 2 + S.k * 3;
+    this.fear = Math.max(this.fear || 0, G.time + 0.8 + S.k * 1.5);
+    if (H.busy()) { if (H.anim && !H.dead) { H.flinch.k = Math.max(H.flinch.k, 0.4 * S.k); } return; }
+    if (this.fight && this.fight.on) return;
+    const close = Math.hypot(S.x - this.pos.x, S.z - this.pos.z) < 4.5;
+    if (S.k > 0.35 && !this.talking) this.gesture(close && S.k > 0.8 ? 'cower' : 'flinch');
+    // a jerk away from it, a half step back when it was close
+    const dx = this.pos.x - S.x, dz = this.pos.z - S.z, d = Math.hypot(dx, dz) || 1;
+    H.flinch.yaw = clamp(-((dx / d) * Math.cos(this.yaw) - (dz / d) * Math.sin(this.yaw)) * 0.6, -0.6, 0.6) * S.k; H.flinch.pitch = -0.25 * S.k; H.flinch.roll = 0; H.flinch.head = 1; H.flinch.k = Math.max(H.flinch.k, S.k); H.flinch.punch = true;
+    if (close && !this.goal) { this.vx += dx / d * 0.9 * S.k; this.vz += dz / d * 0.9 * S.k; }
+    if (S.k > 0.5) FOLEY.grunt(this.pos, 1.15, 0.35 * S.k);
+    if (this.onStartle) this.onStartle(S);
+  }
   // put hand i at p (character space: +x his left, +y up, +z ahead), weight w
   reach(i, x, y, z, w) { const h = this.hand[i]; h.p.set(x, y, z); h.tw = w === undefined ? 1 : w; }
   free(i) { this.hand[i].tw = 0; }
@@ -136,10 +192,13 @@ class NPC {
     const H = this.hp;
     H.update(dt);
     const can = H.canWalk();
+    // waiting for someone who comes to him (the doctor): standing, facing him, the way kept for later
+    const hold = this.waitFor && this.waitFor.t > G.time && !this.waitFor.by.hp.dead;
+    if (hold) { const B = this.waitFor.by; this.faceHold = Math.atan2(B.pos.x - this.pos.x, B.pos.z - this.pos.z); }
     // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
-    if (!this.goal && can && ((this.path && this.path.length) || this.dest)) this.nextLeg();
-    if (this.goal && can) {
+    if (!this.goal && can && !hold && ((this.path && this.path.length) || this.dest)) this.nextLeg();
+    if (this.goal && can && !hold) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
       else { const top = this.walkSpeed * (this.hurry || 1) * H.speedK(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
@@ -181,7 +240,7 @@ class NPC {
     this.speed = can ? Math.hypot(this.vx, this.vz) : 0;
     // facing: where it was told to face, else where it walks
     if (can) {
-      const fy = this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
+      const fy = hold ? this.faceHold : this.faceYaw !== null ? this.faceYaw : this.speed > 0.3 ? Math.atan2(this.vx, this.vz) : this.yaw;
       this.yaw += wrapA(fy - this.yaw) * (1 - Math.exp(-dt * 6));
     }
     // the step: a limp hurries over the bad leg and lingers on the good one
@@ -196,9 +255,23 @@ class NPC {
     this.lookW += (this.lookTW - this.lookW) * e;
     for (const h of this.hand) h.w += (h.tw - h.w) * (1 - Math.exp(-dt * 7));
     this.talkT = Math.max(0, this.talkT - dt);
+    if (this.startleQ && G.time >= this.startleQ.t) { const S = this.startleQ; this.startleQ = null; this.doStartle(S); }
+    // others close by: a glance now and then (a hurt one: a longer look, and it shows on the face)
+    if ((this.glanceT = (this.glanceT || 2 + Math.random() * 3) - dt) <= 0) {
+      this.glanceT = 3 + Math.random() * 4;
+      const o = NPCS.list.find((n) => n !== this && !n.hp.dead && (n.room || null) === (this.room || null) && Math.hypot(n.pos.x - this.pos.x, n.pos.z - this.pos.z) < 5);
+      if (o && !this.hp.busy() && this.lookTW < 0.6 && !this.talking) { this.glanceAt = o; this.glanceUntil = G.time + (o.plight() ? 3.5 : 1.4); if (o.plight() && !this.fear) { this.mood = 'sad'; this.moodT = G.time + 3; } }
+    }
+    if (this.glanceAt && G.time < this.glanceUntil && this.lookTW < 0.6) { this.look.copy(this.glanceAt.ch.p.head.getWorldPosition(this._gq)); this.lookTW = 0.8; }
+    // after a start: the eyes stay on where it came from (over whatever the behaviour wanted him to look at)
+    if (this.alertT > G.time && !this.hp.busy()) { const u = clamp((this.alertT - G.time) / 1.2, 0, 1); this.look.lerp(this.alertP, u); this.lookTW = Math.max(this.lookTW, u); }
     this.updGesture(dt);
     if (this.shoveAt && G.time > this.shoveAt) this.shoveHit();
     this.body.cx = this.pos.x; this.body.cz = this.pos.z;
+    // not to be seen (in a room you are not looking into, or far out): no pose, no face; only how low he is
+    const seen = this.room ? !!this.room.mesh.visible : !G.cam || Math.hypot(this.pos.x - G.cam.position.x, this.pos.z - G.cam.position.z) < 90;
+    if (!seen && !G.camHook) { this.ch.root.visible = false; this.hp.lowness = this.hp.anim ? this.hp.anim.pose(this.ch.pose) : 0; this.unseen = true; return; }
+    this.unseen = false;
     this.pose(dt);
   }
   // gestures run out; standing about he finds something to do with his hands; talking, his hands go with the words
@@ -232,6 +305,8 @@ class NPC {
     const dir = this._hs.set(dx, 0, dz);
     H.flinchBy(dir, 0.3 + v * 0.15, 'chest', '', true);
     this.vx += dx * v * 0.7; this.vz += dz * v * 0.7;
+    // thrown off balance: a stagger, the arms go out to catch it (the harder, the more)
+    this.stagT = G.time + 0.35 + Math.min(0.5, v * 0.1); this.stagK = clamp(v / 4, 0.25, 1); this.stagDir = [dx, dz];
     PLAY.vx *= 0.25; PLAY.vz *= 0.25; PHP.bump(dir, Math.min(1, v / 4));
     FOLEY.cloth(this.pos, 1.2); FOLEY.grunt(this.pos, 0.85, 0.5);
     this.lookAt(this._ht.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
@@ -327,6 +402,12 @@ class NPC {
       if (this.fight && this.fight.on) hs.fist = 1;
       if (gs) { hs.fist = lerp(hs.fist, gs.fist || 0, gw); hs.open = lerp(hs.open, gs.open || 0, gw); hs.point = lerp(hs.point, gs.point || 0, gw); }
       if (want) { hs.fist = want.fist || 0; hs.open = want.open || 0; hs.point = want.point || 0; }
+    }
+    // staggering after a bump: arms out for balance, the body leaning back against it
+    if (this.stagT > t && !this.hp.busy()) {
+      const f = clamp((this.stagT - t) / 0.4, 0, 1) * this.stagK, sw = Math.sin(t * 13) * 0.25 * f;
+      P.spPitch -= 0.12 * f; P.hdPitch -= 0.1 * f;
+      for (let i = 0; i < 2; i++) { const o = P.armOv[i]; if (o && o.w > 0.5) continue; const a = P.arm[i]; a.out += 0.7 * f + (i ? sw : -sw); a.sw -= 0.25 * f; a.el += 0.3 * f; }
     }
     // wounds, falls and death have the last word over the body
     this.hp.pose(P, dt);

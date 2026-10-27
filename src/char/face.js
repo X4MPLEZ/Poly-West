@@ -105,6 +105,7 @@ const FACE = {
     if (N.lookW > 0.2) W.look = this.lookOf(N.ch, N.look);
     if (H.anim) {
       // on the ground: dazed from blows; shot and bleeding: pain, and terror when a gun is on him
+      if (H.out) { W.mood = 'sleep'; W.sleep = true; W.talk = 0; return W; }
       W.mood = H.knocked && H.blood > 0.8 ? 'dazed' : 'pain'; W.mood2 = N.fear && G.time < N.fear ? 'fear' : 'pain'; W.k2 = clamp(H.pain, 0.3, 1);
       if (H.dying > 0) { W.mood = 'pain'; W.mood2 = 'sad'; W.k2 = 0.8; }
       return W;

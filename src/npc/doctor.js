@@ -28,6 +28,7 @@ const DOC = {
     late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
     fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
     refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
+    sell: [['Wickel fest, nicht zu fest. Und dann bring ihn zu mir.', 'neutral'], ['Ein Verband ersetzt keinen Arzt. Merk dir das.', 'neutral'], ['Hier. Druck drauf, dann wickeln.', 'neutral']],
     mutter: [['Wo hab ich nur das Laudanum hingestellt…', 'whisper'], ['Boston… hätte ich nur nie…', 'whisper'], ['Drei Schusswunden diese Woche. Drei.', 'whisper'], ['Die Hände… immer die Hände waschen.', 'whisper'], ['Hm. Das Rezept stimmt so nicht.', 'whisper']]
   },
   // places he can be called to: words in what you say → a building (room type), or out in the street
@@ -83,6 +84,7 @@ const DOC = {
       return;
     }
     if (J.phase === 'look') { const P = this.patientNear(N.pos, 14, N.room); if (P) { J.P = P; J.phase = 'to'; this.say('onsite', 20); } else J.phase = 'none'; return; }
+    if (J.phase === 'none' && J.place === 'here') { home(); return; }   // (he went by himself: nobody fooled him)
     if (J.phase === 'none') {
       // made a fool of
       this.fooledN = (this.fooledN || 0) + 1; this.feel(-0.35);
@@ -91,22 +93,27 @@ const DOC = {
     }
     if (J.phase === 'to') {
       const P = J.P;
-      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); home(); return; }
-      // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor
+      if (P.hp.dead) { this.say('late'); this.remember(P.name + ' war tot, als du ankamst (' + TIME.stamp() + ').'); P.waitFor = null; home(); return; }
+      // he sees the doctor coming and waits for him (on his way to the practice, say): he stops where he is
+      if (Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z) < 14) P.waitFor = { by: N, t: G.time + 1.5 };
+      // a free spot beside him (by his chest, where the wound is), the one nearest to the doctor; again if he moved
+      if (J.spot && Math.hypot(P.pos.x - J.at[0], P.pos.z - J.at[1]) > 0.5) J.spot = null;
       if (!J.spot) {
         const e = P.ch.p.torso.matrixWorld.elements, cx = e[12], cz = e[14];
         let best = null, bd = 1e9;
         for (let a = 0; a < 8; a++) { const x = cx + Math.cos(a * Math.PI / 4) * 0.72, z = cz + Math.sin(a * Math.PI / 4) * 0.72; if (HARM.blockedAt(x, z, P.pos.y, 0.22)) continue; const d = Math.hypot(x - N.pos.x, z - N.pos.z); if (d < bd) { bd = d; best = [x, z]; } }
-        J.spot = best || [cx, cz]; J.toT = 0;
+        J.spot = best || [cx, cz]; J.at = [P.pos.x, P.pos.z]; J.toT = J.toT || 0;
       }
       J.toT += dt;
       const dS = Math.hypot(N.pos.x - J.spot[0], N.pos.z - J.spot[1]), dP = Math.hypot(N.pos.x - P.pos.x, N.pos.z - P.pos.z);
       if (dS > 0.3 && !(J.toT > 6 && dP < 1.7)) { if (!N.walking() || (J.walkT -= dt) <= 0) { J.walkT = 1.5; N.walkTo(J.spot[0], J.spot[1]); } if (J.toT > 25) J.phase = 'none'; return; }
-      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1;
+      N.stop(); J.phase = 'work'; J.t = 0; N.hurry = 1; this.askHow(P);
       return;
     }
     if (J.phase === 'work') {
       const P = J.P, lying = P.hp.busy();
+      P.waitFor = { by: N, t: G.time + 1.5 };
+      if (P.hp.dead) { this.say('late'); P.waitFor = null; home(); return; }
       N.crouchT = lying ? 1 : 0;
       const w = P.hp.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.part && x.lp) || P.hp.wounds[0];
       const part = w && w.part ? P.ch.p[w.part] : P.ch.p.torso;
@@ -116,11 +123,13 @@ const DOC = {
       N.reach(0, l.x + 0.06 + Math.cos(a) * r, l.y + Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
       N.reach(1, l.x - 0.06 - Math.cos(a) * r, l.y - Math.sin(a) * r * 0.6, Math.max(0.25, l.z - 0.06));
       if (J.t > 6) {
-        const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, 0.4);
+        const H = P.hp; H.bandageAll(); H.dying = 0; H.bleed = 0; H.blood = Math.max(H.blood, BLOOD_FAINT + 0.07);
         if (H.anim && H.anim.holding()) H.downFor = Math.min(H.downFor, H.downT + 5);
         this.learn(P, 0); this.snip(); this.say('done');
         this.feel(0.15); this.remember('Der Fremde hat dich zu ' + P.name + ' gerufen, der verletzt dalag. Du hast ihn versorgt (' + TIME.stamp() + ').');
-        if (P.onHarm) P.onHarm({ type: 'treated' });
+        P.waitFor = null;
+        if (P.onHarm) P.onHarm({ type: 'treated', by: 'doctor' });
+        this.queue = this.queue.filter((q) => q.npc !== P);
         J.phase = 'after'; J.t = 0; N.free(0); N.free(1); N.crouchT = 0;
       }
       return;
@@ -129,6 +138,17 @@ const DOC = {
     if (J.phase === 'home') { if (!N.walking() && N.room === this.R) { this.st = 'idle'; this.callJob = null; this.pickAct(); } else if (!N.walking()) { const s = this.spot('desk'); N.walkTo(s.x, s.z, s.yaw); } }
   },
   pick(kind) { return BARKEEP.pick.call(this, kind); },
+  // while he works on someone he asks how it happened, and the patient tells him (heard: a little talk; not heard,
+  // he learns it anyway: learn())
+  askHow(P) {
+    const N = this.npc, H = P.hp, w = H.wounds.filter((x) => x.kind === 'shot').slice(-1)[0];
+    const harm = P.gossip ? P.gossip.facts().filter((m) => /geschossen|geprügelt|verbunden/.test(m)).slice(-2).join(' ') : '';
+    const where = w ? zoneInto(w.zone, w.side) : '';
+    const off = [[0, ['Wer war das?', 'Wie ist das passiert?', 'Was ist passiert?'][Math.floor(Math.random() * 3)], 'neutral'],
+      [1, harm && /Fremde|Er hat/.test(harm) ? 'Der Fremde. ' + (where ? 'Hat mir ' + where + ' geschossen.' : 'Wer sonst.') : 'Frag nicht.', 'angry'],
+      [0, ['Halt still. Ich bin gleich fertig.', 'Dieser Kerl… Halt still.', 'Das wird wieder. Beiß die Zähne zusammen.'][Math.floor(Math.random() * 3)], 'neutral']];
+    return CHAT.topic(N, P, 'Doc Whitfield versorgt gerade ' + P.name + ' (' + H.describe() + '). Der Doc fragt, wie das passiert ist und wer es war; ' + P.name + ' erzählt es knapp, mit Schmerzen' + (harm ? ' (was er erlebt hat: ' + harm + ')' : '') + '. Der Doc kommentiert trocken.', off);
+  },
   init(scene) {
     const R = this.R = ROOMS.find((r) => r.type === 'doctor');
     if (!R) return;
@@ -140,6 +160,7 @@ const DOC = {
     });
     const N = this.npc;
     N.role = 'Doc Whitfield, der Arzt von Dust Creek (um die sechzig, gebildet, trocken)';
+    N.gossip = { facts: () => this.mem.filter((m) => !/hat dir erzählt/.test(m)), hear: (from, f) => { this.knows.push(GOSSIP.told(from, f)); if (this.knows.length > 6) this.knows.shift(); } };
     N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
     N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
@@ -147,8 +168,8 @@ const DOC = {
     onWorldEvent((e) => this.event(e));
     // the player at the doctor's: get patched up
     const it = { x: p.x, y: R.floorY, z: p.z, room: R, occ: null, verb: 'doc', kind: 'doc', fx: 0, fz: 1, sx: p.x, sz: p.z };
-    it.score = (q) => { if (!this.available() || PHP.hp > 0.97) return 1e9; const d = Math.hypot(N.pos.x - q.x, N.pos.z - q.z); if (d > 3.6) return 1e9; it.x = N.pos.x; it.z = N.pos.z; it.sx = N.pos.x; it.sz = N.pos.z; return d + 0.5; };
-    it.actions = () => [{ label: 'Behandeln lassen (' + this.PRICE + ' ¢)', run: () => this.treatPlayer() }];
+    it.score = (q) => { if (!this.available()) return 1e9; const d = Math.hypot(N.pos.x - q.x, N.pos.z - q.z); if (d > 3.6) return 1e9; it.x = N.pos.x; it.z = N.pos.z; it.sx = N.pos.x; it.sz = N.pos.z; return d + 0.5; };
+    it.actions = () => [{ label: 'Behandeln lassen (' + this.PRICE + ' ¢)', run: () => this.treatPlayer() }, { label: 'Verbandszeug kaufen (' + ITEMS.bandage.price + ' ¢)', run: () => this.sellBandage() }];
     // he moves about, so he is not in the grid of fixed things but checked like the bar counters
     it.id = 'doc'; INTERACT.wide.push(it);
     this.pickAct();
@@ -158,6 +179,16 @@ const DOC = {
   spot(name) { const s = this.SPOTS[name], p = rwp(this.R, s[0], this.R.floorY, s[1]); return { x: p.x, z: p.z, yaw: this.yawFor(s[2]) }; },
   available() { const N = this.npc; return !!N && !N.hp.busy() && N.room === this.R && (this.st === 'idle' || this.st === 'treat'); },
   fooledN: 0,
+  // he asks: what happened to you, what a patient told him about you, who did that field dressing (each once)
+  curious() {
+    const N = this.npc, day = TIME.day();
+    if (N.plight() >= 2 || this.att < -0.7) return;
+    if (PHP.hp < 0.6 && TALK.wonder(N, 'hurt' + day, 'Der Fremde kommt verletzt in deine Praxis, er blutet.', 'Du blutest ja. Was ist passiert?', 'surprised')) return;
+    const shot = this.knows.filter((k) => /der Fremde war es|Fremde hat|erzählt/.test(k)).slice(-1)[0];
+    if (shot && TALK.wonder(N, 'shooter' + shot.length + shot.slice(0, 10), 'Ein Patient hat dir über den Fremden erzählt: ' + shot + ' Jetzt steht der Fremde in deiner Praxis.', 'Man hat mir erzählt, was du getan hast. Stimmt das?', 'neutral')) return;
+    if (this.aidSeen && TALK.wonder(N, 'aid' + this.aidSeen, 'Du hast vorhin ' + this.aidSeen + ' behandelt; jemand hatte ihm schon einen Notverband angelegt, und es heißt, das war der Fremde.', 'Der Notverband an ' + this.aidSeen + '… das warst du? Nicht schlecht.', 'amused')) this.aidSeen = null;
+  },
+  settled() { return !this.npc || this.npc.hp.dead || (this.st === 'idle' && !this.queue.length && !this.npc.walking()); },
   // where someone who was shot down wakes up: by the couch
   wakeSpot() { if (!this.npc || this.npc.hp.dead) return null; const s = this.spot('patient'); return { p: new THREE.Vector3(s.x, this.R.floorY, s.z), yaw: s.yaw }; },
   patientFee() {
@@ -179,6 +210,12 @@ const DOC = {
   /* ---- patients ---- */
   // someone comes to be treated; done(npc) is called once the wound is bandaged
   request(patient, done) { if (!this.queue.some((q) => q.npc === patient)) this.queue.push({ npc: patient, done, t: G.time }); },
+  sellBandage() {
+    if (this.att < -0.6) { this.say('refuse'); return; }
+    if (!INV.pay(ITEMS.bandage.price)) { this.say('broke'); return; }
+    INV.add('bandage'); TOAST.show('Verbandszeug (' + INV.items.bandage + ' in der Tasche).');
+    this.say('sell', 10);
+  },
   treatPlayer() {
     if (this.att < -0.6) { this.say('refuse'); return; }
     if (PHP.hp > 0.97 && PHP.poison < 0.05) { this.say('healthy'); return; }
@@ -205,6 +242,12 @@ const DOC = {
     const inside = G.room === this.R;
     if (e.type === 'shot' && inside) { this.feel(-0.2); this.say('shot', 6); }
     if ((e.type === 'npcShot' || e.type === 'npcDown' || e.type === 'npcDead') && e.npc !== 'doctor' && G.room === this.R) this.feel(-0.3);
+    // somebody goes down near him: once it is quiet for a moment, he goes to help by himself
+    if ((e.type === 'npcShot' || e.type === 'npcDown') && e.npc !== 'doctor') {
+      const N = this.npc, V = NPCS.list.find((n) => n.id === e.npc);
+      if (V && (V.room || null) === (N.room || null) && Math.hypot(V.pos.x - N.pos.x, V.pos.z - N.pos.z) < 16 && this.st === 'idle')
+        setTimeout(() => { if (this.st === 'idle' && !V.hp.dead && this.patientNear(V.pos, 1, V.room)) { this.say('onsite', 20); this.call('here', true); } }, 2500 + Math.random() * 1500);
+    }
   },
   /* ---- per frame ---- */
   update(dt) {
@@ -217,6 +260,7 @@ const DOC = {
     // greet who comes in
     if (inside && !this.wasInside) setTimeout(() => this.say('hello', 90), 900);
     this.wasInside = inside;
+    if (inside && this.st === 'idle') this.curious();
     // a gun on him: hands up
     const aimed = inside && GUN.camW > 0.5 && this.aimedAtMe();
     if (aimed) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
@@ -270,8 +314,11 @@ const DOC = {
       if (P) P.walkTo(pp.x, pp.z, pp.yaw);
       this.phase = 'wait'; this.tt = 0;
     } else if (this.phase === 'wait') {
-      const ready = !N.walking() && (C.player ? Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z) < 2.2 : !P.walking() && Math.hypot(P.pos.x - pp.x, P.pos.z - pp.z) < 0.6);
-      if (ready) { this.phase = 'work'; this.tt = 0; this.say('patient'); }
+      const dPl = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
+      const ready = !N.walking() && (C.player ? dPl < 2.9 : !P.walking() && Math.hypot(P.pos.x - pp.x, P.pos.z - pp.z) < 0.6);
+      // (you stay away: he waves you over)
+      if (C.player && !N.walking() && !ready && this.tt > 2 && !C.waved) { C.waved = true; N.gesture('beckon'); }
+      if (ready) { this.phase = 'work'; this.tt = 0; if (!P || !this.askHow(P)) this.say('patient'); }
       else if (this.tt > 40) { this.cur = null; this.st = 'idle'; }
     } else if (this.phase === 'work') {
       // where the wound is (the first open gunshot; the player: the chest)
@@ -300,6 +347,7 @@ const DOC = {
   },
   // what a patient tells him while he works
   learn(P, n) {
+    if (P.hp.wounds.some((w) => w.fieldAt && TIME.min - w.fieldAt < 600) && P.aidBy === 'player') this.aidSeen = P.name;
     const who = P.name, harm = P === BARKEEP.npc ? BARKEEP.mem.filter((m) => /geschossen|geprügelt/.test(m)).slice(-1)[0] : null;
     const wounds = P.hp.describe();
     const line = who + ' war bei dir: ' + wounds + (harm ? '. Er sagt, der Fremde war es: „' + harm.replace(/^Er /, 'Er ') + '“' : '') + ' (' + TIME.stamp() + ').';
@@ -317,7 +365,8 @@ const DOC = {
         'Du bist Doc Whitfield, der Arzt von Dust Creek, einem staubigen Städtchen im Wilden Westen (Arizona-Territorium, 1885). Bleib immer in dieser Rolle.',
         'Wer du bist: um die sechzig, graues Haar, schwarze Weste, Fliege. Studiert in Boston, aus Gründen, über die du nicht sprichst, hier gelandet. Gebildet, ruhig, trocken und ein wenig zynisch. Du hast zu viele Schusswunden gesehen. Du duzt jeden.',
         'Dust Creek hat: den Saloon (Hank ist der Barkeeper), ein Hotel, eine Bank, das Büro des Sheriffs, einen Mietstall, einen Barbier, einen Waffenhändler, die Post, eine Apotheke, einen Gemischtwarenladen, eine Kirche und deine Praxis am Ostende.',
-        'Eine Behandlung kostet 50 Cent; wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
+        'Dein Kopf ist nicht leer: Dir geht das Laudanum aus und die Postkutsche bringt keins; nachts greifst du selbst manchmal zur Flasche, das weiß keiner. Hank hältst du für ehrlich und stur, er schenkt zu großzügig ein. Du bist neugierig wie ein Arzt: Du fragst nach, wie etwas passiert ist und wer es war, und sprichst den Fremden auf das an, was dir Patienten über ihn erzählt haben.',
+        'Eine Behandlung kostet 50 Cent; Verbandszeug verkaufst du für 15 Cent (Knopf im Spiel). wer verletzt ist, kann sich bei dir behandeln lassen (dafür gibt es im Spiel einen Knopf, du musst nichts weiter tun).',
         'Sagt dir der Fremde, dass irgendwo jemand verletzt ist, verblutet oder stirbt, und du glaubst ihm: action come (du gehst sofort hin, bei Lebensgefahr rennst du; den Ort nennt er selbst). Sollst du einfach mitkommen: action follow. Wurdest du schon umsonst gerufen, bist du misstrauisch und fragst nach, statt gleich loszulaufen.',
         'Sprich einfaches, gepflegtes Deutsch. Höchstens zwei kurze Sätze, zusammen unter 30 Wörtern, denn es wird laut vorgelesen. Kein Markdown, keine Emojis, keine Handlungen in Sternchen. Sag nie zweimal dasselbe.',
         'Von der modernen Welt weißt du nichts.',

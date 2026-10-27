@@ -52,7 +52,7 @@ class Brawler {
     N.faceYaw = face; N.lookAt(this._v.set(P.x, P.y + 1.5 - (FALL.down || 0) * 0.9, P.z), 1);
     if (PHP.out) { this.stop(); return 'won'; }
     // hurt badly or scared: he has had enough
-    if (H.blood < 0.45 || (H.daze > 0.85 && Math.random() < dt * 0.6 * (1 - this.courage))) { this.stop(); return 'gave up'; }
+    if (H.blood < BLOOD_WEAK || (H.daze > 0.85 && Math.random() < dt * 0.6 * (1 - this.courage))) { this.stop(); return 'gave up'; }
     // the player walked away and stopped fighting
     if ((d > 7 && G.time - this.lastHitBy > 4) || (d > 3 && G.time - this.lastHitBy > 12) || G.room !== N.room) { this.stop(); return 'calm'; }
     // the player is down: wait over him

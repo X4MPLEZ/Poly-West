@@ -41,8 +41,8 @@ Object.assign(BARKEEP, {
   revenge(dt, inside, dP) {
     const N = this.npc;
     // grudges fade, a little each game day, never under the floor
-    this.grudge = Math.max(this.grudgeFloor(), this.grudge - dt * TIME.RATE * (TIME.speed || 1) / 1440 * 0.15);
-    if (!inside || N.hp.busy() || N.hp.blood < 0.55 || PHP.out || FALL.busy()) return false;
+    this.grudge = Math.max(this.grudgeFloor(), this.grudge - dt * TIME.RATE / 1440 * 0.15);
+    if (!inside || N.hp.busy() || N.hp.blood < BLOOD_WEAK || PHP.out || FALL.busy()) return false;
     const W = this.who();
     // the shotgun: once you are in his saloon, after a few seconds' grace
     if (this.grudge >= 0.85 && this.st === 'idle' && W.fight.courage >= 0.5 && G.time - (this.gunDownT || -99) > 20) {

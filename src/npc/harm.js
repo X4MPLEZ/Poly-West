@@ -12,22 +12,32 @@
    bandaged by the doctor), and is what the person remembers and tells the AI. The behaviour of the person (Hank:
    BARKEEP) is told through npc.onHarm(info) and decides what he does about it; the body part (falling, limping,
    a hanging arm, a hand on the wound) is done here. */
+/* how each wound bleeds (blood is 1 when whole; weak below 0.65, he cannot stay on his feet below 0.55, out below
+   0.42, dead below 0.3): bleed = what it loses per second at first, clot = how many seconds it takes the blood to
+   close it (a vein; 0: it does not), art = the chance a bullet tears the big artery there (artB: then it pumps out
+   that much and does not stop by itself: a torn femoral artery kills in a minute and a half, with a hand pressed
+   on it in a few). The bullet itself costs a little at once (spray). gut: a shot in the belly is agony and, left
+   to itself, kills slowly (hours); lung: in the chest he coughs and fights for air. */
 const ZONES = {
   head:     { name: 'Kopf', lethal: true },
-  neck:     { name: 'Hals', dying: true, blood: 0.3, bleed: 0.03 },
-  chest:    { name: 'Brust', blood: 0.3, bleed: 0.0045, down: 1, sev: 0.9 },
-  belly:    { name: 'Bauch', blood: 0.2, bleed: 0.0035, down: 0.8, sev: 0.8 },
-  shoulder: { name: 'Schulter', blood: 0.08, bleed: 0.0015, arm: 0, drop: true, sev: 0.6 },
-  arm:      { name: 'Arm', blood: 0.05, bleed: 0.001, arm: 0.35, drop: true, sev: 0.45 },
-  hand:     { name: 'Hand', blood: 0.03, bleed: 0.0006, arm: 0.2, drop: true, sev: 0.35 },
-  hip:      { name: 'Hüfte', blood: 0.14, bleed: 0.002, leg: 0.8, down: 0.9, sev: 0.7 },
-  leg:      { name: 'Bein', blood: 0.08, bleed: 0.0015, leg: 0.6, down: 0.5, sev: 0.55 },
-  foot:     { name: 'Fuß', blood: 0.03, bleed: 0.0005, leg: 0.4, sev: 0.35 },
+  neck:     { name: 'Hals', dying: true, bleed: 0.02, art: 0.7, artB: 0.03, clot: 0, spray: 0.04 },
+  chest:    { name: 'Brust', bleed: 0.0016, art: 0.15, artB: 0.004, clot: 600, down: 1, sev: 0.9, lung: true, spray: 0.03 },
+  belly:    { name: 'Bauch', bleed: 0.0009, art: 0.1, artB: 0.003, clot: 500, down: 0.95, sev: 0.85, gut: true, spray: 0.02 },
+  shoulder: { name: 'Schulter', bleed: 0.0009, art: 0.1, artB: 0.004, clot: 240, arm: 0, drop: true, sev: 0.6, spray: 0.015 },
+  arm:      { name: 'Arm', bleed: 0.0005, art: 0.18, artB: 0.0045, clot: 150, arm: 0.35, drop: true, sev: 0.45, limb: true, spray: 0.01 },
+  hand:     { name: 'Hand', bleed: 0.0003, clot: 90, arm: 0.2, drop: true, sev: 0.35, limb: true, spray: 0.006 },
+  hip:      { name: 'Hüfte', bleed: 0.0012, art: 0.2, artB: 0.0065, clot: 300, leg: 0.8, down: 0.9, sev: 0.7, spray: 0.02 },
+  thigh:    { name: 'Oberschenkel', bleed: 0.001, art: 0.32, artB: 0.008, clot: 200, leg: 0.55, down: 0.7, sev: 0.6, limb: true, spray: 0.015 },
+  leg:      { name: 'Bein', bleed: 0.0008, art: 0.15, artB: 0.006, clot: 180, leg: 0.55, down: 0.5, sev: 0.55, limb: true, spray: 0.012 },   // (old saves)
+  calf:     { name: 'Wade', bleed: 0.0004, art: 0.05, artB: 0.0022, clot: 140, leg: 0.4, down: 0.3, sev: 0.4, limb: true, spray: 0.008 },
+  foot:     { name: 'Fuß', bleed: 0.00025, clot: 100, leg: 0.35, down: 0.12, sev: 0.35, limb: true, spray: 0.005 },
   hat:      { name: 'Hut' }
 };
+// the levels of blood (see above)
+const BLOOD_WEAK = 0.65, BLOOD_FAINT = 0.55, BLOOD_OUT = 0.42, BLOOD_DEAD = 0.3;
 // German words for a zone with its side: where it is (dative: "in der linken Schulter", "im rechten Bein") and where
 // it went (accusative: "in die linke Schulter", "ins rechte Bein", "in den Bauch")
-const ZONE_GEN = { Kopf: 'm', Hals: 'm', Brust: 'f', Bauch: 'm', Schulter: 'f', Arm: 'm', Hand: 'f', Hüfte: 'f', Bein: 'n', Fuß: 'm', Hut: 'm' };
+const ZONE_GEN = { Kopf: 'm', Hals: 'm', Brust: 'f', Bauch: 'm', Schulter: 'f', Arm: 'm', Hand: 'f', Hüfte: 'f', Oberschenkel: 'm', Bein: 'n', Wade: 'f', Fuß: 'm', Hut: 'm' };
 function zoneIn(zone, side) {
   const n = ZONES[zone].name, g = ZONE_GEN[n], adj = side ? (side === 'L' ? 'linken ' : 'rechten ') : '';
   return (g === 'f' ? 'in der ' : 'im ') + adj + n;
@@ -53,7 +63,13 @@ const HURT_KEYS = {
   overBar:   { pel: [0, 0.9, -0.12], pp: -0.25, sp: -0.8, hd: 0.55, ank: [[0.16, 0.085, 0.32], [-0.14, 0.085, 0.26]], arm: [[-0.7, 1.35, 0.25], [-0.6, 1.25, 0.35]] },
   propped:   { pel: [0, 0.15, -0.3], pp: -0.95, sp: 0.1, hd: -0.35, hr: 0.4, ank: [[0.22, 0.085, 0.55], [-0.2, 0.085, 0.6]], arm: [[-0.3, 0.6, 0.3], [-0.2, 0.7, 0.4]] },
   wallFront: { pel: [0, 0.8, 0.1], pp: 0.3, sp: 0.22, hd: -0.1, hr: 0.5, ank: [[0.13, 0.085, -0.22], [-0.13, 0.085, -0.1]], fp: [0.3, 0], arm: [[1.55, 0.35, 0.35], [1.45, 0.4, 0.45]] },
-  deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] }
+  deadSit:   { pel: [0, 0.17, -0.18], pp: -0.4, sp: 0.42, hd: -0.95, hr: 0.6, ank: [[0.22, 0.085, 0.58], [-0.15, 0.085, 0.5]], fp: [-0.4, -0.5], arm: [[0.0, 0.3, 0.1], [0.05, 0.25, 0.1]] },
+  // gut-shot: curled up on his side, knees drawn up, both arms round the belly
+  curl:      { pel: [-0.28, 0.17, -0.02], pp: 0.55, pr: 1.38, sp: 0.5, sr: 0.1, hd: -0.45, hr: -0.35, ank: [[-0.12, 0.24, 0.16], [-0.3, 0.1, 0.24]], fp: [0.9, 0.9], arm: [[1.1, 0.05, 1.7], [1.0, 0.1, 1.7]] },
+  // sitting on the floor, the hurt leg out, bent over it
+  sitLeg:    { pel: [0, 0.17, -0.2], pp: -0.2, sp: 0.62, hd: -0.45, ank: [[0.2, 0.085, 0.62], [-0.15, 0.13, 0.3]], fp: [-0.6, 0], arm: [[0.9, 0.2, 0.9], [0.8, 0.25, 1.0]] },
+  // the knees go (faint): down in a heap
+  buckle:    { pel: [0, 0.45, -0.05], pp: 0.35, sp: 0.45, hd: -0.6, hr: 0.2, ank: [[0.15, 0.085, 0.12], [-0.13, 0.085, 0.08]], arm: [[0.15, 0.2, 0.3], [0.1, 0.25, 0.3]] }
 };
 function hurtKey(name) { return HURT_KEYS[name] || FALL_KEYS[name]; }
 
@@ -136,6 +152,8 @@ class Vitals {
     this._v = new THREE.Vector3(); this._w = new THREE.Vector3();
   }
   alive() { return !this.dead; }
+  // a torn artery in a leg that nobody has tied off: he does not get up on it, he lies there pressing
+  legArtery() { return this.wounds.some((w) => w.art && w.b && !w.field && !w.bandaged && ZONES[w.zone].leg !== undefined); }
   // the body is busy with itself: falling, lying, dying, dead (the behaviour waits)
   busy() { return this.dead || !!this.anim; }
   down() { return this.dead || (!!this.anim && this.lowness > 0.5); }
@@ -153,25 +171,32 @@ class Vitals {
     if (info.zone === 'hat') { this.hatOff = true; HARM.knockHat(N, dir); this.flinchBy(dir, 0.5, 'head'); this.pain += 0.1; return { zone: 'hat' }; }
     HARM.bloodFx(info.point, dir, info.zone === 'head' ? 1.6 : 1, N);
     const w = { zone: info.zone, side: info.side || '', kind: 'shot', sev: Z.sev || 1, at: Math.round(TIME.min), heal: 0, bandaged: false, part: info.part, lp: info.local ? [+info.local.x.toFixed(3), +info.local.y.toFixed(3), +info.local.z.toFixed(3)] : null };
+    // how it bleeds: a vein (closes by itself in time) or the artery (does not); only the upper arm has the big one
+    w.art = !!Z.art && (info.zone !== 'arm' || /^uArm/.test(info.part || '')) && Math.random() < Z.art;
+    w.b = w.art ? Z.artB : (Z.bleed || 0) * (0.75 + Math.random() * 0.5); w.lost = 0;
+    if (Z.gut) w.gut = true;
     if (info.zone !== 'head') this.wounds.push(w);
-    if (info.local) this.stain(info.part, info.local, info.zone === 'head' || info.zone === 'neck' || info.zone === 'chest' ? 1.4 : 1);
-    this.blood = Math.max(0, this.blood - (Z.blood || 0));
-    this.bleed += Z.bleed || 0;
-    this.pain = Math.min(1.5, this.pain + 0.8);
+    if (info.local) this.stain(info.part, info.local, info.zone === 'head' || info.zone === 'neck' || info.zone === 'chest' ? 1.4 : 1, w);
+    this.blood = Math.max(0, this.blood - (Z.spray || 0));
+    this.pain = Math.min(1.5, this.pain + (Z.gut ? 1.2 : 0.8));
+    this.recalcBleed();
     // where a bullet came from decides the way he goes down: from the front he falls back, from behind forward
     const f = this.forwardDot(dir);   // > 0: the bullet travels the way he faces (shot from behind)
     if (Z.lethal) { this.die('Kopfschuss', dir, f > 0.2 ? 'fwd' : Math.random() < 0.6 ? 'back' : 'crumple'); return w; }
     if (Z.dying) { this.dying = 4 + Math.random() * 4; this.fall('dying', dir); return w; }
     // a second bullet in the body or too much blood lost: he does not get up again
     const bodyShots = this.wounds.filter((x) => x.kind === 'shot' && (x.zone === 'chest' || x.zone === 'belly') && x.heal < 1).length;
-    if ((info.zone === 'chest' && bodyShots >= 2) || this.blood < 0.15) { this.dying = 3 + Math.random() * 5; this.fall('dying', dir); return w; }
+    if ((info.zone === 'chest' && bodyShots >= 2) || this.blood < BLOOD_OUT) { this.dying = 3 + Math.random() * 5; this.fall('dying', dir); return w; }
     if (Z.arm !== undefined) this.armUse[info.side === 'L' ? 0 : 1] = Math.min(this.armUse[info.side === 'L' ? 0 : 1], Z.arm);
     if (Z.leg !== undefined) this.recalc();
-    if (Z.down && Math.random() < Z.down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' ? 'leg' : 'leg', dir, info.side);
+    // how he goes down: the chest throws him back, the belly folds him up, a thigh or hip puts him on the floor
+    // holding it, the calf or foot only drops him to a knee (the artery torn: down for sure)
+    const down = Z.down && (w.art || Math.random() < Z.down);
+    if (down) this.fall(info.zone === 'chest' ? 'back' : info.zone === 'belly' ? 'belly' : info.zone === 'hip' || info.zone === 'thigh' || info.zone === 'leg' ? 'legSit' : 'leg', dir, info.side);
     else this.flinchBy(dir, 1.2, info.zone, info.side);
-    if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side };
+    if (Z.arm !== undefined || Z.drop) this.clutch = { part: info.part, lp: w.lp, t: 10 + Math.random() * 8, side: info.side, w };
     else if (info.zone === 'foot' || info.part === 'shinL' || info.part === 'shinR') this.clutch = null;
-    else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '' };
+    else this.clutch = { part: info.part, lp: w.lp, t: 6 + Math.random() * 6, side: '', w };
     this.stunT = 1.2;
     return w;
   }
@@ -228,7 +253,8 @@ class Vitals {
     let limp = 0;
     for (const w of this.wounds) { const Z = ZONES[w.zone]; if (Z && Z.leg !== undefined && w.kind === 'shot') limp = Math.max(limp, (1 - Z.leg * 0.6) * (1 - w.heal * 0.85)); }
     this.limp = clamp(limp, 0, 1);
-    this.limpSide = (this.wounds.find((w) => w.kind === 'shot' && ZONES[w.zone].leg !== undefined && w.heal < 1) || {}).side || 'R';
+    const lw = this.wounds.find((w) => w.kind === 'shot' && ZONES[w.zone].leg !== undefined && w.heal < 1) || {};
+    this.limpSide = lw.side || 'R'; this.limpZone = lw.zone || null;
     const arm = [1, 1];
     for (const w of this.wounds) { const Z = ZONES[w.zone]; if (Z && Z.arm !== undefined && w.kind === 'shot') { const i = w.side === 'L' ? 0 : 1; arm[i] = Math.min(arm[i], Z.arm + (1 - Z.arm) * w.heal * (w.bandaged ? 1 : 0.8)); } }
     this.armUse = arm;
@@ -239,13 +265,18 @@ class Vitals {
     let seq, sd = side === 'L' ? -1 : 1, dk = 'fwd';
     const S = (k, d, e, thud) => ({ k, d, e, thud });
     if (kind === 'leg') { seq = [S('kneelHurt', 0.28, 'in', 0.45), { lie: 1, d: 0.6, hold: true }, S('lunge', 0.45, 'inout'), S('stand', 0.45, 'inout')]; this.downFor = downFor || 1.2 + Math.random(); }
-    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('sitHold', 0.5, 'inout', 0.6), { lie: 1, d: 0.8, hold: true }, S('squat', 0.7, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 6 + Math.random() * 5; }
+    // the leg gives way, he sits down hard and holds it (and stays down a while: a bleeding thigh keeps him there)
+    else if (kind === 'legSit') { seq = [S('kneelHurt', 0.26, 'in', 0.5), S('sitLeg', 0.4, 'in', 0.7), { lie: 1, d: 0.8, hold: true }, S('kneelHurt', 0.6, 'inout'), S('lunge', 0.55, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 6 + Math.random() * 6; }
+    // gut-shot: folds over, to his knees, onto his side and curls up; long minutes before he gets up again
+    else if (kind === 'belly') { seq = [S('clutch', 0.22, 'out'), S('kneelHurt', 0.32, 'in', 0.5), S('hip', 0.35, 'inout', 0.7), S('curl', 0.6, 'inout', 0.3), { lie: 1, d: 0.8, hold: true }, S('sitHold', 0.9, 'inout'), S('squat', 0.8, 'inout'), S('clutch', 0.6, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 35 + Math.random() * 30; }
+    // too much blood gone: the knees go and he sinks down (he does not get up again unless it is stopped)
+    else if (kind === 'faint') { seq = [S('buckle', 0.45, 'in', 0.5), S('seat', 0.35, 'in', 0.7), S('flat', 0.6, 'in', 0.8), { lie: 1, d: 1, hold: true }, S('sitUp', 0.8, 'inout'), S('squat', 0.7, 'inout'), S('stand', 0.6, 'inout')]; this.downFor = downFor || 20; }
     else if (kind === 'side') { dk = 'side'; seq = [S('lean', 0.22, 'out'), S('hip', 0.24, 'in', 0.9), S('sideFlat', 0.5, 'inout', 0.35), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.6, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 3; }
     else if (kind === 'dying') { seq = Math.random() < 0.5 ? [S('clutch', 0.3, 'out'), S('kneelHurt', 0.45, 'in', 0.5), S('sitHold', 0.6, 'inout', 0.6), S('slump', 1.4, 'inout'), { lie: 1, d: 1, hold: true }]
       : [S('reel', 0.3, 'out'), S('seat', 0.3, 'in', 0.7), S('flat', 0.6, 'in', 1), { lie: 1, d: 1, hold: true }]; this.downFor = 1e9; }
     else { dk = f > 0.2 ? 'fwd' : 'back'; seq = dk === 'fwd' ? [S('trip', 0.2, 'out'), S('hands', 0.22, 'in', 0.7), S('face', 0.3, 'in', 0.9), S('prone', 0.4, 'inout'), { lie: 1, d: 0.8, hold: true }, S('hands', 0.5, 'inout'), S('kneel', 0.45, 'inout'), S('lunge', 0.4, 'inout'), S('stand', 0.45, 'inout')]
       : [S('reel', 0.28, 'out'), S('seat', 0.26, 'in', 0.8), S('flat', 0.34, 'in', 1), { lie: 1, d: 0.8, hold: true }, S('sitUp', 0.55, 'inout'), S('squat', 0.5, 'inout'), S('stand', 0.5, 'inout')]; this.downFor = downFor || 4 + Math.random() * 3; }
-    const lay = kind === 'side' ? 'side' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
+    const lay = kind === 'side' || kind === 'belly' ? 'side' : kind === 'faint' ? 'back' : dk === 'fwd' && (kind === 'back' || kind === 'side') ? 'fwd' : kind === 'back' ? 'back' : kind === 'dying' && seq.some((x) => x.k === 'flat') ? 'back' : null;
     const fit = lay ? this.fitFall(lay, sd, dir, false) : null;
     if (fit && fit.seq) seq = fit.seq;
     this.anim = new KeyAnim(seq, dk, sd, this.currentKey());
@@ -347,20 +378,22 @@ class Vitals {
       if (this.anim.holding()) {
         this.downT += dt;
         if (this.dying > 0) { this.dying -= dt; if (this.dying <= 0) this.die('verblutet'); }
-        else if (!this.dead && this.downT > this.downFor && this.blood > 0.2) { this.anim.release(); this.knocked = false; worldEvent('npcUp', N.pos.x, N.pos.y, N.pos.z, { by: 'world', npc: N.id }); if (N.onHarm) N.onHarm({ type: 'up' }); }
+        // up again once he can: enough blood, awake, and (gut-shot) the worst of it over
+        else if (!this.dead && this.downT > this.downFor && this.blood > BLOOD_FAINT + 0.03 && !this.out && !this.legArtery()) { this.anim.release(); this.knocked = false; this.fainted = false; worldEvent('npcUp', N.pos.x, N.pos.y, N.pos.z, { by: 'world', npc: N.id }); if (N.onHarm) N.onHarm({ type: 'up' }); }
       }
       if (this.anim.done && !this.dead && !this.dying) { this.anim = null; N.body.r = 0.32; this.daze = Math.min(this.daze, 0.5); }
     }
-    // bleeding: the blood runs out until the wound closes (or a bandage stops it)
-    if (!this.dead && this.bleed > 0) {
-      this.blood -= this.bleed * dt;
-      this.bleed *= Math.exp(-dt / 150);
-      if (this.bleed < 1e-5) this.bleed = 0;
-      if (this.blood < 0.1) this.die('verblutet');
-      // drops on the ground now and then
-      this.dropT = (this.dropT || 0) - dt;
-      if (this.dropT <= 0 && this.bleed > 0.0008) { this.dropT = 0.6 + Math.random() * 1.5 / (this.bleed * 600); HARM.drop(N); }
-    }
+    this.bleedStep(dt);
+    if (this.dead) return;
+    // too little blood: the knees go; less still and he is out (eyes shut, no word); then dead
+    if (this.blood < BLOOD_FAINT && !this.anim) { this.fainted = true; this.fall('faint', this._w.set(-Math.sin(N.yaw) * 0.2, 0, -Math.cos(N.yaw) * 0.2)); }
+    this.out = this.blood < BLOOD_OUT;
+    // gut-shot: it does not let go of him (the pain keeps coming back, he moans and writhes)
+    const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
+    if (gut) this.pain = Math.max(this.pain, 0.75 + 0.25 * Math.sin(G.time * 0.7 + Math.sin(G.time * 0.23) * 3));
+    // the lungs: a cough now and then, blood on the lips
+    const lung = this.wounds.find((w) => w.zone === 'chest' && w.kind === 'shot' && !w.bandaged && w.heal < 0.4);
+    if (lung && !this.out && (this.coughT = (this.coughT === undefined ? 3 : this.coughT) - dt) <= 0) { this.coughT = 4 + Math.random() * 7; HARM.cough(N); }
     this.daze = Math.max(0, this.daze - dt * (N.fight && N.fight.on ? 0.11 : 0.09));
     this.pain = Math.max(0, this.pain - dt * 0.05);
     this.stunT = Math.max(0, this.stunT - dt);
@@ -368,8 +401,8 @@ class Vitals {
     if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) { this.clutch = null; this.clutchRest = 3 + Math.random() * 5; } }
     // an open gunshot on the body or an arm: the hand goes back to it now and then
     else if (!this.dead && !this.anim && (this.clutchRest = (this.clutchRest || 0) - dt) <= 0) {
-      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm|thigh/.test(x.part));
-      if (w) this.clutch = { part: w.part, lp: w.lp, t: 5 + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '' };
+      const w = this.worstBleed(false);
+      if (w) this.clutch = { part: w.part, lp: w.lp, t: (w.b > 0.0006 || w.gut ? 14 : 5) + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '', w };
       else this.clutchRest = 4;
     }
     N.body.r = this.down() ? 0 : 0.32;
@@ -394,7 +427,21 @@ class Vitals {
         if (o) { o.sw += (1.75 - o.sw) * w; o.out += (0.25 - o.out) * w; o.el += (0.35 - o.el) * w; o.yw += (0.3 - o.yw) * w; }
         P.hdPitch += 0.25 * w;
       }
-      if (this.dead) { P.hdYaw = 0; } else if (this.anim.holding()) { P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3; } this.dressBandages(); return; }
+      if (this.dead) { P.hdYaw = 0; }
+      else if (this.anim.holding()) {
+        if (this.out) { P.hdYaw = 0.2; P.hdPitch += 0.15; P.spPitch += Math.sin(G.time * 1.6) * 0.01; }   // out cold: only the breath
+        else {
+          P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3;
+          // gut-shot: he writhes, the legs draw up and push away, he rocks
+          if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) {
+            const t = G.time, a = Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.9 + 1) * 0.3 + Math.max(0, Math.sin(t * 0.37)) * 0.6;
+            P.pelRoll += a * 0.08; P.spPitch += 0.08 * a; P.hdPitch += 0.1 * Math.sin(t * 1.9);
+            P.ank[0].z += Math.sin(t * 1.7) * 0.07 * (0.5 + a); P.ank[1].z += Math.sin(t * 1.7 + 2.2) * 0.07 * (0.5 + a);
+          }
+          this.clutchPose(P, dt, true);
+        }
+      }
+      this.dressBandages(); return; }
     this.lowness = 0;
     // the jerk of a hit
     const F = this.flinch, k = F.k;
@@ -425,39 +472,16 @@ class Vitals {
       a.x += sb * L * 0.06 * swingBad * m;                                // swung out wide
       P.ftPitch[bad] += L * (0.25 * swingBad * m + 0.35 * (1 - m));       // the toe drags, at rest it is on its toes
       if (m < 0.3) { a.z += L * 0.08 * (1 - m); a.y += L * 0.025 * (1 - m); }
+      // a foot: he walks on its toes, the heel never comes down; a thigh or hip: the leg swung stiff from the hip
+      if (this.limpZone === 'foot') { P.ftPitch[bad] += 0.4 * L; a.y += 0.025 * L; }
+      else if (this.limpZone === 'thigh' || this.limpZone === 'hip' || this.limpZone === 'leg') { a.z += 0.05 * L * swingBad * m; P.pelYaw += 0.08 * L * swingBad * m * sb; }
     }
-    /* a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
-       hand on that side (the other one for an arm); a wound on the back is held from the side */
-    let busy = [false, false];
-    if (this.clutch && this.clutch.lp) {
-      const c = this.clutch, part = N.ch.p[c.part];
-      if (part && part.geometry) {
-        const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
-        const B = g.boundingBox, lp = c.lp;
-        // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
-        const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
-        const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
-        const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
-        const n = nl.transformDirection(part.matrix);
-        tgt.addScaledVector(n, 0.055);
-        const armW = /Arm|hand/.test(c.part);
-        let i = armW ? (c.side === 'L' ? 1 : 0) : tgt.x > 0.03 ? 0 : tgt.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
-        if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
-        if (n.z < -0.55 && !armW) { tgt.x = (i === 0 ? 1 : -1) * 0.31; tgt.z = Math.max(tgt.z, -0.02); }   // (the back: held at the side)
-        if (this.armUse[i] > 0.15) {
-          torsoInverse(P);
-          if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
-          const s = i === 0 ? 1 : -1, q = this._q || (this._q = new THREE.Vector3());
-          // (the pole is in the character's frame: a wound on the front, the elbow out to the side; on the side, back)
-          if (n.z > 0.45) q.set(s * 1, -0.55, 0.1); else q.set(s * 0.6, -0.35, -0.85);
-          const r = GESTURE.solveArm(i, tgt, q, N.ch.look.build.width, N.ch.look.build.belly);
-          const o = P.armOv[i] && P.armOv[i].hurt ? P.armOv[i] : (P.armOv[i] = { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true });
-          const wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * 3)));
-          o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; busy[i] = true;
-          P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
-        }
-      }
-    }
+    const busy = this.clutchPose(P, dt, false);
+    // gut-shot on his feet: bent over it, short steps, the other hand on it too
+    const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
+    if (gut) { P.spPitch += 0.32; P.pel.y -= 0.04; P.hdPitch += 0.12; P.pel.z -= 0.03; }
+    // chest: the breath comes short and heavy (the shoulders go with it)
+    if (this.bleed > 0.0004 || this.blood < BLOOD_WEAK) { const br = Math.sin(G.time * (this.blood < BLOOD_WEAK ? 5.5 : 4)) * 0.025; P.spPitch -= br; P.hdPitch += br * 0.6; }
     // an arm that cannot be used hangs (and swings a little when walking)
     for (let i = 0; i < 2; i++) {
       const use = this.armUse[i];
@@ -470,8 +494,120 @@ class Vitals {
     }
     this.dressBandages();
   }
+  /* ---- a hand on the wound: pressed onto it from outside (the point on the part, out along the part's surface), the
+     hand on that side (the other one for an arm); a wound on the back is held from the side. Lying or sitting on the
+     floor the hand stays on what bleeds most. A hand pressed on it slows the bleeding (handT). ---- */
+  clutchPose(P, dt, lying) {
+    const N = this.npc, busy = this._busy || (this._busy = [false, false]); busy[0] = busy[1] = false;
+    if (lying) {
+      const w = this.worstBleed(true);
+      if (w && (!this.clutch || this.clutch.w !== w)) this.clutch = { part: w.part, lp: w.lp, t: 1e9, side: ZONES[w.zone].arm !== undefined ? w.side : '', w, lying: true };
+      if (!w && this.clutch && this.clutch.lying) this.clutch = null;
+    } else if (this.clutch && this.clutch.lying) this.clutch = null;
+    const c = this.clutch; if (!c || !c.lp) return busy;
+    const part = N.ch.p[c.part]; if (!part || !part.geometry) return busy;
+    const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    const B = g.boundingBox, lp = c.lp;
+    // the nearest side of the part's box (not its ends): that is where the hand goes, a little outside
+    const d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+    const nl = this._w.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0);
+    const tgt = this._v.set(lp[0], lp[1], lp[2]).applyMatrix4(part.matrix);
+    const n = nl.transformDirection(part.matrix);
+    tgt.addScaledVector(n, 0.055);
+    const armW = /Arm|hand/.test(c.part);
+    torsoInverse(P);
+    // which hand: the one on that side of the body (in the torso's frame, so it holds lying down as well)
+    const tl = (this._tl || (this._tl = new THREE.Vector3())).copy(tgt).applyMatrix4(AIK.inv);
+    let i = armW ? (c.side === 'L' ? 1 : 0) : tl.x > 0.03 ? 0 : tl.x < -0.03 ? 1 : (this.armUse[1] > 0.5 ? 1 : 0);
+    if (!armW && this.armUse[i] <= 0.15) i = 1 - i;
+    if (this.armUse[i] <= 0.15) return busy;
+    const nt = (this._nt || (this._nt = new THREE.Vector3())).copy(n).transformDirection(AIK.inv);
+    if (nt.z < -0.55 && !armW) { tl.x = (i === 0 ? 1 : -1) * 0.31; tl.z = Math.max(tl.z, -0.02); tgt.copy(tl).applyMatrix4(AIK.tor); }   // (the back: held at the side)
+    if (!armW) GESTURE.safe(tgt, N.ch.look.build.width, N.ch.look.build.belly);
+    const s = i === 0 ? 1 : -1, q = this._q || (this._q = new THREE.Vector3());
+    // (the pole in the torso's frame: a wound on the front, the elbow out to the side; on the side, back)
+    if (nt.z > 0.45) q.set(s * 1, -0.55, 0.1); else q.set(s * 0.6, -0.35, -0.85);
+    q.transformDirection(AIK.tor);
+    const r = GESTURE.solveArm(i, tgt, q, N.ch.look.build.width, N.ch.look.build.belly);
+    const base = P.armOv[i], wgt = Math.min(1, c.t * 2, (c.on = Math.min(1, (c.on || 0) + dt * (lying ? 1.5 : 3))));
+    const o = base && base.hurt ? base : { w: 1, sw: 0, yw: 0, out: 0, el: 0, hurt: true };
+    if (base && base.key) { o.w = 1; o.sw = lerp(base.sw, r.sw, wgt); o.yw = lerp(base.yw, r.yw, wgt); o.out = lerp(base.out, r.out, wgt); o.el = lerp(base.el, r.el, wgt); }
+    else { o.w = wgt; o.sw = r.sw; o.yw = r.yw; o.out = r.out; o.el = r.el; }
+    P.armOv[i] = o; busy[i] = true;
+    P.hand[i].open = Math.max(P.hand[i].open, 0.7 * wgt); P.hand[i].fist = 0;
+    if (c.w && wgt > 0.5) c.w.handT = G.time + 0.3;
+    return busy;
+  }
+  // the wound that bleeds most (that a hand can get to; lying: also a gut-shot, which he holds anyway)
+  worstBleed(lying) {
+    let best = null, bs = 0;
+    for (const w of this.wounds) {
+      if (w.kind !== 'shot' || w.bandaged || !w.part || !w.lp || w.heal >= 0.5) continue;
+      if (!/torso|pelvis|thigh|Arm|hand/.test(w.part) && !(lying && /shin/.test(w.part) && this.fallKind === 'legSit')) continue;
+      const sc = (w.b || 0) * (w.field ? 0.2 : 1) + (w.gut ? 0.002 : 0) + 1e-6;
+      if (sc > bs) { bs = sc; best = w; }
+    }
+    return best;
+  }
+  /* ---- bleeding: each wound by itself. What stops it: a hand pressed on it (his own: some; somebody kneeling by
+     him: most), a field dressing (a vein: most of it; a torn artery in an arm or leg: tied off), the doctor (all).
+     A vein closes in time (faster under pressure, slower when he walks about); the artery does not. ---- */
+  bleedFactor(w) {
+    if (w.bandaged) return 0;
+    const Z = ZONES[w.zone] || {};
+    let f = w.field ? (w.art && Z.limb ? 0.03 : 0.12) : 1;
+    if ((w.aidT || 0) > G.time) f = Math.min(f, 0.12);
+    else if ((w.handT || 0) > G.time || (G.abstract && !this.out)) f = Math.min(f, w.art ? 0.5 : 0.4);
+    return f;
+  }
+  recalcBleed() { let t = 0; for (const w of this.wounds) if (w.b) t += w.b * this.bleedFactor(w); this.bleed = t; }
+  bleedStep(dt) {
+    const N = this.npc;
+    if (this.dead) { this.bleed = 0; return; }
+    let tot = 0, lost = 0, spurt = null, sf = 0;
+    const moving = N.speed > 0.4;
+    for (const w of this.wounds) {
+      if (!w.b) continue;
+      const Z = ZONES[w.zone] || {}, f = this.bleedFactor(w), r = w.b * f;
+      let l;
+      if (!w.art && Z.clot) {
+        // (exact for any dt: what a closing vein loses until it closes)
+        const tau = Z.clot * (moving ? 1.6 : 1) * (f < 0.5 ? 0.5 : 1), k = Math.exp(-dt / tau);
+        l = r * tau * (1 - k); w.b *= k; if (w.b < 2e-5) w.b = 0;
+      } else l = r * dt;
+      w.lost = (w.lost || 0) + l; lost += l; tot += r;
+      if (w.art && f > 0.3 && r > sf) { sf = r; spurt = w; }
+    }
+    this.bleed = tot;
+    if (lost <= 0) return;
+    this.blood -= lost;
+    if (this.blood < BLOOD_DEAD) { this.die('verblutet'); return; }
+    // what it leaves: drops where he walks, a pool where he lies, the artery pumping in spurts
+    const vis = N.ch.root.visible && !G.abstract;
+    if (this.anim && this.lowness > 0.5) { this.poolAcc = (this.poolAcc || 0) + lost; if (this.poolAcc > 0.002) { if (vis) BLOOD.pool(N, this.poolAcc); this.poolAcc = 0; } }
+    else { this.dripAcc = (this.dripAcc || 0) + lost; if (this.dripAcc > 0.0022) { this.dripAcc = 0; if (vis) BLOOD.drip(N, this.dripPoint(this._v)); } }
+    if (spurt && vis) { this.spurtT = (this.spurtT || 0) - dt; if (this.spurtT <= 0) { this.spurtT = 0.68 + Math.random() * 0.12; const p = this.woundPoint(spurt, this._v, this._w); if (p) BLOOD.spurt(p, this._w, sf / 0.008, N); } }
+  }
+  // where a wound is in the world (and its outward normal into nOut)
+  woundPoint(w, out, nOut) {
+    const part = w && this.npc.ch.p[w.part]; if (!part || !w.lp) return null;
+    part.updateMatrixWorld();
+    out.set(w.lp[0], w.lp[1], w.lp[2]).applyMatrix4(part.matrixWorld);
+    if (nOut) {
+      const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const B = g.boundingBox, lp = w.lp, d = [lp[0] - B.min.x, B.max.x - lp[0], lp[2] - B.min.z, B.max.z - lp[2]], k = d.indexOf(Math.min.apply(null, d));
+      nOut.set(k === 0 ? -1 : k === 1 ? 1 : 0, 0, k === 2 ? -1 : k === 3 ? 1 : 0).transformDirection(part.matrixWorld);
+    }
+    return out;
+  }
+  // drops fall from the lowest bleeding wound, or the hand pressed on it
+  dripPoint(out) {
+    const w = this.wounds.filter((x) => x.b && x.lp).sort((a, b) => b.b - a.b)[0];
+    if (!w || !this.woundPoint(w, out)) out.set(this.npc.pos.x, this.npc.pos.y + 0.9, this.npc.pos.z);
+    return out;
+  }
   /* ---- blood on the clothes: a dark red patch where the bullet went in, riding on the part, growing a little ---- */
-  stain(partName, lp, k) {
+  stain(partName, lp, k, wound) {
     const N = this.npc, part = N.ch.p[partName]; if (!part) return;
     const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
     const B = g.boundingBox;
@@ -481,52 +617,115 @@ class Vitals {
     const ax = d[0][0], s = 0.075 * k, mb = new MB();
     mb.box(0, -(ax === 'y' ? 0.008 : s / 2), 0, ax === 'x' ? 0.016 : s, ax === 'y' ? 0.016 : s, ax === 'z' ? 0.016 : s, rgb(0x5a0c08), 0);
     const m = new THREE.Mesh(mb.build(), N.mat || G.litMat); m.position.copy(lp); m.frustumCulled = false; m.scale.setScalar(0.5);
-    part.add(m); (this.stains || (this.stains = [])).push({ m, grow: 1 + Math.random() * 0.4 });
+    part.add(m); (this.stains || (this.stains = [])).push({ m, grow: 1 + Math.random() * 0.4, w: wound || null, y0: m.position.y });
     if (this.stains.length > 8) { const o = this.stains.shift(); o.m.parent.remove(o.m); }
   }
-  /* ---- bandages: a white band on each bandaged wound, riding on its part ---- */
+  /* ---- bandages, riding on the part, fitted to it: the cross-section of the part at the wound (from its own
+     corners) gives the size of every turn, so a band sits on a thigh as on an arm or the chest.
+     The doctor's: three turns of clean linen, a little crooked, a pad over the wound with the blood come through,
+     a knot with two ends. Yours (play/aid.js, a field dressing): a strip of
+     cloth, two turns, a fat knot, the blood soaking through; on an arm or leg with the artery torn, tied off above
+     the wound with a stick through the knot. ---- */
   dressBandages() {
     const N = this.npc;
     for (const w of this.wounds) {
-      if (!w.bandaged || w.heal >= 1 || !w.part || w.bandMesh) continue;
-      const part = N.ch.p[w.part]; if (!part) continue;
-      const box = part.geometry.boundingBox || (part.geometry.computeBoundingBox(), part.geometry.boundingBox);
-      // linen wrapped round it a few times, a little crooked, a knot, a pad on the wound with blood come through
-      const mb = new MB(), lin = [rgb(0xeee6d6), rgb(0xe0d6c2), rgb(0xe8dfcc)], blood = rgb(0x8a2a22);
-      const sx = box.max.x - box.min.x, sz = box.max.z - box.min.z, cx = (box.max.x + box.min.x) / 2, cz = (box.max.z + box.min.z) / 2;
-      const trunk = /torso|pelvis/.test(w.part), y0 = w.lp ? w.lp[1] : (box.max.y + box.min.y) / 2;
-      const wrap = (y, h, tilt, col, grow) => { mb.push(new THREE.Matrix4().makeTranslation(trunk ? 0 : cx, y, cz).multiply(new THREE.Matrix4().makeRotationZ(tilt))); mb.box(0, -h / 2, 0, (trunk ? sx : sx) + grow, h, sz + grow, col, 9); mb.pop(); };
-      const n = trunk ? 3 : 3, step = trunk ? 0.045 : 0.03;
-      for (let i = 0; i < n; i++) wrap(y0 + (i - (n - 1) / 2) * step, trunk ? 0.05 : 0.034, (i - 1) * (trunk ? 0.05 : 0.12), lin[i % 3], (trunk ? 0.02 : 0.024) + i * 0.003);
-      if (w.zone === 'chest' || w.zone === 'shoulder') { mb.push(new THREE.Matrix4().makeTranslation(0, trunk ? y0 + 0.08 : y0, 0).multiply(new THREE.Matrix4().makeRotationZ(0.75))); mb.box(0, -0.03, 0, trunk ? sx * 1.1 : sx + 0.03, 0.055, sz + 0.03, lin[1], 9); mb.pop(); }
-      // the knot on the outside, and the pad over the wound itself
-      const kx = trunk ? (w.lp && w.lp[0] > 0 ? 1 : -1) * (sx / 2 + 0.014) : cx + (/L$/.test(w.part) ? 1 : -1) * (sx / 2 + 0.014);
-      mb.box(kx, y0 - 0.018, cz, 0.022, 0.03, 0.03, lin[0], 0); mb.box(kx + Math.sign(kx || 1) * 0.008, y0 - 0.045, cz + 0.01, 0.014, 0.03, 0.012, lin[2], 0);
-      if (w.lp) {
-        const nx = Math.abs(w.lp[0] - cx) > Math.abs(w.lp[2] - cz) * (sx / Math.max(sz, 0.01)) ? Math.sign(w.lp[0] - cx) : 0, nz = nx ? 0 : Math.sign(w.lp[2] - cz || 1);
-        const px = nx ? cx + nx * (sx / 2 + 0.03) : w.lp[0], pz = nz ? cz + nz * (sz / 2 + 0.03) : w.lp[2];
-        mb.box(px, y0 - 0.035, pz, nx ? 0.012 : 0.07, 0.07, nz ? 0.012 : 0.07, lin[0], 0);
-        mb.box(px + nx * 0.004, y0 - 0.018, pz + nz * 0.004, nx ? 0.01 : 0.032, 0.034, nz ? 0.01 : 0.032, mixc(blood, lin[0], 0.25), 0);
-      }
-      const m = new THREE.Mesh(mb.build(), N.mat || G.litMat);
-      m.frustumCulled = false;
-      part.add(m); w.bandMesh = m; this.bandages.push(m);
+      if (w.heal >= 1 || !w.part) continue;
+      if (w.bandaged && !w.bandMesh) this.makeBand(w, false);
+      else if (w.field && !w.bandaged && !w.fieldMesh) this.makeBand(w, true);
     }
     for (const m of this.bandages) if (m.material !== (N.mat || G.litMat)) m.material = N.mat || G.litMat;
-    if (this.stains) for (const S of this.stains) { if (S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat; const sc = S.m.scale.x; if (sc < S.grow) S.m.scale.setScalar(Math.min(S.grow, sc + 0.004)); }
+    // (the patch soaks further with what the wound has lost, and creeps downwards)
+    if (this.stains) for (const S of this.stains) {
+      if (S.m.material !== (N.mat || G.litMat)) S.m.material = N.mat || G.litMat;
+      const want = S.grow * (1 + Math.min(2.4, (S.w && S.w.lost || 0) * 22)), sc = S.m.scale.x;
+      if (sc < want) { const v = Math.min(want, sc + 0.004); S.m.scale.set(v, v * 1.25, v); S.m.position.y = S.y0 - (v - 0.5) * 0.02; }
+    }
+  }
+  // the part's cross-section at height y (part frame): centre and half sizes, from the corners near that height
+  section(part, y) {
+    const g = part.geometry, P = g.attributes.position.array, C = g._sect || (g._sect = new Map()), key = Math.round(y * 100);
+    if (C.has(key)) return C.get(key);
+    let r = null;
+    for (const band of [0.025, 0.05, 0.1]) {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, n = 0;
+      for (let i = 0; i < P.length; i += 3) { if (Math.abs(P[i + 1] - y) > band) continue; n++; x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); z0 = Math.min(z0, P[i + 2]); z1 = Math.max(z1, P[i + 2]); }
+      if (n >= 4) { r = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, rx: (x1 - x0) / 2, rz: (z1 - z0) / 2 }; break; }
+    }
+    if (!r) { if (!g.boundingBox) g.computeBoundingBox(); const B = g.boundingBox; r = { cx: (B.max.x + B.min.x) / 2, cz: (B.max.z + B.min.z) / 2, rx: (B.max.x - B.min.x) / 2, rz: (B.max.z - B.min.z) / 2 }; }
+    C.set(key, r);
+    return r;
+  }
+  makeBand(w, field) {
+    const N = this.npc, part = N.ch.p[w.part]; if (!part || !part.geometry) return;
+    const g = part.geometry; if (!g.boundingBox) g.computeBoundingBox();
+    const B = g.boundingBox, mb = new MB(), trunk = /torso|pelvis/.test(w.part), Z = ZONES[w.zone] || {};
+    const lin = field ? [rgb(0xb9a98c), rgb(0xa8977a), rgb(0xc2b496)] : [rgb(0xf0e9da), rgb(0xe2d8c4), rgb(0xeae2d0)];
+    const blood = rgb(field ? 0x7a1612 : 0x8a2a22);
+    const hb = trunk ? 0.05 : 0.034, n = field ? 2 : 3, step = trunk ? 0.042 : 0.027;
+    const yw = clamp(w.lp ? w.lp[1] : (B.max.y + B.min.y) / 2, B.min.y + hb * 1.6, B.max.y - hb * 1.6);
+    // the wound's direction round the part (where the pad and the stain go): from the section's centre
+    const S0 = this.section(part, yw), wa = w.lp ? Math.atan2(w.lp[0] - S0.cx, w.lp[2] - S0.cz) : 0;
+    // one turn: an eight-sided band round the section at y, a little crooked
+    const turn = (y, h, tilt, col, gap) => {
+      // (a rounded band: from the skin out to its full thickness and back, so it hugs the part without a gap)
+      // (the parts are boxes: the turn is the box's outline pushed out by gap, a little puffed at the middle of each side)
+      const S = this.section(part, y), rx = S.rx + gap, rz = S.rz + gap, M = [], I = [];
+      const outline = (ax, az, puff) => [[0, az + puff], [ax, az], [ax + puff, 0], [ax, -az], [0, -az - puff], [-ax, -az], [-ax - puff, 0], [-ax, az]].map((q) => [S.cx + q[0], S.cz + q[1]]);
+      M.push(...outline(rx, rz, gap * (trunk ? 0.3 : 0.6))); I.push(...outline(S.rx + 0.003, S.rz + 0.003, 0));
+      mb.push(new THREE.Matrix4().makeTranslation(S.cx, y, S.cz).multiply(new THREE.Matrix4().makeRotationX(tilt * 0.6)).multiply(new THREE.Matrix4().makeRotationZ(tilt)).multiply(new THREE.Matrix4().makeTranslation(-S.cx, -y, -S.cz)));
+      mb.ring(I, y - h / 2, M, y - h * 0.18, mulc(col, 0.88), 9); mb.ring(M, y - h * 0.18, M, y + h * 0.18, col, 9); mb.ring(M, y + h * 0.18, I, y + h / 2, mulc(col, 0.95), 9);
+      mb.pop();
+      return { S, rx, rz };
+    };
+    let outer = null;
+    for (let i = 0; i < n; i++) {
+      const y = yw + (i - (n - 1) / 2) * step, gap = (trunk ? 0.008 : 0.01) + i * 0.003;
+      outer = turn(y, hb * (field ? 1.15 : 1), (i - (n - 1) / 2) * (trunk ? 0.05 : 0.13) * (field ? 1.4 : 1), lin[i % 3], gap);
+    }
+    // on the wound: the pad underneath shows as a bulge, and the blood comes through it
+    const ox = Math.sin(wa), oz = Math.cos(wa), r = Math.hypot(ox * (outer.rx + 0.006), oz * (outer.rz + 0.006));
+    const px = outer.S.cx + ox * r, pz = outer.S.cz + oz * r, along = Math.abs(ox) > Math.abs(oz);
+    mb.box(px, yw - 0.038, pz, along ? 0.012 : 0.07, 0.076, along ? 0.07 : 0.012, lin[0], 0);
+    const bs = (field ? 0.05 : 0.034) * (0.8 + Math.min(1, (w.lost || 0) * 10));
+    mb.box(px + ox * 0.004, yw - bs / 2 - 0.005, pz + oz * 0.004, along ? 0.008 : bs, bs * 1.15, along ? bs : 0.008, mixc(blood, lin[0], field ? 0.1 : 0.3), 0);
+    if (field) mb.box(px + ox * 0.005, yw - bs * 0.9, pz + oz * 0.005, along ? 0.007 : bs * 0.45, bs * 0.7, along ? bs * 0.45 : 0.007, mulc(blood, 0.8), 0);   // (run down)
+    // the knot, on the outside opposite the wound (an arm: out to the side), with its two ends hanging down
+    const ka = trunk ? wa + Math.PI * 0.6 : /L$/.test(w.part) ? Math.PI / 2 : -Math.PI / 2, kx = Math.sin(ka), kz = Math.cos(ka);
+    const kr = Math.hypot(kx * (outer.rx + 0.012), kz * (outer.rz + 0.012)), kpx = outer.S.cx + kx * kr, kpz = outer.S.cz + kz * kr;
+    const ks = field ? 0.03 : 0.022;
+    mb.box(kpx, yw - ks / 2, kpz, ks, ks * 1.1, ks, lin[0], 0);
+    const tl = field ? 0.08 : 0.04;
+    mb.push(new THREE.Matrix4().makeTranslation(kpx, yw - ks / 2, kpz).multiply(new THREE.Matrix4().makeRotationY(ka)));
+    mb.push(new THREE.Matrix4().makeRotationZ(0.35)); mb.box(-0.006, -tl, 0.006, 0.014, tl, 0.005, lin[2], 0); mb.pop();
+    mb.push(new THREE.Matrix4().makeRotationZ(-0.25)); mb.box(0.006, -tl * 0.85, 0.008, 0.012, tl * 0.85, 0.005, lin[1], 0); mb.pop();
+    mb.pop();
+    // tied off (a field dressing on a torn artery in an arm or leg): a tight band above, a stick twisted in it
+    if (field && w.art && Z.limb) {
+      const yt = clamp(yw + 0.09, B.min.y + 0.03, B.max.y - 0.03);
+      const T = turn(yt, 0.022, 0, rgb(0x6a2a20), 0.004);
+      mb.push(new THREE.Matrix4().makeTranslation(T.S.cx + kx * (T.rx + 0.012), yt, T.S.cz + kz * (T.rz + 0.012)).multiply(new THREE.Matrix4().makeRotationY(ka)).multiply(new THREE.Matrix4().makeRotationZ(0.5)));
+      mb.box(0, -0.065, 0, 0.012, 0.13, 0.012, rgb(0x7a5a3a), 3); mb.pop();
+    }
+    const m = new THREE.Mesh(mb.build(), N.mat || G.litMat);
+    m.frustumCulled = false;
+    part.add(m); this.bandages.push(m);
+    if (field) w.fieldMesh = m; else w.bandMesh = m;
   }
   /* ---- time passes (game minutes): wounds heal, blood comes back ---- */
   heal(mins) {
     if (this.dead) return;
     const h = mins / 60;
-    this.blood = Math.min(1, this.blood + h * 0.03);
-    if (mins > 30) { this.bleed = 0; this.daze = 0; this.pain = Math.min(this.pain, 0.3); }
+    // the blood comes back slowly (faster at rest); a long while: the daze and the worst pain are gone
+    this.blood = Math.min(1, this.blood + h * (this.anim ? 0.07 : 0.05));
+    if (mins > 30) { this.daze = 0; this.pain = Math.min(this.pain, 0.3); }
     for (const w of this.wounds) {
       const days = w.kind === 'blow' ? 0.4 + w.sev * 3 : 1 + w.sev * 9;   // a bruise: hours to a day; a gunshot: days
-      w.heal = Math.min(1, w.heal + h / (days * 24) * (w.bandaged ? 1.8 : 1));
+      w.heal = Math.min(1, w.heal + h / (days * 24) * (w.bandaged ? 1.8 : w.field ? 1.2 : 1));
+      // a gut-shot nobody has seen to goes bad: fever, and in the end it kills him (half a day or so)
+      if (w.gut && !w.bandaged && w.heal < 0.5) { w.sep = (w.sep || 0) + h / (10 + w.sev * 4); if (w.sep >= 1) { this.die('Bauchschuss'); return; } }
     }
     // healed wounds go (what happened stays in the memory of the person)
-    for (const w of this.wounds) if (w.heal >= 1 && w.bandMesh) { w.bandMesh.parent.remove(w.bandMesh); this.bandages = this.bandages.filter((m) => m !== w.bandMesh); w.bandMesh = null; }
+    for (const w of this.wounds) if (w.heal >= 1) for (const k of ['bandMesh', 'fieldMesh']) if (w[k]) { if (w[k].parent) w[k].parent.remove(w[k]); this.bandages = this.bandages.filter((m) => m !== w[k]); w[k] = null; }
     this.wounds = this.wounds.filter((w) => w.heal < 1);
     // clean clothes once the gunshots have healed a good way
     if (this.stains && this.stains.length && !this.wounds.some((w) => w.kind === 'shot' && w.heal < 0.5)) { for (const S of this.stains) if (S.m.parent) S.m.parent.remove(S.m); this.stains = []; }
@@ -536,29 +735,52 @@ class Vitals {
   // the doctor's work: every open wound bandaged, bleeding stopped
   bandageAll() {
     let n = 0;
-    for (const w of this.wounds) if (!w.bandaged && w.kind === 'shot') { w.bandaged = true; n++; }
-    this.bleed = 0; this.recalc();
+    for (const w of this.wounds) if (!w.bandaged && w.kind === 'shot') {
+      w.bandaged = true; w.b = 0; n++;
+      // (a field dressing comes off and the proper one goes on)
+      if (w.field) { w.field = false; if (w.fieldMesh) { w.fieldMesh.parent && w.fieldMesh.parent.remove(w.fieldMesh); this.bandages = this.bandages.filter((m) => m !== w.fieldMesh); w.fieldMesh = null; } }
+    }
+    this.bleed = 0; this.dying = 0; this.recalc();
     return n;
   }
+  /* first aid (the player, play/aid.js): pressing on a wound (until: G.time), a field dressing on it (stops a vein
+     mostly and ties off an artery in an arm or leg; heals no faster, the doctor is still needed) */
+  press(w, until) { if (w) w.aidT = until; this.recalcBleed(); }
+  fieldDress(w) {
+    if (!w || w.bandaged || w.field) return false;
+    w.field = true; w.fieldAt = Math.round(TIME.min);
+    if (!w.art && w.b) w.b *= 0.5;
+    if (this.dying > 0 && w.zone !== 'neck') this.dying = 0;
+    this.recalcBleed();
+    return true;
+  }
+  // what still needs the doctor: a gunshot not bandaged by him
+  needsDoc() { return this.wounds.some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5); }
   // in words, for the AI and the developer panel
   describe() {
     if (this.dead) return 'tot (' + this.cause + ')';
     const out = [];
     for (const w of this.wounds) {
-      const how = w.kind === 'shot' ? 'Schusswunde ' + zoneIn(w.zone, w.side) : (w.zone === 'head' ? 'Prellungen im Gesicht' : 'Prellungen am Körper');
-      out.push(how + (w.bandaged ? ', verbunden' : '') + (w.heal > 0.6 ? ', fast verheilt' : w.heal > 0.25 ? ', heilt' : ', frisch'));
+      const how = w.kind === 'shot' ? (w.gut ? 'Bauchschuss' : 'Schusswunde ' + zoneIn(w.zone, w.side)) : (w.zone === 'head' ? 'Prellungen im Gesicht' : 'Prellungen am Körper');
+      const bl = w.kind === 'shot' && !w.bandaged && w.b ? (w.art && !w.field ? ', die Schlagader ist getroffen, das Blut pumpt heraus' : w.b * this.bleedFactor(w) > 0.0007 ? ', blutet stark' : ', blutet') : '';
+      out.push(how + bl + (w.bandaged ? ', vom Doc verbunden' : w.field ? ', notdürftig verbunden' + (w.art && ZONES[w.zone].limb ? ' und abgebunden' : '') : '') + (w.heal > 0.6 ? ', fast verheilt' : w.heal > 0.25 ? ', heilt' : ', frisch') + (w.sep > 0.4 ? ', Fieber, die Wunde entzündet sich' : ''));
     }
-    if (this.blood < 0.6) out.push('viel Blut verloren, schwach');
+    if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) out.push('höllische Schmerzen im Bauch, du krümmst dich');
+    if (this.out) out.push('bewusstlos');
+    else if (this.blood < BLOOD_FAINT) out.push('so viel Blut verloren, dass du dich nicht mehr auf den Beinen halten kannst');
+    else if (this.blood < BLOOD_WEAK) out.push('viel Blut verloren, schwach und schwindlig');
+    else if (this.blood < 0.82) out.push('etwas Blut verloren, blass');
     if (this.limp > 0.15) out.push('humpelt');
     if (this.armUse[0] < 0.6 || this.armUse[1] < 0.6) out.push('kann einen Arm kaum bewegen');
     return out.join('; ');
   }
   // kept between sessions
-  save() { return { blood: +this.blood.toFixed(3), dead: this.dead, cause: this.cause, deadAt: this.deadAt, hatOff: this.hatOff, wounds: this.wounds.map((w) => ({ zone: w.zone, side: w.side, kind: w.kind, sev: w.sev, at: w.at, heal: +w.heal.toFixed(3), bandaged: w.bandaged, part: w.part, lp: w.lp, n: w.n })) }; }
+  save() { return { blood: +this.blood.toFixed(3), dead: this.dead, cause: this.cause, deadAt: this.deadAt, hatOff: this.hatOff, wounds: this.wounds.map((w) => ({ zone: w.zone, side: w.side, kind: w.kind, sev: w.sev, at: w.at, heal: +w.heal.toFixed(3), bandaged: w.bandaged, part: w.part, lp: w.lp, n: w.n, b: w.b ? +w.b.toFixed(5) : 0, art: !!w.art, field: !!w.field, gut: !!w.gut, sep: w.sep ? +w.sep.toFixed(3) : 0, lost: w.lost ? +w.lost.toFixed(3) : 0 })) }; }
   load(d) {
     if (!d) return;
-    this.blood = clamp(+d.blood || 1, 0.2, 1);
-    this.wounds = Array.isArray(d.wounds) ? d.wounds.filter((w) => w && ZONES[w.zone]).map((w) => Object.assign({}, w, { heal: clamp(+w.heal || 0, 0, 0.999) })) : [];
+    this.blood = clamp(+d.blood || 1, BLOOD_FAINT + 0.05, 1);
+    this.wounds = Array.isArray(d.wounds) ? d.wounds.filter((w) => w && ZONES[w.zone]).map((w) => Object.assign({}, w, { heal: clamp(+w.heal || 0, 0, 0.999), b: clamp(+w.b || 0, 0, 0.05) })) : [];
+    this.recalcBleed();
     this.recalc();
     if (d.dead) { this.deadAt = d.deadAt; this.dead = false; this.die(d.cause || 'tot'); this.anim.i = this.anim.seq.length - 1; this.anim.t = 1; this.anim.done = false; }
   }
@@ -632,7 +854,8 @@ const HARM = {
     if (/^uArm/.test(part)) return { zone: 'arm', side };
     if (/^fArm/.test(part)) return { zone: p.y < -0.25 ? 'hand' : 'arm', side };
     if (/^hand/.test(part)) return { zone: 'hand', side };
-    if (/^(thigh|shin)/.test(part)) return { zone: 'leg', side };
+    if (/^thigh/.test(part)) return { zone: 'thigh', side };
+    if (/^shin/.test(part)) return { zone: 'calf', side };
     if (/^foot/.test(part)) return { zone: 'foot', side };
     return { zone: 'chest', side: '' };
   },
@@ -644,7 +867,7 @@ const HARM = {
     if (hit.zone !== 'hat') {
       this.fleshSound(hit.point, hit.zone === 'head');
       // the bullet comes out the other side and marks the wall behind (not every time)
-      if (hit.zone !== 'hand' && hit.zone !== 'foot' && Math.random() < 0.7) this.exitSplash(hit.point, dir, N);
+      if (hit.zone !== 'hand' && hit.zone !== 'foot' && Math.random() < 0.85) this.exitSplash(hit.point, dir, N);
       // dropping what was in the hand of a hit arm
       const Z = ZONES[hit.zone];
       if (Z.drop || Z.lethal || Z.dying || Z.down) this.dropHand(N, hit.side === 'L' ? 0 : hit.side === 'R' ? 1 : -1, dir);
@@ -676,9 +899,19 @@ const HARM = {
         life: 0.5 + Math.random() * 0.5, size: 0.012 + Math.random() * 0.016, grav: 9.8, drag: 0.8, bounce: false }, mulc([0.45, 0.05, 0.04], 0.7 + Math.random() * 0.5));
     }
     for (let i = 0; i < Math.ceil(2 * k); i++) FX.smoke.spawn({ x: p.x, y: p.y, z: p.z, vx: dir.x * 0.8 + (Math.random() - 0.5) * 0.4, vy: 0.1, vz: dir.z * 0.8 + (Math.random() - 0.5) * 0.4, life: 0.35, size: 0.03, grow: 3, drag: 5, a0: 0.4 }, [0.5, 0.08, 0.06]);
-    // on the floor below
+    // on the floor ahead of him (flung the way the bullet went)
     const gy = groundAt(p.x + dir.x * 0.4, p.z + dir.z * 0.4, p.y);
-    DECALS.add(N && N.room ? N.room : null, new THREE.Vector3(p.x + dir.x * 0.4, gy + 0.005, p.z + dir.z * 0.4), new THREE.Vector3(0, 1, 0), 'blood', [0.4, 0.06, 0.05]);
+    BLOOD.splat(N && N.room ? N.room : null, this._p.set(p.x + dir.x * (0.35 + Math.random() * 0.3), gy + 0.002, p.z + dir.z * (0.35 + Math.random() * 0.3)), this._q.set(0, 1, 0), dir, 0.5 * k);
+  },
+  // a cough from shot lungs: a grunt and a fine spray from the mouth
+  cough(N) {
+    if (!N.ch.root.visible) return;
+    const h = N.ch.p.head; h.updateMatrixWorld();
+    const p = this._p.set(0, 0.04, 0.12).applyMatrix4(h.matrixWorld), f = this._q.set(Math.sin(N.yaw), 0, Math.cos(N.yaw));
+    FOLEY.grunt(p, 1.2, 0.7);
+    for (let i = 0; i < 6; i++) FX.debris.spawn({ x: p.x, y: p.y, z: p.z, vx: f.x * (0.8 + Math.random()) + (Math.random() - 0.5) * 0.5, vy: Math.random() * 0.6, vz: f.z * (0.8 + Math.random()) + (Math.random() - 0.5) * 0.5, life: 0.5, size: 0.005 + Math.random() * 0.006, grav: 9.8, drag: 1, bounce: false }, [0.5, 0.04, 0.03]);
+    if (Math.random() < 0.6) BLOOD.drop(N.room || null, p.x + f.x * 0.35, groundAt(p.x, p.z, N.pos.y + 0.3), p.z + f.z * 0.35, f, 0.008, 1, 0);
+    N.hp.flinchBy(this._q.set(-f.x, 0, -f.z), 0.35, 'chest', '', true);
   },
   // the bullet out of the back: a splash on what is behind (wall or floor), if close
   exitSplash(p, dir, N) {
@@ -688,17 +921,10 @@ const HARM = {
     const hits = ray.intersectObjects(objs, false);
     if (!hits.length) return;
     const h = hits[0], n = h.face.normal.clone().transformDirection(h.object.matrixWorld); if (n.dot(dir) > 0) n.negate();
-    DECALS.add(ROOMS.find((r) => r.mesh === h.object) || null, h.point, n, 'blood', [0.4, 0.06, 0.05]);
+    // the farther the wall, the more it spreads (and the less arrives)
+    BLOOD.splat(ROOMS.find((r) => r.mesh === h.object) || (N.room && h.object === N.room.mesh ? N.room : null), h.point, n, dir, (N.hp.dead && N.hp.cause === 'Kopfschuss' ? 2 : 1.2) * (1.2 - h.distance * 0.25));
   },
-  drop(N) {
-    const p = N.pos, a = Math.random() * TAU, r = Math.random() * 0.25;
-    DECALS.add(N.room || null, new THREE.Vector3(p.x + Math.cos(a) * r, groundAt(p.x, p.z, p.y + 0.3) + 0.004, p.z + Math.sin(a) * r), new THREE.Vector3(0, 1, 0), 'drop', [0.35, 0.05, 0.04]);
-  },
-  // a man on the ground bleeding: a pool under him
-  pool(N) {
-    const p = N.pos;
-    DECALS.add(N.room || null, new THREE.Vector3(p.x, groundAt(p.x, p.z, p.y + 0.3) + 0.003, p.z), new THREE.Vector3(0, 1, 0), 'pool', [0.3, 0.04, 0.03]);
-  },
+  // (drops and pools: gfx/blood.js, from Vitals.bleedStep)
   fleshSound(p, head) {
     GSFX.run(() => {
       const { g, t } = GSFX.out(0.8, p);
@@ -767,6 +993,7 @@ const HARM = {
   },
   loose: [],
   update(dt) {
+    BLOOD.update(dt);
     for (let i = this.loose.length - 1; i >= 0; i--) {
       const L = this.loose[i];
       if (L.npc && L.rest && (L.t > 120 || (G.room || null) !== (L.R || null)) && !L.npc.hp.dead) { this.hatBack(L.npc); i = Math.min(i, this.loose.length); continue; }
@@ -779,10 +1006,9 @@ const HARM = {
     }
   },
   init() {
-    // everyone heals while time passes (awake slowly, asleep the hours at once)
-    TIME.onSkip((m) => { for (const N of NPCS.list) if (N.hp) N.hp.heal(m); });
+    // everyone heals while time passes (a jump in time: npc/sim.js)
     let acc = 0;
-    TIME.onTick((dt) => { acc += dt * TIME.RATE * (TIME.speed || 1); if (acc >= 5) { for (const N of NPCS.list) if (N.hp) N.hp.heal(acc); acc = 0; } });
+    TIME.onTick((dt) => { acc += dt * TIME.RATE; if (acc >= 5) { for (const N of NPCS.list) if (N.hp) N.hp.heal(acc); acc = 0; } });
   }
 };
 // blood marks on surfaces (the bullet hole pool of combat/fx.js draws them)
