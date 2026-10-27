@@ -31,6 +31,7 @@ class NPC {
     this.look = new THREE.Vector3(); this.lookW = 0; this.lookTW = 0; this.hdYaw = 0; this.hdPitch = 0; this.spYawL = 0;
     // what the behaviour asks of the body this frame (it sets targets, the body eases towards them)
     this.hand = [0, 1].map((i) => ({ w: 0, tw: 0, p: new THREE.Vector3(), pole: new THREE.Vector3(i ? -0.8 : 0.8, -0.5, -0.4), ov: { w: 0, sw: 0, yw: 0, out: 0, el: 0 } }));
+    this.tw = 0; this.leanF = 0; this.lunge = 0; this.hurry = 1;
     this.lean = 0; this.leanT = 0; this.crouch = 0; this.crouchT = 0; this.talkT = 0; this.nod = 0;
     this.body = { cx: this.pos.x, cz: this.pos.z, r: 0.32, npc: this };
     NPCS.bodies.push(this.body);
@@ -41,12 +42,24 @@ class NPC {
     NPCS.list.push(this);
     this.update(0);
   }
-  goTo(x, z, faceYaw) {
+  goTo(x, z, faceYaw, leg) {
     this.faceYaw = faceYaw === undefined ? null : faceYaw;
+    if (!leg) { this.path = null; this.dest = null; this.legPass = false; }
     if (Math.hypot(x - this.pos.x, z - this.pos.z) < 0.05) { this.goal = null; return; }   // already there
     this.goal = (this.goal || new THREE.Vector3()).set(x, this.pos.y, z);
   }
-  stop(faceYaw) { this.goal = null; if (faceYaw !== undefined) this.faceYaw = faceYaw; }
+  stop(faceYaw) { this.goal = null; this.path = null; this.dest = null; if (faceYaw !== undefined) this.faceYaw = faceYaw; }
+  // walk anywhere: through the doors and round the bar (npc/nav.js), then to the spot, facing faceYaw at the end
+  walkTo(x, z, faceYaw) {
+    this.path = NAV.route(this.pos.x, this.pos.z, this.pos.y, x, z, groundAt(x, z, this.pos.y + 0.5));
+    this.dest = [x, z, faceYaw === undefined ? null : faceYaw];
+    this.nextLeg();
+  }
+  nextLeg() {
+    if (this.path && this.path.length) { const p = this.path.shift(); this.legPass = true; this.goTo(p[0], p[1], undefined, true); }
+    else if (this.dest) { const d = this.dest; this.dest = null; this.legPass = false; this.goTo(d[0], d[1], d[2] === null ? undefined : d[2], true); }
+  }
+  walking() { return !!(this.goal || (this.path && this.path.length) || this.dest); }
   arrived() { return !this.goal && this.speed < 0.15; }
   facing(tol) { return this.faceYaw === null || Math.abs(wrapA(this.faceYaw - this.yaw)) < (tol || 0.15); }
   lookAt(v, w) { this.look.copy(v); this.lookTW = w === undefined ? 1 : w; }
@@ -80,10 +93,11 @@ class NPC {
     const can = H.canWalk();
     // walking: towards the goal, slowing down on arrival (slower when hurt; not at all while down)
     let tx = 0, tz = 0;
+    if (!this.goal && can && ((this.path && this.path.length) || this.dest)) this.nextLeg();
     if (this.goal && can) {
       const dx = this.goal.x - this.pos.x, dz = this.goal.z - this.pos.z, d = Math.hypot(dx, dz);
-      if (d < 0.04) this.goal = null;
-      else { const v = Math.min(this.walkSpeed * (this.hurry || 1) * H.speedK(), d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
+      if (d < (this.legPass ? 0.35 : 0.04)) { this.goal = null; if (this.legPass) this.nextLeg(); }
+      else { const top = this.walkSpeed * (this.hurry || 1) * H.speedK(), v = this.legPass ? top : Math.min(top, d * 2.4 + 0.15); tx = (dx / d) * v; tz = (dz / d) * v; }
     }
     const a = 1 - Math.exp(-dt * (can ? 7 : 3.5));
     this.vx += (tx - this.vx) * a; this.vz += (tz - this.vz) * a;
@@ -156,6 +170,8 @@ class NPC {
     const k = 1 - Math.exp(-dt * 5);
     this.spYawL += (ty * 0.3 - this.spYawL) * k; this.hdYaw += (clamp(ty - ty * 0.3, -1, 1) - this.hdYaw) * k; this.hdPitch += (tp - this.hdPitch) * k;
     P.spYaw = this.spYawL;
+    // a fighter's body: twisted into a punch, leaning in, the hips forward (npc/brawl.js)
+    if (this.tw || this.leanF || this.lunge) { P.spYaw += this.tw || 0; P.pelYaw += (this.tw || 0) * 0.4; P.spPitch += this.leanF || 0; P.pel.z += this.lunge || 0; }
     // talking: small nods
     const talk = this.talkT > 0 ? Math.sin(t * 8.5) * 0.05 + Math.sin(t * 3.1) * 0.03 : 0;
     P.hdYaw = this.hdYaw; P.hdPitch = this.hdPitch - ln * 0.25 + talk + this.nod; P.hdRoll = 0;

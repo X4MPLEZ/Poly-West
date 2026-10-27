@@ -51,6 +51,11 @@ const BARKEEP = {
     itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
     groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
     mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    brawl: [['Na warte!', 'angry'], ['Das wirst du bereuen!', 'angry'], ['Komm her, du!', 'angry'], ['Du willst Ärger? Bitte!', 'angry'], ['Jetzt reicht’s!', 'angry']],
+    taunt: [['Na? Noch einen?', 'angry'], ['Steh auf!', 'angry'], ['Komm schon!', 'angry'], ['Ist das alles?', 'amused']],
+    won: [['Und bleib draußen!', 'angry'], ['Hat er genug, der Herr?', 'disgusted'], ['Das nächste Mal brech ich dir was.', 'angry']],
+    yield: [['Schon gut! Schon gut! Genug!', 'surprised'], ['Hör auf! Ich hab genug!', 'surprised'], ['Genug… es ist genug…', 'sleepy']],
+    calm: [['Und lass dich hier nicht mehr blicken.', 'angry'], ['Das merk ich mir.', 'disgusted'], ['Verschwinde.', 'disgusted']],
     noserve: [['Für dich? Gar nichts mehr.', 'disgusted'], ['Nach dem, was du getan hast? Vergiss es.', 'angry'], ['Ich schenk dir nichts aus. Geh.', 'disgusted']],
     price: ['Whiskey fünfundzwanzig Cent, Bier zehn, Wasser fünf. Die Flasche einen Dollar fünfzig.', 'Bier zehn Cent, Whiskey fünfundzwanzig, Wasser fünf. Für die Flasche einsfünfzig.']
   },
@@ -125,7 +130,22 @@ const BARKEEP = {
     const N = this.npc;
     this.pending = null; this.attending = false; this.standoff = null;
     if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; return; }
-    if (info.type === 'up') { if (Math.random() < 0.6) this.shout('groan'); return; }
+    if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
+    if (info.type === 'blow') {
+      const F = this.fightLog || (this.fightLog = { punches: 0, downs: 0, ground: 0, landed: 0 });
+      F.punches++; if (info.res === 'down') F.downs++; if (info.ground) F.ground++;
+      this.feel(info.ground ? -0.12 : -0.05);
+      this.grudge = Math.min(1, this.grudge + (info.ground ? 0.06 : 0.02) + (info.res === 'down' ? 0.08 : 0));
+      if (info.res === 'dead') return;
+      // hit: he fights back, if he can (and dares)
+      if (this.st !== 'brawl' && N.hp.blood > 0.45 && !N.hp.dead && this.st !== 'dead') {
+        if (F.punches === 1) this.note('Er hat dich geschlagen.');
+        this.abortServe(); this.orders.length = 0; this.st = 'brawl'; N.fight.start();
+        setTimeout(() => { if (this.st === 'brawl' && !N.hp.busy()) this.shout('brawl'); }, 350);
+      } else if (info.ground && Math.random() < 0.35) this.shout('groan');
+      return;
+    }
+    if (info.type === 'landed') { const F = this.fightLog; if (F) F.landed++; if (info.res === 'down' && Math.random() < 0.7) setTimeout(() => this.shout('taunt'), 700); return; }
     if (info.type === 'item') {
       this.feel(-0.3, 'Er hat dir ' + (info.item === 'bottle' ? 'die Flasche' : info.item === 'glass' ? 'das Glas' : 'den Lappen') + ' aus der Hand geschossen.');
       this.remember('Er hat dir ' + (info.item === 'bottle' ? 'eine Flasche' : info.item === 'glass' ? 'ein Glas' : 'den Lappen') + ' aus der Hand geschossen (' + TIME.stamp() + ').');
@@ -184,6 +204,33 @@ const BARKEEP = {
     N.yaw = Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z); N.faceYaw = null;
     this.st = 'street'; this.streetT = 0;
   },
+  // the fight is over: what he says, what he keeps, where he goes
+  endBrawl(how) {
+    const N = this.npc, F = this.fightLog || { punches: 0, downs: 0, ground: 0, landed: 0 };
+    this.fightLog = null;
+    const bits = [F.punches + (F.punches === 1 ? ' Schlag' : ' Schläge') + ' von ihm'];
+    if (F.downs) bits.push('du warst ' + (F.downs === 1 ? 'einmal' : F.downs + '-mal') + ' am Boden');
+    if (F.ground) bits.push('er hat noch auf dich eingeprügelt, als du am Boden lagst');
+    if (F.landed) bits.push('du hast ' + F.landed + '-mal getroffen');
+    const end = how === 'won' ? 'hast du ihn k.o. geschlagen und rausgeworfen' : how === 'gave up' ? 'hast du aufgegeben' : 'ist er abgehauen';
+    this.remember('Er hat sich mit dir geprügelt: ' + bits.join(', ') + '; am Ende ' + end + ' (' + TIME.stamp() + ').');
+    this.note('Prügelei mit ihm, am Ende ' + end + '.');
+    if (how === 'won') { this.feel(0.05); this.shout('won'); }
+    else if (how === 'gave up') { this.grudge = Math.min(1, this.grudge + 0.15); this.shout('yield'); }
+    else this.shout('calm');
+    // back behind the bar (on foot, round the bar), or hurt
+    this.st = 'return'; this.returnT = how === 'won' ? 2.5 : 1.2;
+  },
+  // walking back to his place behind the bar (from the street, from the room)
+  updReturn(dt) {
+    const N = this.npc;
+    for (const k in this.props) this.props[k].visible = false;
+    N.free(0); N.free(1); N.hurry = 1;
+    if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.returnT = 1; return; }
+    if (this.returnT > 0) { this.returnT -= dt; if (this.returnT <= 0) { const p = this.roomPt(this.X.stand, -6.4, this._v); N.walkTo(p.x, p.z, this.faceYaw); } return; }
+    if (!N.walking() && N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen) { this.st = N.hp.open().some((w) => w.kind === 'shot' && !w.bandaged) ? 'hurt' : 'idle'; this.hurtT = 0; this.pickIdle(); }
+    else if (!N.walking()) { const p = this.roomPt(this.X.stand, -6.4, this._v); N.walkTo(p.x, p.z, this.faceYaw); }
+  },
   // out on the street: he stands there and keeps an eye on you
   updStreet(dt) {
     const N = this.npc;
@@ -194,6 +241,8 @@ const BARKEEP = {
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (dP < 14) { N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1); if (dP < 6) N.faceYaw = Math.atan2(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z); }
     else N.lookTW = 0;
+    // left alone out here, he goes back to his saloon
+    if (this.streetT > 45 && (dP > 4 || this.streetT > 90)) { this.st = 'return'; this.returnT = 0.5; }
   },
   revive() {
     const N = this.npc; if (!N) return;
@@ -226,6 +275,8 @@ const BARKEEP = {
     onWorldEvent((e) => this.event(e));
     this.npc.persona = this.persona();
     this.npc.held = () => this.held();
+    // he can take a punch and give one back
+    this.npc.fight = new Brawler(this.npc, { courage: 0.7, power: 1, skill: 0.55 });
     this.npc.onHarm = (info) => this.onHarm(info);
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
     this.npc.voiceProfile = { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
@@ -477,7 +528,9 @@ const BARKEEP = {
     }
     const handsUp = this.aimedT > 0.2;
     N.leanT = 0; N.crouchT = 0;
+    if (this.st === 'brawl') { for (const k in this.props) this.props[k].visible = false; const r = N.fight.update(dt); if (r) this.endBrawl(r); this.placeProps(); return; }
     if (N.hp.busy() || this.st === 'hurt') { if (this.st !== 'hurt') { this.st = 'hurt'; this.hurtT = 0; } this.updHurt(dt, inside); this.placeProps(); return; }
+    if (this.st === 'return') { this.updReturn(dt); this.placeProps(); return; }
     if (this.st === 'street') { this.updStreet(dt); this.placeProps(); return; }
     if (this.st === 'duck') this.updDuck(dt);
     else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }

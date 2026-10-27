@@ -26,10 +26,23 @@ const PUNCH = {
     { ph: 'recover', dur: 0.42, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05, roll: 0 }
   ]
 };
+// on a man on the ground: down onto one knee and the fist driven down; the held one drops the whole body in
+PUNCH.ground = [
+  { ph: 'windup', dur: 0.12, ease: 'out', fist: [-0.25, 1.4, 0.25], pole: [-0.4, -1, 0.1], ty: -0.35, tp: 0.45, pz: 0.04, dy: 0.28 },
+  { ph: 'strike', dur: 0.1, ease: 'cubic', fist: [0.0, 0.5, 0.74], pole: [-0.3, -1, 0.25], ty: 0.45, tp: 0.95, pz: 0.16, dy: 0.5, hit: true },
+  { ph: 'hold', dur: 0.08, ease: 'out', fist: [0.0, 0.54, 0.68], pole: [-0.3, -1, 0.25], ty: 0.4, tp: 0.92, pz: 0.16, dy: 0.5 },
+  { ph: 'recover', dur: 0.34, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05 }
+];
+PUNCH.groundH = [
+  { ph: 'strike', dur: 0.16, ease: 'in', via: [-0.3, 1.9, 0.45], fist: [0.0, 0.42, 0.72], pole: [-0.5, -0.6, 0.3], ty: 0.5, tp: 1.05, pz: 0.22, dy: 0.62, roll: -0.1, hit: true },
+  { ph: 'follow', dur: 0.14, ease: 'out', fist: [0.05, 0.46, 0.62], pole: [-0.4, -0.8, 0.3], ty: 0.45, tp: 1.0, pz: 0.22, dy: 0.62, roll: -0.1 },
+  { ph: 'recover', dur: 0.5, ease: 'inout', fist: null, ty: 0.1, tp: 0.06, pz: 0, dy: 0.05, roll: 0 }
+];
 const CHARGE_R = { fist: [-0.62, 1.55, -0.2], pole: [-1, 0.12, -0.5], ty: -0.85, tp: 0.05, pz: -0.08, dy: 0.1, roll: 0.05 };
 const COMBO = [['straight', -1], ['straight', 1], ['hook', -1], ['hook', 1]];   // jab, cross, left hook, right hook
 const EASE = {
   out: (t) => 1 - (1 - t) * (1 - t),
+  in: (t) => t * t,
   cubic: (t) => 1 - Math.pow(1 - t, 3),
   inout: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
   back: (t) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
@@ -98,6 +111,9 @@ const FIST = {
     this.sloppy = [(Math.random() - 0.5) * L * 0.34, (Math.random() - 0.5) * L * 0.26, (Math.random() - 0.5) * L * 0.5];
     this.faceYaw = this.aimYaw();
     if (heavy) { this.side = Math.random() < 0.5 ? 1 : -1; this.st = 'charge'; this.t = 0; this.clipName = 'overhand'; this.snapFrom(); FSFX.cloth(); return; }
+    // someone lies in front of you: the punch goes down to him
+    const gt = this.groundTarget();
+    if (gt) { this.closeIn(gt); this.combo++; this.lastPunch = G.time; this.clipName = 'ground'; this.side = this.side === 1 ? -1 : 1; this.clip = PUNCH.ground; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom(); return; }
     // each tap picks a punch at random: mostly the other hand, rarely the same punch twice in a row
     const fresh = G.time - this.lastPunch > 0.9;
     const wts = COMBO.map(([n, sd]) => (n === 'hook' ? 0.4 : 1) * (fresh ? 1 : (sd === this.side ? 0.25 : 1) * (n === this.clipName ? 0.5 : 1)));
@@ -110,7 +126,9 @@ const FIST = {
   },
   release() {
     this.charge = clamp(this.t, 0.15, 0.7);
-    this.clip = PUNCH.overhand; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom();
+    const low = this.groundTarget();
+    if (low) this.closeIn(low);
+    this.clip = low ? PUNCH.groundH : PUNCH.overhand; this.clipName = low ? 'groundH' : 'overhand'; this.k = 0; this.t = 0; this.st = this.clip[0].ph; this.snapFrom();
     this.faceYaw = this.aimYaw(); this.lastPunch = G.time; this.combo = 0;
   },
   snapFrom() {
@@ -143,8 +161,31 @@ const FIST = {
     }
     return best === null ? base : best;
   },
+  // a man on the ground close in front: the punches go down to him
+  groundTarget() {
+    for (const T of this.targets()) {
+      if (T.kind !== 'npc' || !T.down) continue;
+      const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
+      const base = PLAY.inYaw !== null && PLAY.inYaw !== undefined ? PLAY.inYaw : PLAY.yaw;
+      if (d < 2.5 && Math.abs(wrapA(Math.atan2(dx, dz) - base)) < 1.2) return T;
+    }
+    return null;
+  },
+  // a step in towards the man on the ground, so the fist reaches him
+  closeIn(T) {
+    const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz), v = clamp((d - 0.95) * 3.4, 0, 5);
+    if (d > 0.01) { PLAY.vx += dx / d * v; PLAY.vz += dz / d * v; }
+    this.faceYaw = Math.atan2(dx, dz);
+  },
   targets() {
     const out = [{ kind: 'dummy', x: DUMMY.x, z: DUMMY.z, y0: 0.8, y1: 2.0, r: 0.3 }];
+    // people: standing, from the hips to the head; lying, the chest on the ground
+    for (const N of NPCS.list) {
+      if (!N.ch.root.visible || (N.room || null) !== (G.room || null) || (N.hp.dead && !N.hp.anim)) continue;
+      const down = N.hp.down();
+      if (down) { const e = N.ch.p.torso.matrixWorld.elements; out.push({ kind: 'npc', npc: N, x: e[12], z: e[14], y0: N.pos.y, y1: N.pos.y + 0.6, r: 0.35, down: true, low: false }); }
+      else out.push({ kind: 'npc', npc: N, x: N.pos.x, z: N.pos.z, y0: N.pos.y + 0.85 - N.crouch * 0.4, y1: N.pos.y + 1.85 - N.crouch * 0.45, r: 0.3 });
+    }
     for (const b of BOTTLES) if (b.alive) out.push({ kind: 'bottle', b, x: b.x, z: b.z, y0: b.y, y1: b.y + 0.3, r: 0.06 });
     // glass in the room you are in (bar, tables, shelves) and the drink in front of you: from table height to above the head
     const L = G.room && BREAK.byRoom.get(G.room);
@@ -201,15 +242,16 @@ const FIST = {
     if (Math.random() < L * 0.9) DRUNK.stumble(yaw + (Math.random() - 0.5) * 0.8, this.heavy, L > 0.6 ? (L - 0.55) * (this.heavy ? 1.2 : 0.6) : 0);
   },
   connect() {
-    const kind = this.clipName, reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : 1.02;
+    const kind = this.clipName, ground = kind === 'ground' || kind === 'groundH', reach = kind === 'overhand' ? 1.2 : kind === 'hook' ? 0.92 : ground ? 0.95 : 1.02;
     const yaw = this.faceYaw !== null ? this.faceYaw : PLAY.yaw, fx = Math.sin(yaw), fz = Math.cos(yaw);
-    const fistY = PLAY.pos.y + (kind === 'overhand' ? 1.45 : 1.48);
-    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1);
+    const fistY = PLAY.pos.y + (ground ? 0.45 : kind === 'overhand' ? 1.45 : 1.48);
+    const power = (this.heavy ? 1 + this.charge * 1.4 : kind === 'hook' ? 1.35 : 1) * (this.weak ? 0.55 : 1) * (1 - Math.min(DRUNK.level, 1) * 0.25);
     let hit = null, hd = 9;
     for (const T of this.targets()) {
       const dx = T.x - PLAY.pos.x, dz = T.z - PLAY.pos.z, d = Math.hypot(dx, dz);
       if (d > reach + T.r + 0.36) continue;
-      if (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35)) continue;
+      if (ground ? !T.down : T.down) continue;
+      if (!ground && (T.low ? (T.y1 < PLAY.pos.y + 0.55 || T.y0 > PLAY.pos.y + 2.1) : (fistY < T.y0 - 0.3 || fistY > T.y1 + 0.35))) continue;
       if (Math.abs(wrapA(Math.atan2(dx, dz) - yaw)) > 0.95) continue;
       if (d < hd) { hd = d; hit = T; }
     }
@@ -230,6 +272,20 @@ const FIST = {
       DUMMY.hit(fx, fz, (big ? 3.8 : kind === 'hook' ? 2.2 : 2.0) * power, twist * 4 * power);
       DUMMY.straw(p, fx * 0.5, fz * 0.5, big ? 14 : 6, big);
       FSFX.bag(p, power, big || kind === 'hook');
+    } else if (hit.kind === 'npc') {
+      const N = hit.npc, dir = new THREE.Vector3(fx, 0, fz);
+      // a light blow from the front into a raised guard is caught on the arms
+      if (!ground && !big && N.fight && N.fight.blocking(yaw) && Math.random() < 0.3 + N.fight.skill * 0.3) {
+        FSFX.block(p); N.hp.flinchBy(dir, 0.25, 'arm', '', true); N.fight.gotHit();
+        worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: 'npc', npc: N.id, kind, blocked: true });
+        return;
+      }
+      const head = ground ? Math.random() < 0.55 : fistY - N.pos.y > 1.32 - N.crouch * 0.4;
+      const res = N.hp.blow({ head, power, dir, heavy: big, ground });
+      FSFX.flesh(p, power, big || kind === 'hook', head);
+      if (head && Math.random() < (ground ? 0.5 : 0.25)) HARM.bloodFx(p, dir, 0.3, N);
+      if (N.fight) N.fight.gotHit();
+      if (N.onHarm) N.onHarm({ type: 'blow', head, res, heavy: big, ground });
     } else if (hit.kind === 'bottle') {
       shatterBottle(hit.b, new THREE.Vector3(fx, 0.3, fz));
     } else if (hit.kind === 'glass') {
@@ -241,7 +297,7 @@ const FIST = {
         for (const T of this.targets()) if (T.kind === 'glass' && n < 2 && Math.hypot(T.x - hit.x, T.z - hit.z) < 0.45 && Math.abs(T.y0 - hit.y0) < 0.25) { BREAK.shatter(T.g, dir); n++; }
       }
     }
-    worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: hit.kind, kind, heavy: big });
+    worldEvent('punch', p.x, p.y, p.z, { by: 'player', target: hit.kind, npc: hit.npc ? hit.npc.id : null, kind, heavy: big });
   },
   // a short ribbon behind the fist while it travels: the eye reads speed from it
   updateTrail(dt) {
@@ -347,6 +403,20 @@ const FSFX = {
       if (heavy) { GSFX.play(n, g, t, 0.72, 1); GSFX.play('swing1', g, t + 0.03, 0.62, 0.7); }
       else if (!GSFX.play(n, g, t, 0.95 + Math.random() * 0.15, 1)) SFX.noiseHit(t, g, { freq: 1500, q: 1.2, gain: 0.3, attack: 0.03, decay: 0.08 });
     });
+  },
+  // a fist on a person: the recorded slap, a dull body thud, a crack on the head
+  flesh(p, power, heavy, head) {
+    GSFX.run(() => {
+      const { g, t } = GSFX.out(0.9, p);
+      const pick = heavy ? 'punchH' : ['punch1', 'punch2', 'punch3', 'punch4'][Math.floor(Math.random() * 4)];
+      const lv = clamp(0.55 + power * 0.3, 0.4, 1.15);
+      if (!GSFX.play(pick, g, t, (head ? 1.02 : 0.9) + Math.random() * 0.1, lv)) SFX.noiseHit(t, g, { freq: 1600, q: 0.8, gain: 0.45, attack: 0.001, decay: 0.05 });
+      SFX.thump(t, g, head ? 140 : 100, head ? 60 : 42, heavy ? 0.8 : 0.5, heavy ? 0.14 : 0.08);
+      SFX.noiseHit(t, g, { type: 'lowpass', freq: head ? 700 : 380, q: 0.8, gain: heavy ? 0.55 : 0.35, attack: 0.002, decay: 0.07 });
+    });
+  },
+  block(p) {
+    GSFX.run(() => { const { g, t } = GSFX.out(0.7, p); GSFX.play('punch2', g, t, 1.25, 0.45); SFX.thump(t, g, 160, 90, 0.3, 0.05); SFX.noiseHit(t, g, { freq: 900, q: 1.2, gain: 0.2, attack: 0.001, decay: 0.03 }); });
   },
   cloth() { GSFX.run(() => { const { g, t } = GSFX.out(0.3); SFX.noiseHit(t, g, { freq: 1100, q: 0.7, gain: 0.18, attack: 0.05, decay: 0.15 }); }); },
   bag(p, power, heavy) {

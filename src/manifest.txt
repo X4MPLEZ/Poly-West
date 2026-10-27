@@ -44,6 +44,8 @@ interact/sit.js
 interact/drink.js
 npc/npc.js
 npc/harm.js
+npc/nav.js
+npc/brawl.js
 npc/barkeep.js
 npc/direct.js
 npc/hear.js

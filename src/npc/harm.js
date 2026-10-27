@@ -182,7 +182,7 @@ class Vitals {
     else this.wounds.push({ zone, side: '', kind: 'blow', sev: 0.12 * p, at: Math.round(TIME.min), heal: 0, bandaged: false, n: 1 });
     const dir = this._w.set(o.dir.x, 0, o.dir.z);
     if (this.trauma >= 1) { this.die(o.ground ? 'totgeschlagen' : 'erschlagen', dir, 'back'); return 'dead'; }
-    if (this.anim) { if (this.lowness > 0.5) { this.downFor += 1.2 * p; this.anim.jit = {}; } return 'down'; }
+    if (this.anim) { if (this.lowness > 0.5) { this.downFor += 1.2 * p; this.anim.jit = {}; } return 'ground'; }
     if (this.daze >= 1 || (o.heavy && head && this.daze > 0.6)) {
       this.knocked = true;
       this.fall(o.heavy || Math.random() < 0.5 ? 'back' : 'side', dir, Math.random() < 0.5 ? 'L' : 'R', 2.5 + this.daze * 2.2);
@@ -190,7 +190,7 @@ class Vitals {
     }
     this.flinchBy(dir, (o.heavy ? 1.4 : 0.75) * (head ? 1 : 0.7), head ? 'head' : 'chest', '', true);
     N.vx += o.dir.x * (o.heavy ? 2.4 : 1.1); N.vz += o.dir.z * (o.heavy ? 2.4 : 1.1);
-    this.stunT = o.heavy ? 0.9 : 0.4;
+    this.stunT = o.heavy ? 0.8 : head ? 0.3 : 0.2;
     return 'hit';
   }
   forwardDot(dir) { const N = this.npc; return dir.x * Math.sin(N.yaw) + dir.z * Math.cos(N.yaw); }

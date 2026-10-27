@@ -768,8 +768,43 @@ async def check_harm(g):
           and r['item']['item'] == 'glass' and r['item']['wounds'] == 0 and r['item']['gone'] and 'aus der Hand' in (r['item']['mem'] or ''))
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_brawl(g):
+    """punch Hank: he fights back and lands punches on you; enough blows put him down; on the ground the punches go
+       down to him (ground blows); when it is over he remembers the fight and walks back behind his bar"""
+    await g.js(RESET)
+    r = await g.js('''() => {
+      const out = {}, N = BARKEEP.npc; BARKEEP.revive(); BARKEEP.forget(); PHP.hp = 1; PHP.out = null;
+      PLAY.pos.set(-8, 0, 2); PLAY.yaw = Math.PI / 2; GAIT.init = false; BARKEEP.toStreet(); N.pos.set(-6.95, 0, 2); N.yaw = -Math.PI / 2;
+      G.noRender = true; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      const face = () => { PLAY.yaw = Math.atan2(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z); };
+      const tap = () => { face(); FIST.down(false); FIST.up(); };
+      tap(); for (let k = 0; k < 30; k++) { face(); G.stepFrame(1/60); }
+      out.brawl = BARKEEP.st; out.fighting = N.fight.on;
+      // stand there: he punches you
+      for (let k = 0; k < 60 * 4 && PHP.hp > 0.99; k++) { face(); G.stepFrame(1/60); }
+      out.hurtMe = +PHP.hp.toFixed(2);
+      // keep punching until he goes down
+      let n = 0; PHP.hp = 1;
+      for (let k = 0; k < 60 * 20 && !N.hp.down(); k++) { if (k % 24 === 0) { tap(); n++; } face(); PHP.hp = Math.max(PHP.hp, 0.6); G.stepFrame(1/60); }
+      out.downAfter = n; out.down = N.hp.down();
+      // on the ground: the punches go down to him
+      for (let k = 0; k < 20; k++) { face(); G.stepFrame(1/60); }
+      out.groundClip = !!FIST.groundTarget(); const tr = N.hp.trauma; tap(); for (let k = 0; k < 40; k++) { face(); G.stepFrame(1/60); }
+      out.groundHit = N.hp.trauma > tr; out.clip = FIST.clipName;
+      // walk away: it ends, he remembers, he goes home
+      PLAY.pos.set(-20, 0, 6); for (let k = 0; k < 60 * 16 && BARKEEP.st === 'brawl'; k++) G.stepFrame(1/60);
+      out.after = BARKEEP.st; out.mem = BARKEEP.mem[BARKEEP.mem.length - 1] || '';
+      PLAY.pos.set(20, 0, 6);
+      for (let k = 0; k < 60 * 70 && BARKEEP.st !== 'idle' && BARKEEP.st !== 'hurt'; k++) G.stepFrame(1/60);
+      out.home = [BARKEEP.st, N.room ? N.room.type : null, !!NAV.area(N.pos.x, N.pos.z, N.pos.y).pen];
+      PHP.hp = 1; BARKEEP.revive(); BARKEEP.forget(); G.noRender = false;
+      return out; }''')
+    ok = (r['brawl'] == 'brawl' and r['fighting'] and r['hurtMe'] < 0.95 and r['down'] and r['downAfter'] <= 12 and r['groundClip'] and r['groundHit']
+          and r['after'] in ('return', 'idle', 'hurt') and 'geprügelt' in r['mem'] and r['home'][1] == 'saloon' and r['home'][2])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
