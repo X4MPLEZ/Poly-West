@@ -280,7 +280,7 @@ function updateRooms(dt) {
   for (const R of ROOMS) {
     if (R.parent) { R.mesh.visible = cur === R || cur === R.parent; continue; }
     const dDoor = Math.hypot(p.x - R.doorW.x, p.z - R.doorW.z);
-    R.mesh.visible = R === cur || dDoor < 18 || (cur && cur.parent === R);
+    R.mesh.visible = R === cur || dDoor < 18 || (!!cur && cur.parent === R);
   }
   // eyes: open up slowly in the dark, close down fast in the sun
   const target = cur ? (cur.expo || 2.5) : DAYNIGHT.expo;
@@ -290,16 +290,23 @@ function updateRooms(dt) {
   // the cowboy takes on the light of the room he stands in
   const cm = cur ? cur.figMat : G.litMat;
   if (W.ch.parts[0].material !== cm) for (const part of W.ch.parts) part.material = cm;
-  // doors
+  // doors: they open for the player and for anyone else walking through
   for (const D of DOORS) {
     const R = D.R;
     const m = R === cur ? R.figMat : G.litMat;
     if (D.meshes[0].material !== m) for (const dm of D.meshes) dm.material = m;
-    const [lx, lz] = rLocal(R, p.x, p.z);
+    let [lx, lz] = rLocal(R, p.x, p.z), py = p.y, vx = PLAY.vx, vz = PLAY.vz;
+    // the closest person to this door, if nearer than the player
+    let best = Math.hypot(lx, lz - D.z);
+    for (const N of NPCS.list) {
+      if (N.hp.down()) continue;
+      const [nx, nz] = rLocal(R, N.pos.x, N.pos.z), dd = Math.hypot(nx, nz - D.z);
+      if (dd < best && dd < 2.2) { best = dd; lx = nx; lz = nz; py = N.pos.y; vx = N.vx; vz = N.vz; }
+    }
     const dz = lz - D.z;
     if (D.kind === 'saloon') {
       const inZone = Math.abs(lx) < 0.9 && Math.abs(dz) < 0.6;
-      const vIn = -(PLAY.vx * R.s + PLAY.vz * R.c); // speed towards the inside
+      const vIn = -(vx * R.s + vz * R.c); // speed towards the inside
       for (const L of D.leaves) {
         if (inZone) {
           const push = Math.abs(vIn) > 0.2 ? Math.sign(vIn) : (dz > 0 ? 1 : -1);
@@ -320,11 +327,11 @@ function updateRooms(dt) {
       continue;
     }
     const dist = Math.hypot(lx, dz);
-    if (dist < 1.9 && Math.abs(p.y - R.floorY) < 1.2) {
+    if (dist < 1.9 && Math.abs(py - R.floorY) < 1.2) {
       // a closed door swings away from whoever comes: inwards from the street, outwards from inside
       if (D.target === 0 && Math.abs(D.angle) < 0.3) D.sgn = dz >= 0 ? 1 : -1;
       D.target = 1.62 * D.sgn; D.hold = 0.7;
-    } else if (dist > 2.7 || Math.abs(p.y - R.floorY) >= 1.2) { D.hold -= dt; if (D.hold <= 0) D.target = 0; }
+    } else if (dist > 2.7 || Math.abs(py - R.floorY) >= 1.2) { D.hold -= dt; if (D.hold <= 0) D.target = 0; }
     if (D.target !== 0 && !D.wasOpen) { D.wasOpen = true; AMB.doorOpen(D.center); }
     const prev = D.angle;
     D.vel += (40 * (D.target - D.angle) - 11 * D.vel) * dt;

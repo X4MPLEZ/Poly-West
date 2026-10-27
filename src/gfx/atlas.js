@@ -109,6 +109,8 @@ function buildAtlas(signFont) {
     icx.font = `11px ${signFont}`; icx.fillText(bottom, 32, 54);
   }));
   'HOTEL'.split('').forEach((ch, i) => cell(2 + i, () => { icx.font = `50px ${signFont}`; icx.fillText(ch, 32, 36); icx.fillRect(4, 4, 56, 2); icx.fillRect(4, 58, 56, 2); }, 205, 230));
+  // the doctor's shingle: DOC over M.D., framed
+  cell(7, () => { icx.font = `26px ${signFont}`; icx.fillText('DOC', 32, 26); icx.font = `13px ${signFont}`; icx.fillText('M.D.', 32, 47); icx.fillRect(4, 4, 56, 2); icx.fillRect(4, 58, 56, 2); icx.fillRect(4, 4, 2, 56); icx.fillRect(58, 4, 2, 56); }, 215, 30);
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;

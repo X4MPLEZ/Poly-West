@@ -51,6 +51,7 @@ const BARKEEP = {
     itemShot: [['He! Das war mein Glas!', 'angry'], ['Verdammt! Fast meine Finger!', 'surprised'], ['Bist du verrückt?!', 'angry'], ['Lass meine Hände in Ruhe!', 'angry']],
     groan: [['Ugh…', 'sleepy'], ['Verdammt…', 'sleepy'], ['Das tut weh…', 'sleepy'], ['Hol… den Doc…', 'sleepy'], ['Warum… warum ich…', 'sleepy']],
     mercy: [['Nicht schießen! Bitte!', 'surprised'], ['Genug! Es ist genug!', 'surprised'], ['Nimm dir, was du willst! Nur nicht schießen!', 'surprised'], ['Ich bin unbewaffnet, verdammt!', 'surprised']],
+    toDoc: [['Ich geh zum Doc. Du rührst hier nichts an.', 'angry'], ['Verdammt… ich brauch den Doc.', 'angry'], ['Der Laden ist zu. Ich muss zum Arzt.', 'disgusted']],
     brawl: [['Na warte!', 'angry'], ['Das wirst du bereuen!', 'angry'], ['Komm her, du!', 'angry'], ['Du willst Ärger? Bitte!', 'angry'], ['Jetzt reicht’s!', 'angry']],
     taunt: [['Na? Noch einen?', 'angry'], ['Steh auf!', 'angry'], ['Komm schon!', 'angry'], ['Ist das alles?', 'amused']],
     won: [['Und bleib draußen!', 'angry'], ['Hat er genug, der Herr?', 'disgusted'], ['Das nächste Mal brech ich dir was.', 'angry']],
@@ -192,7 +193,9 @@ const BARKEEP = {
     const dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
     if (inside && dP < 9) N.lookAt(this._w.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
     // once the bleeding is seen to (bandaged) or healing, back to work
-    if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = 'idle'; this.pickIdle(); }
+    if (!H.open().some((w) => w.kind === 'shot' && !w.bandaged && w.heal < 0.5) && this.hurtT > 5) { this.st = N.room === this.R && NAV.area(N.pos.x, N.pos.z, N.pos.y).pen ? 'idle' : 'return'; this.returnT = 0.5; this.pickIdle(); return; }
+    // a gunshot needs the doctor: when it is quiet, he goes (if there still is one)
+    if (this.hurtT > 8 && dP > 2 && DOC.npc && !DOC.npc.hp.dead && DOC.st !== 'dead') { this.st = 'toDoc'; this.docT = 0; this.shout('toDoc'); const sp = DOC.spot('patient'); N.walkTo(sp.x, sp.z, sp.yaw); }
   },
   // developer tools: out into the middle of the street (to fight in the open) / everything healed, alive again
   toStreet() {
@@ -220,6 +223,34 @@ const BARKEEP = {
     else this.shout('calm');
     // back behind the bar (on foot, round the bar), or hurt
     this.st = 'return'; this.returnT = how === 'won' ? 2.5 : 1.2;
+  },
+  // on his way to the doctor, and waiting there to be patched up
+  updDoc(dt) {
+    const N = this.npc;
+    for (const k in this.props) this.props[k].visible = false;
+    this.docT += dt;
+    if (this.aimedT > 0.2) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); return; }
+    N.free(0); N.free(1);
+    if (!DOC.npc || DOC.npc.hp.dead || this.docT > 240) { this.st = 'return'; this.returnT = 0.5; return; }
+    const sp = DOC.spot('patient'), d = Math.hypot(N.pos.x - sp.x, N.pos.z - sp.z);
+    if (this.st === 'toDoc') {
+      if (!N.walking() && d > 0.7) N.walkTo(sp.x, sp.z, sp.yaw);
+      else if (!N.walking()) {
+        this.st = 'atDoc';
+        DOC.request(N, () => { this.note('Der Doc hat dich verbunden.'); this.remember('Der Doc hat deine Wunde verbunden (' + TIME.stamp() + ').'); this.st = 'return'; this.returnT = 1.5; });
+      }
+    }
+  },
+  // the hours of a night (sleep) at once: what he would have done meanwhile is done
+  skipped(m) {
+    const N = this.npc; if (!N || N.hp.dead || m < 60) return;
+    if (N.fight.on) N.fight.stop();
+    if (['hurt', 'toDoc', 'atDoc', 'return', 'street', 'brawl', 'duck'].includes(this.st) || N.room !== this.R) {
+      if (DOC.npc && !DOC.npc.hp.dead && N.hp.open().some((w) => w.kind === 'shot' && !w.bandaged)) { N.hp.bandageAll(); this.remember('Der Doc hat deine Wunde verbunden (' + TIME.stamp() + ').'); }
+      if (N.hp.anim && !N.hp.dead) { N.hp.anim = null; N.body.r = 0.32; }
+      const p = this.roomPt(this.X.stand, -6.4, this._v); N.stop(); N.pos.copy(p); N.room = this.R; N.yaw = this.faceYaw; N.vx = N.vz = 0;
+      this.st = 'idle'; this.pickIdle();
+    }
   },
   // walking back to his place behind the bar (from the street, from the room)
   updReturn(dt) {
@@ -277,6 +308,7 @@ const BARKEEP = {
     this.npc.held = () => this.held();
     // he can take a punch and give one back
     this.npc.fight = new Brawler(this.npc, { courage: 0.7, power: 1, skill: 0.55 });
+    TIME.onSkip((m) => this.skipped(m));
     this.npc.onHarm = (info) => this.onHarm(info);
     // a deep, unhurried man's voice; the best fitting German voice of the device is used (see TALK.pickVoice)
     this.npc.voiceProfile = { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] };
@@ -531,6 +563,7 @@ const BARKEEP = {
     if (this.st === 'brawl') { for (const k in this.props) this.props[k].visible = false; const r = N.fight.update(dt); if (r) this.endBrawl(r); this.placeProps(); return; }
     if (N.hp.busy() || this.st === 'hurt') { if (this.st !== 'hurt') { this.st = 'hurt'; this.hurtT = 0; } this.updHurt(dt, inside); this.placeProps(); return; }
     if (this.st === 'return') { this.updReturn(dt); this.placeProps(); return; }
+    if (this.st === 'toDoc' || this.st === 'atDoc') { this.updDoc(dt); this.placeProps(); return; }
     if (this.st === 'street') { this.updStreet(dt); this.placeProps(); return; }
     if (this.st === 'duck') this.updDuck(dt);
     else if (handsUp) { N.stop(); N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); this.props.rag.visible = false; this.props.glass.visible = !!(this.cur && this.cur.glassOut); }

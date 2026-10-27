@@ -180,7 +180,7 @@ function fenceLine(mb, x0, z0, x1, z1, gap) {
 
 function buildTown() {
   const mb = new MB(), poles = [];
-  for (const b of BUILDINGS) {
+  const place = (b) => {
     const ry = b.side === 'n' ? 0 : Math.PI;
     const fz = b.side === 'n' ? NORTH_Z : SOUTH_Z;
     const R = roomFrame(b.type, b.x, fz, ry);
@@ -215,7 +215,8 @@ function buildTown() {
         addCircColl(p.cx, p.cz, 0.16);
       }
     }
-  }
+  };
+  for (const b of BUILDINGS) if (!b.late) place(b);
   // church at the west end of the street, facing east
   const CR = roomFrame('church', -51, 2, Math.PI / 2);
   mb.at(-51, 0, 2, Math.PI / 2); church(mb, CR); mb.pop();
@@ -223,6 +224,7 @@ function buildTown() {
   addPlat(-47.8, 2, 0.7, 1.75, 0, 0.3);
   CAMBLOCK.push({ x0: -65, x1: -51, z0: -2.5, z1: 6.5, y0: -5, y1: 9.8, room: CR.idx });
   CAMBLOCK.push({ x0: -51, x1: -48.4, z0: 0.3, z1: 3.7, y0: -5, y1: 17, room: CR.idx });
+  for (const b of BUILDINGS) if (b.late) place(b);
 
   waterTower(mb, 34, 16);
   const wmx = 47, wmz = -27, wmy = surfaceHeight(wmx, wmz);

@@ -83,7 +83,7 @@ const DEV = {
   /* ---- places to jump to: in front of every door, inside every room, and a few spots outdoors ---- */
   listPlaces() {
     const NAMES = { store: 'Gemischtwaren', saloon: 'Saloon', bank: 'Bank', hotel: 'Hotel', sheriff: 'Sheriff', livery: 'Mietstall', barber: 'Barbier',
-      gunsmith: 'Büchsenmacher', post: 'Post', apothecary: 'Apotheke', church: 'Kirche' };
+      gunsmith: 'Büchsenmacher', post: 'Post', apothecary: 'Apotheke', church: 'Kirche', doctor: 'Arzt' };
     const out = [{ name: 'Straße, Ortsmitte', x: -8, z: 2, yaw: Math.PI / 2 }];
     for (const R of ROOMS) {
       if (R.parent || R.doorZ === undefined) continue;

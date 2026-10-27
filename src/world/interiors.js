@@ -357,6 +357,46 @@ const FURNISH = {
     mb.beam([-1.6, F, -4.0], [-1.45, F + 1.6, -4.1], 0.04, rgb(0x9a7a4a), 0);
     for (const [lx, lz] of [[0, -3.4], [0, -7.6]]) lantern(mb, lx, lz, C, 1.6);
   },
+  // the doctor's practice: waiting bench by the door, his desk, the examination couch behind a screen,
+  // a cabinet of medicines, washstand, stove. The patient sits on the chair by the couch (seat 'patient')
+  doctor(mb, R, rnd) {
+    const { x0, x1, z0, floorY: F } = R;
+    lining(mb, R, rgb(0xcac3ae), rgb(0x5e6a5a), 9, rgb(0xd8d0bc));
+    place(mb, R, [
+      ['bench', x0 + 0.4, -2.3, Math.PI / 2, { len: 1.8, box: [x0, x0 + 0.65, -3.2, -1.4, 0.8] }],              // waiting
+      ['table', 2.2, -2.9, 0, { w: 1.5, d: 0.75, col: IC.walnut, box: [1.45, 2.95, -3.3, -2.5, 0.8] }],      // his desk
+      ['chair', 2.2, -3.55, 0, { col: IC.walnut }],
+      ['shelf', 0.3, z0 + 0.3, 0, { len: 2.2, h: 2.2, dep: 0.4, levels: 5, fill: 'jars', col: rgb(0x6a5a4a), box: [-0.85, 1.45, z0, z0 + 0.5, 2.3] }],
+      ['chair', 0.0, -6.0, Math.PI, { col: IC.walnut }],                                                     // the patient's chair
+      ['stove', x1 - 0.5, z0 + 0.6, 0, { circle: 0.38 }],
+      ['rug', 0.2, -5.0, 0, { w: 2.6, d: 1.8, col: rgb(0x3a5a6a), border: rgb(0x22343e) }],
+      ['picture', x0 + 0.05, -5.0, Math.PI / 2, { w: 0.8, h: 1.1, col: rgb(0xe6dcc4), y: 1.35 }],             // an anatomy chart
+      ['picture', 2.2, z0 + 0.05, 0, { w: 0.6, h: 0.45, col: rgb(0x8a7a5a), y: 1.6 }],                        // his diploma
+      ['lantern', 1.6, -3.0, 0, { len: 0.8 }], ['lantern', -1.2, -6.4, 0, { len: 0.8 }]
+    ], rnd);
+    // the examination couch along the left wall: frame, mattress, a sheet, a pillow
+    at(mb, x0 + 0.5, F, -6.6, 0, () => {
+      for (const sx of [-0.3, 0.3]) for (const sz of [-0.9, 0.9]) mb.box(sx, 0, sz, 0.06, 0.62, 0.06, IC.walnut, 3);
+      mb.box(0, 0.58, 0, 0.72, 0.08, 1.95, IC.walnut, 2);
+      mb.box(0, 0.66, 0, 0.68, 0.1, 1.9, rgb(0xe6e2d8), 9);
+      mb.box(0, 0.76, -0.72, 0.5, 0.1, 0.32, rgb(0xf2eee4), 9);
+    });
+    rColl(R, x0, x0 + 0.9, -7.6, -5.6, 0.8);
+    // a folding screen of three panels
+    at(mb, -1.6, F, -5.1, 0.25, () => { for (let i = 0; i < 3; i++) { at(mb, -0.55 + i * 0.55, 0, 0, (i - 1) * 0.3, () => { mb.box(0, 0.05, 0, 0.52, 1.7, 0.04, rgb(0xd8ccb0), 9); mb.box(0, 0, 0, 0.56, 0.06, 0.06, IC.walnut, 0); mb.box(0, 1.73, 0, 0.56, 0.06, 0.06, IC.walnut, 0); }); } });
+    rColl(R, -2.5, -0.7, -5.35, -4.85, 1.8);
+    // the washstand with basin and pitcher
+    at(mb, x1 - 0.35, F, -5.6, -Math.PI / 2, () => { squareTable(mb, 0.7, 0.45, 0.8, IC.oak); mb.cyl(0, 0.8, 0, 0.2, 0.15, 0.08, 10, rgb(0xeae6dc), 0); glassy(mb, 'vase', rgb(0xeae6dc), () => mb.cyl(0.24, 0.8, 0.1, 0.06, 0.08, 0.22, 8, rgb(0xeae6dc), 0)); });
+    rColl(R, x1 - 0.6, x1, -6.0, -5.2, 0.9);
+    // on the desk: his bag, papers, an inkwell, a lamp of brown glass
+    at(mb, 2.2, F, -2.9, 0, () => {
+      mb.box(-0.45, 0.78, 0.05, 0.38, 0.22, 0.2, rgb(0x2a1c14), 0); mb.box(-0.45, 1.0, 0.05, 0.2, 0.04, 0.06, IC.brass, 0);
+      mb.box(0.2, 0.78, 0.05, 0.4, 0.02, 0.28, IC.paper, 0);
+      glassy(mb, 'bottle', rgb(0x5a3a1a), () => mb.cyl(0.55, 0.78, -0.15, 0.04, 0.04, 0.2, 6, rgb(0x5a3a1a), 0));
+    });
+    // a skeleton's skull and a few jars on top of the cabinet
+    at(mb, 0.3, F + 2.2, z0 + 0.3, 0, () => { mb.box(-0.6, 0, 0, 0.2, 0.2, 0.22, rgb(0xe8e0cc), 0); for (let i = 0; i < 3; i++) glassy(mb, 'jar', IC.glass, () => mb.cyl(0.1 + i * 0.25, 0, 0, 0.07, 0.07, 0.2, 8, IC.glass, 0, { top: IC.cream })); });
+  },
   church(mb, R, rnd) {
     const { floorY: F } = R;
     const C = R.ceilY, x0 = -4.3, x1 = 4.3, z0 = -13.8, z1 = -0.2;

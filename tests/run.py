@@ -403,6 +403,8 @@ async def check_glass(g):
     r = await g.js('''() => { const out = {}, B = BARKEEP, R = B.R, kinds = {};
       for (const it of BREAK.items) kinds[it.kind] = (kinds[it.kind] || 0) + 1; out.kinds = kinds; out.rooms = BREAK.byRoom.size;
       const p0 = rwp(R, 0, R.floorY, 0.8); PLAY.pos.set(p0.x, p0.y, p0.z); GAIT.init = false; for (let k = 0; k < 20; k++) G.stepFrame(1/60);
+      // Hank stays out of this (a bullet through a glass would go on into him; a fist could find him instead)
+      const keepTrace = HARM.trace, keepT = FIST.targets; HARM.trace = () => null; FIST.targets = function () { return keepT.call(this).filter((T) => T.kind !== 'npc'); };
       // a bottle on the bar's back shelf, shot at from 1.5 m in front of it
       const L = BREAK.byRoom.get(R), it = L.find((x) => x.kind === 'bottle');
       const c = new THREE.Vector3(it.x, it.y0 + it.h * 0.5, it.z), o = c.clone().add(new THREE.Vector3(PLAY.pos.x - it.x, 0, PLAY.pos.z - it.z).setLength(1.5));
@@ -421,6 +423,7 @@ async def check_glass(g):
       out.fistTarget = !!g2;
       if (g2) { const [gx, gz] = rLocal(R, g2.x, g2.z), st = rwp(R, gx - 0.75, R.floorY, gz); PLAY.pos.set(st.x, st.y, st.z); PLAY.yaw = Math.atan2(g2.x - st.x, g2.z - st.z); GAIT.init = false; for (let k = 0; k < 10; k++) G.stepFrame(1/60);
         FIST.stamina = 1; FIST.down(false); G.stepFrame(1/60); FIST.up(); for (let k = 0; k < 60 && g2.alive; k++) G.stepFrame(1/60); for (let k = 0; k < 30; k++) G.stepFrame(1/60); out.fistBroke = !g2.alive; }
+      HARM.trace = keepTrace; FIST.targets = keepT;
       return out; }''')
     # Hank: three shots into his ceiling; Claude is replaced by a stand-in that records the prompt
     h = await g.js('''async () => { const out = {}, B = BARKEEP, R = B.R; B.forget(); B.st = 'idle'; B.cool = {}; B.sc = null;
@@ -803,8 +806,39 @@ async def check_brawl(g):
           and r['after'] in ('return', 'idle', 'hurt') and 'geprügelt' in r['mem'] and r['home'][1] == 'saloon' and r['home'][2])
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_doctor(g):
+    """shot in the shoulder, Hank walks to the doctor (out of the saloon, down the street, into the practice), gets
+       bandaged and walks back behind his bar; the player can be treated for 50 cents"""
+    await g.js(RESET)
+    r = await g.js('''() => { const N = BARKEEP.npc, R = BARKEEP.R, out = { trip: [] }; BARKEEP.revive(); BARKEEP.forget();
+      const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); PLAY.yaw = R.ry + Math.PI; GAIT.init = false; G.noRender = true;
+      for (let k = 0; k < 60; k++) G.stepFrame(1/60);
+      N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(-0.19, 0.38, 0.13).applyMatrix4(N.ch.p.torso.matrixWorld);
+      const o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z), d = w.clone().sub(o).normalize(), hit = GUN.trace(o, d, 0, 50);
+      if (hit) GUN.hitResult(hit, d, 0); out.zone = hit && hit.zone;
+      out.noBar = !barActions(BARKEEP.C, null).some((a) => a.label === 'Bestellen');
+      PLAY.pos.set(10, 0, 3); let last = '';
+      for (let k = 0; k < 60 * 240; k++) { G.stepFrame(1/60); const st = BARKEEP.st + '/' + (N.room ? N.room.type : 'street'); if (st !== last) { last = st; out.trip.push(st); } if (k > 600 && BARKEEP.st === 'idle') break; }
+      out.bandaged = N.hp.wounds.some((w) => w.kind === 'shot' && w.bandaged); out.docKnows = DOC.knows.length > 0 && /Schulter/.test(DOC.knows[0]);
+      out.home = BARKEEP.st === 'idle' && N.room === R;
+      // the player at the doctor's
+      const D = DOC.npc; D.stop(); const mid = rwp(DOC.R, 0, 0, -4.4), md = Math.hypot(mid.x - D.pos.x, mid.z - D.pos.z) || 1;
+      PLAY.pos.set(D.pos.x + (mid.x - D.pos.x) / md * 1.2, DOC.R.floorY, D.pos.z + (mid.z - D.pos.z) / md * 1.2); GAIT.init = false; PHP.hp = 0.4; INV.money = Math.max(INV.money, 100); const m0 = INV.money;
+      for (let k = 0; k < 30; k++) G.stepFrame(1/60);
+      PLAY.yaw = Math.atan2(D.pos.x - PLAY.pos.x, D.pos.z - PLAY.pos.z); INTERACT.update(true);
+      out.offer = (INTERACT.acts.find((a) => /Behandeln/.test(a.label)) || {}).label || null;
+      if (!out.offer) out.why = { acts: INTERACT.acts.map((a) => a.label), st: DOC.st, avail: DOC.available(), room: G.room && G.room.type, sit: SIT.state, d: Math.hypot(D.pos.x - PLAY.pos.x, D.pos.z - PLAY.pos.z), y: PLAY.pos.y, drunk: DRUNK.blocked(), fist: FIST.st, out: !!PHP.out, fall: FALL.busy() };
+      DOC.treatPlayer(); for (let k = 0; k < 60 * 12 && PHP.hp < 1; k++) G.stepFrame(1/60);
+      out.healed = PHP.hp === 1; out.paid = m0 - INV.money;
+      BARKEEP.revive(); BARKEEP.forget(); DOC.persona().forget(); G.noRender = false;
+      return out; }''')
+    trip = '>'.join(r['trip'])
+    ok = (r['zone'] == 'shoulder' and r['noBar'] and 'toDoc/street' in trip and 'atDoc/doctor' in trip and 'return/saloon' in trip and r['bandaged'] and r['docKnows'] and r['home']
+          and r['offer'] and r['healed'] and r['paid'] == 50)
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('doctor', check_doctor), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

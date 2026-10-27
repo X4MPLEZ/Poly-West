@@ -34,7 +34,9 @@ const BUILDINGS = [
   { side: 's', x: -16.5, w: 8, d: 9, h: 4.8, front: 6.6, wall: 0xe4dac8, bigWin: true, crown: 'step', porch: 'awning', type: 'barber' },
   { side: 's', x: -5, w: 7, d: 10, h: 5.2, front: 7.6, wall: 0x5d4b42, win: 1, porch: 'deck', type: 'gunsmith' },
   { side: 's', x: 7, w: 10, d: 10, h: 5.4, pitch: 3.0, wall: 0xb08a5c, win: 2, type: 'post' },
-  { side: 's', x: 21, w: 9, d: 9, h: 4.4, front: 6.2, flat: true, wall: 0xd1aa80, tile: 4, win: 1, crown: 'arch', type: 'apothecary' }
+  { side: 's', x: 21, w: 9, d: 9, h: 4.4, front: 6.2, flat: true, wall: 0xd1aa80, tile: 4, win: 1, crown: 'arch', type: 'apothecary' },
+  // built after the church (late), so the rooms that were there before keep their numbers (and their furniture)
+  { side: 'n', x: 33.5, w: 8, d: 9, h: 4.8, front: 6.6, wall: 0xdcd5c3, win: 1, porch: 'roof', type: 'doctor', late: true }
 ];
 function frontWins(b) {
   if (b.bigWin) return [{ u: -2.55, y: 0.9, w: 2.0, h: 1.8 }, { u: 2.55, y: 0.9, w: 2.0, h: 1.8 }];

@@ -6,9 +6,10 @@
    SAY: speech bubbles over the head. NPCS.bodies: circles the player bumps into (see collide()). */
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
-  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); TALK.init(); },
+  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); },
   update(dt) {
     BARKEEP.update(dt);
+    DOC.update(dt);
     TALK.update(dt);
     for (const n of this.list) n.update(dt);
     HARM.update(dt);
@@ -196,7 +197,7 @@ class NPC {
     applyPose(this.ch);
     const root = this.ch.root;
     root.position.copy(this.pos); root.rotation.y = this.yaw;
-    root.visible = !this.room || this.room.mesh.visible;
+    root.visible = !this.room || !!this.room.mesh.visible;
     const mat = this.room ? this.room.figMat : G.litMat;
     if (mat !== this.mat) { this.mat = mat; for (const p of this.ch.parts) p.material = mat; }
     root.updateMatrixWorld(true);

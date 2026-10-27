@@ -226,6 +226,16 @@ function decorate(mb, b, f, coll, poles) {
       showGlobe(mb, b.w / 2 - 1.0, f + 2.35, rgb(0xc0352c));
       break;
     }
+    case 'doctor': {
+      // a red cross on the white false front, and a shingle with the name hanging out over the boardwalk
+      const red = rgb(0xa8231c);
+      mb.box(0, 5.25, f + 0.03, 0.42, 1.3, 0.04, red, 0); mb.box(0, 5.69, f + 0.03, 1.3, 0.42, 0.04, red, 0);
+      const x = b.w / 2 - 0.3;
+      mb.box(x, 2.9, f + 0.08, 0.06, 0.06, 1.3, COL.iron, 0);
+      mb.box(x, 2.55, f + 0.9, 0.04, 0.32, 0.04, COL.iron, 0);
+      mb.box(x, 1.95, f + 0.9, 0.06, 0.62, 0.62, COL.white, 0, { faceUV: 'px nx', tilePx: 71, tileNx: 71 });
+      break;
+    }
     case 'livery': {
       horseshoe(mb, -2.1, 4.75, 0.12, 0.42); horseshoe(mb, 2.1, 4.75, 0.12, 0.42);
       for (const s of [-1, 1]) {
