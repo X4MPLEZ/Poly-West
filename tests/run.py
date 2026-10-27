@@ -682,8 +682,30 @@ async def check_quick(g):
     ok = r['order'] == [0, True, True, True] and r['plain'] == 0 and r['question'] == 1 and r['noRepeat'] and r['att'][1] < r['att'][0] and r['ctx'] and r['standoff'] == [2, True, True]
     return ok, json.dumps(r, ensure_ascii=False)
 
+async def check_daynight(g):
+    """the clock runs, the sun moves and the shadows follow; night darkens, lamps and windows light up; skipping time tells everyone"""
+    await g.js(RESET)
+    r = await g.js('''() => {
+      const out = {}, keep = TIME.min;
+      TIME.min = 1440 + 10 * 60; G.stepFrame(1/60);
+      out.day = [+DAYNIGHT.sunEl.toFixed(0), +U.uNight.value.toFixed(2), +U.uLampK.value.toFixed(2)];
+      const t0 = TIME.min; for (let k = 0; k < 120; k++) G.stepFrame(1/60); out.runs = +(TIME.min - t0).toFixed(2);
+      const key = SHADOW.key; TIME.min += 30; G.stepFrame(1/60); out.shadowMoved = SHADOW.key !== key;
+      TIME.min = 1440 + 23 * 60; G.stepFrame(1/60);
+      out.night = [+DAYNIGHT.sunEl.toFixed(0), DAYNIGHT.moon, +U.uNight.value.toFixed(2), +U.uLampK.value.toFixed(2), +G.skyU.uStars.value.toFixed(2)];
+      out.saloonLamps = ROOMS.find((R) => R.type === 'saloon').lamps.length;
+      out.clock = document.getElementById('clock').textContent;
+      let told = 0; TIME.onSkip((m) => { told += m; }); TIME.skip(90); out.told = told; out.after = TIME.str();
+      out.until = Math.round(TIME.until(7));
+      const snap = SAVE.snapshot(); out.saved = snap.parts.time && Math.round(snap.parts.time.min) === Math.round(TIME.min);
+      TIME.min = keep; G.stepFrame(1/60);
+      return out; }''')
+    ok = (r['day'][0] > 30 and r['day'][1] == 0 and r['day'][2] == 0 and 0.9 < r['runs'] < 1.1 and r['shadowMoved'] and r['night'][1] and r['night'][2] > 0.95
+          and r['night'][3] > 0.95 and r['night'][4] > 0.9 and r['saloonLamps'] >= 2 and r['clock'].endswith('23:00') and r['told'] == 90 and r['after'] == '00:30' and r['until'] == 390 and r['saved'])
+    return ok, json.dumps(r, ensure_ascii=False)
+
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('quick', check_quick), ('daynight', check_daynight), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

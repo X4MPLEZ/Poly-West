@@ -56,6 +56,7 @@
     if (G.hitStop > 0) { G.hitStop -= dt; dt *= 0.04; }
     G.time += dt;
     G.frameNo++;
+    TIME.update(dt);
     pollGamepad(onAction);
     GUN.update(dt);
     FIST.update(dt);
@@ -77,6 +78,7 @@
     GUN.late(dt);
     AMB.update(dt);
     SAVE.update(dt);
+    DAYNIGHT.update(dt);
     W.dome.position.copy(G.cam.position);
     if (G.noRender) return; // tests: simulate without drawing
     G.renderer.info.reset();
@@ -114,6 +116,7 @@
     INTERACT.init();
     NPCS.init(G.scene);
     SAVE.init();
+    DAYNIGHT.init();
     MENU.init();
     SHOP.init();
     WHEEL.init();

@@ -7,7 +7,9 @@ const U = {
   uFogDen: { value: 0 }, uFogMax: { value: 1 }, uTexAmt: { value: 0 }, uShadowAmt: { value: 0 },
   uPoster: { value: 0 }, uSat: { value: 1 }, uBright: { value: 1 },
   uShadowMap: { value: null }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTexel: { value: 1 / 2048 },
-  uAtlas: { value: null }, uFlash: { value: new THREE.Vector4(0, -100, 0, 0) }
+  uAtlas: { value: null }, uFlash: { value: new THREE.Vector4(0, -100, 0, 0) },
+  // day and night (gfx/daynight.js): how deep in the night, daylight left for the rooms, lamps lit, light pools on the street
+  uNight: { value: 0 }, uDayK: { value: 1 }, uLampK: { value: 0 }, uLamp: { value: [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector4(0, -100, 0, 0)) }
 };
 const NEAREST = { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, depthBuffer: true, stencilBuffer: false };
 
@@ -20,7 +22,8 @@ function initGraphics(canvas, atlasTex) {
   G.litMat = new THREE.ShaderMaterial({ uniforms: U, vertexShader: SH.litV, fragmentShader: SH.litF, vertexColors: true });
   G.depthMat = new THREE.ShaderMaterial({ vertexShader: SH.plainV, fragmentShader: SH.depthF, side: THREE.BackSide });
   G.skyU = {
-    uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uGnd: { value: new THREE.Vector3() }, uSunDir: U.uSunDir,
+    uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uGnd: { value: new THREE.Vector3() },
+    uDiscDir: { value: new THREE.Vector3(0, 1, 0) }, uGlowDir: { value: new THREE.Vector3(0, 1, 0) }, uStars: { value: 0 }, uMoon: { value: 0 },
     uSunCol: { value: new THREE.Vector3(1, 1, 1) }, uSunSize: { value: 0.9994 }, uGlow: { value: 0.4 }, uHorH: { value: 0.55 }, uBright: U.uBright
   };
   G.skyMat = new THREE.ShaderMaterial({ uniforms: G.skyU, vertexShader: SH.skyV, fragmentShader: SH.skyF, depthTest: false, depthWrite: false, side: THREE.BackSide });
@@ -99,6 +102,7 @@ function applyLight(name) {
   U.uShadowAmt.value = L.shadow || 0;
   if (L.dome) {
     const d = L.dome;
+    G.skyU.uDiscDir.value.copy(U.uSunDir.value); G.skyU.uGlowDir.value.copy(U.uSunDir.value);
     G.skyU.uZen.value.copy(v3(d.zen)); G.skyU.uHor.value.copy(v3(d.hor)); G.skyU.uGnd.value.copy(v3(d.gnd));
     G.skyU.uSunCol.value.copy(v3(d.sun)); G.skyU.uSunSize.value = d.size; G.skyU.uGlow.value = d.glow; G.skyU.uHorH.value = d.horH;
   }

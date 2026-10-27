@@ -3,6 +3,7 @@ core/util.js
 core/world.js
 core/settings.js
 core/save.js
+core/time.js
 core/items.js
 world/terrain.js
 world/town_data.js
@@ -20,6 +21,7 @@ char/gait.js
 gfx/dust.js
 gfx/shaders.js
 gfx/render.js
+gfx/daynight.js
 gfx/post.js
 play/player.js
 play/input.js

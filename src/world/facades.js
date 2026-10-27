@@ -1,6 +1,10 @@
+/* a window; about two in three have a lamp lit behind them at night: the flag is a slightly greener pane colour
+   (picked by a counter, not by rnd(), so the town's random numbers stay the same), read by the outdoor shader */
+let WIN_N = 0;
 function windowAt(mb, x, y, w, h, frame) {
   mb.box(x, y - 0.12, 0.05, w + 0.3, h + 0.24, 0.1, frame, 0);
-  mb.box(x, y, 0.1, w, h, 0.08, COL.glass, 0, { faceUV: 'pz', tilePz: 12 });
+  const lit = ((WIN_N++ * 2654435761) >>> 0) % 100 < 64;
+  mb.box(x, y, 0.1, w, h, 0.08, lit ? [COL.glass[0], COL.glass[1] + 0.012, COL.glass[2]] : COL.glass, 0, { faceUV: 'pz', tilePz: 12 });
 }
 function porch(mb, b, roofCol, postCol) {
   const w = b.w, st = b.two ? 'roof' : b.porch || 'roof';

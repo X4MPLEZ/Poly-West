@@ -57,8 +57,15 @@ function squareTable(mb, w, d, h, col) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) mb.box(sx * (w / 2 - 0.06), 0, sz * (d / 2 - 0.06), 0.07, h - 0.05, 0.07, col, 3);
   mb.box(0, h - 0.05, 0, w, 0.05, d, col, 2);
 }
+// a light of the room: kept with the room being built (world position), for the night (see makeIndoorMat)
+function lampHere(mb, x, y, z, k) {
+  const R = SEATCTX.R; if (!R) return;
+  const w = builtToWorld(mb, x, y, z);
+  (R.lamps || (R.lamps = [])).push({ x: w.x, y: w.y, z: w.z, k: k || 1 });
+}
 function lantern(mb, x, z, ceil, len) {
   const y = ceil - (len || 0.7);
+  lampHere(mb, x, y + 0.1, z, 1);
   mb.box(x, y + 0.3, z, 0.02, ceil - y - 0.3, 0.02, IC.iron, 0);
   mb.box(x, y + 0.27, z, 0.2, 0.04, 0.2, IC.iron, 0);
   mb.box(x, y, z, 0.16, 0.27, 0.16, IC.glow, 30);

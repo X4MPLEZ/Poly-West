@@ -43,6 +43,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
 #slowBtn[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: var(--ink); }
 
 #tr { position: absolute; top: 12px; right: max(16px, env(safe-area-inset-right, 0px)); display: flex; gap: 8px; align-items: center; }
+#clock { font-family: var(--f-mono); font-size: 13px; margin-left: 10px; opacity: 0.85; letter-spacing: 0.02em; }
 #name { font-family: var(--f-display); font-size: 18px; color: var(--bone); background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; padding: 7px 14px; line-height: 1.2; }
 .round { width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--edge); display: grid; place-items: center; padding: 0; }
 .round svg { width: 18px; height: 18px; }
@@ -328,7 +329,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
   <div id="hud">
     <section id="perf" aria-label="Bildrate"><span id="fpsBox"><b id="fps">–</b> FPS</span><button id="slowBtn" type="button" aria-pressed="false">Zeitlupe</button></section>
     <div id="tr">
-      <span id="name">Dust Creek</span>
+      <span id="name">Dust Creek<span id="clock"></span></span>
       <button id="devBtn" class="round" type="button" hidden aria-label="Entwickler-Werkzeuge (F2)" title="Entwickler-Werkzeuge (F2)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>
       </button>
@@ -388,6 +389,7 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: non
       <div class="devRow"><button id="devCopy" type="button">Position kopieren</button><button id="devAmmo" type="button">Munition voll</button></div>
       <div class="devRow"><button id="devMoney" type="button">+ $10</button><button id="devDrunk" type="button">Rausch +0,2</button><button id="devSober" type="button">Nüchtern</button></div>
       <div class="devRow"><button id="devMem" type="button" aria-pressed="false">Gedächtnis der Figuren</button><button id="devGlass" type="button">Glas zurück</button></div>
+      <div class="devRow" role="group" aria-label="Uhrzeit"><span>Uhr</span><button type="button" data-clock="6">6:00</button><button type="button" data-clock="12">12:00</button><button type="button" data-clock="19.5">19:30</button><button type="button" data-clock="0">0:00</button><button type="button" data-clock="+1">+1 Std</button><button id="devFast" type="button" aria-pressed="false" title="Die Uhr läuft 60-mal so schnell">Uhr 60×</button></div>
     </section>
     <div id="devMemBox" hidden></div>
     <div id="rotateHint">Handy quer halten spielt sich besser</div>

@@ -26,6 +26,9 @@ const DEV = {
       SAVE.write(); this.memKey = ''; this.renderMem();
     });
     $('devSober').addEventListener('click', () => { DRUNK.level = 0; DRUNK.stomach = 0; DRUNK.gut = 0; DRUNK.leave = null; DRUNK.edge = null; });
+    // the clock: jump to a time of day (forward, as if the hours had passed), or let it run fast
+    for (const b of this.el.querySelectorAll('[data-clock]')) b.addEventListener('click', () => { const v = b.dataset.clock; TIME.skip(v === '+1' ? 60 : TIME.until(+v)); });
+    $('devFast').addEventListener('click', () => { TIME.speed = TIME.speed > 1 ? 1 : 60; $('devFast').setAttribute('aria-pressed', TIME.speed > 1 ? 'true' : 'false'); });
     for (const b of this.el.querySelectorAll('[data-speed]')) b.addEventListener('click', () => this.setSpeed(+b.dataset.speed));
     for (const b of this.el.querySelectorAll('[data-overlay]')) b.addEventListener('click', () => this.setOverlay(b.dataset.overlay, !this.overlays[b.dataset.overlay]));
     const sel = $('devPlace');
@@ -144,6 +147,7 @@ const DEV = {
     const p = PLAY.pos, d = G.drawInfo || { calls: 0, tris: 0 }, R = G.room;
     const lines = [
       `x ${p.x.toFixed(1)}  y ${p.y.toFixed(2)}  z ${p.z.toFixed(1)}  ↻ ${Math.round(((PLAY.yaw * 180 / Math.PI) % 360 + 360) % 360)}°`,
+      `Tag ${TIME.day()}, ${TIME.str()} (${TIME.words()})  ·  Sonne ${DAYNIGHT.sunEl.toFixed(0)}°  ·  Nacht ${DAYNIGHT.night.toFixed(2)}`,
       `${R ? 'Raum: ' + R.type : 'draußen'}  ·  ${SIT.busy() ? 'sitzt (' + SIT.state + ')' : PLAY.moving ? 'läuft ' + PLAY.speed.toFixed(1) + ' m/s' : 'steht'}`,
       `Revolver: ${GUN.state} ${GUN.ammo}/${GUN.reserve}  ·  Faust: ${FIST.st}`,
       `Fokus: ${INTERACT.focus ? (INTERACT.focus.kind || INTERACT.focus.verb) + ' #' + INTERACT.focus.id : '–'}  ·  ${money(INV.money)}`,

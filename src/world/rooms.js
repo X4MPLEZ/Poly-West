@@ -198,7 +198,10 @@ function setupUpper(R, hole, walk) {
 
 /* ---------- build the interiors, doors and the indoor material ---------- */
 function makeIndoorMat(R, forFigure) {
-  const u = Object.assign({}, U, { uOpen: { value: lightOpenings(R) }, uRoomAmb: { value: v3(R.amb || 0xffd9a8, 0.1) },
+  // the lanterns of the room (the first four), lighting it at night
+  const lamps = (R.lamps || []).slice(0, 4).map((l) => new THREE.Vector4(l.x, l.y, l.z, l.k));
+  while (lamps.length < 4) lamps.push(new THREE.Vector4(0, -100, 0, 0));
+  const u = Object.assign({}, U, { uOpen: { value: lightOpenings(R) }, uRoomAmb: { value: v3(R.amb || 0xffd9a8, 0.1) }, uRoomLamp: { value: lamps },
     uTex: { value: forFigure ? 0 : 0.85 }, uK: { value: forFigure ? 0.4 : 0.5 } });
   return new THREE.ShaderMaterial({ uniforms: u, vertexShader: SH.litV, fragmentShader: SH.inF, vertexColors: true });
 }
@@ -277,7 +280,7 @@ function updateRooms(dt) {
     R.mesh.visible = R === cur || dDoor < 18 || (cur && cur.parent === R);
   }
   // eyes: open up slowly in the dark, close down fast in the sun
-  const target = cur ? (cur.expo || 2.5) : 1;
+  const target = cur ? (cur.expo || 2.5) : DAYNIGHT.expo;
   const rate = target > ROOMSTATE.expo ? 0.6 : 1.5;
   ROOMSTATE.expo += (target - ROOMSTATE.expo) * (1 - Math.exp(-dt * rate));
   U.uBright.value = ROOMSTATE.expo;

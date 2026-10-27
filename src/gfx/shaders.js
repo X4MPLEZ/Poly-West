@@ -46,6 +46,7 @@ SH.litF = `
 uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uSkyAmb; uniform vec3 uGndAmb; uniform vec3 uFogCol; uniform vec3 uGlowCol;
 uniform float uFogDen; uniform float uFogMax; uniform float uTexAmt; uniform float uShadowAmt; uniform float uPoster; uniform float uSat; uniform float uBright;
 uniform vec4 uFlash;
+uniform float uNight; uniform float uLampK; uniform vec4 uLamp[6];
 uniform sampler2D uShadowMap; uniform mat4 uShadowMat; uniform float uShadowTexel;
 ${G_ATLAS}
 varying vec3 vCol; varying vec3 vN; varying vec3 vW; varying vec2 vUv; varying float vTile;
@@ -71,6 +72,14 @@ void main() {
   if (uPoster > 0.5) d = floor(d * uPoster + 0.4) / uPoster;
   vec3 c = alb * (mix(uGndAmb, uSkyAmb, n.y * 0.5 + 0.5) + uSunCol * d);
   if (uFlash.w > 0.001) { vec3 FL = uFlash.xyz - vW; float fd = length(FL); c += alb * vec3(1.0, 0.68, 0.34) * uFlash.w * (0.3 + 0.7 * max(dot(n, FL / max(fd, 0.001)), 0.0)) / (1.0 + fd * fd * 0.7); }
+  // night: warm light falling out of the open buildings onto the street
+  if (uLampK > 0.01) for (int i = 0; i < 6; i++) {
+    vec3 L = uLamp[i].xyz - vW; float d2 = dot(L, L);
+    c += alb * vec3(1.0, 0.7, 0.38) * uLamp[i].w * uLampK * (0.3 + 0.7 * max(dot(n, L * inversesqrt(max(d2, 1e-4))), 0.0)) / (1.0 + d2 * 0.2);
+  }
+  // night: the window panes of lit rooms glow (the flag is in the pane's colour, see windowAt)
+  float tt = floor(vTile + 0.5);
+  if (uNight > 0.01 && tt > 11.5 && tt < 12.5 && vCol.g - vCol.r > 0.014) c = mix(c, vec3(1.0, 0.68, 0.34) * (0.9 + 0.1 * sin(vW.x * 3.1 + vW.z * 2.3)), uNight);
   float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, uSat);
   vec3 v = vW - cameraPosition; float dist = length(v);
   float f = clamp((1.0 - exp(-dist * uFogDen)) * uFogMax, 0.0, 1.0);
@@ -83,16 +92,32 @@ vec4 packD(float v) { vec4 r = fract(v * vec4(1.0, 255.0, 65025.0, 16581375.0));
 void main() { gl_FragColor = packD(gl_FragCoord.z); }`;
 SH.skyV = `varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 SH.skyF = `
-uniform vec3 uZen; uniform vec3 uHor; uniform vec3 uGnd; uniform vec3 uSunDir; uniform vec3 uSunCol;
-uniform float uSunSize; uniform float uGlow; uniform float uHorH; uniform float uBright;
+uniform vec3 uZen; uniform vec3 uHor; uniform vec3 uGnd; uniform vec3 uDiscDir; uniform vec3 uGlowDir; uniform vec3 uSunCol;
+uniform float uSunSize; uniform float uGlow; uniform float uHorH; uniform float uBright; uniform float uStars; uniform float uMoon;
 varying vec3 vDir;
+float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 void main() {
   vec3 d = normalize(vDir);
   float h = d.y;
   vec3 c = h > 0.0 ? mix(uHor, uZen, pow(clamp(h / uHorH, 0.0, 1.0), 0.65)) : mix(uHor, uGnd, clamp(-h * 5.0, 0.0, 1.0));
-  float s = max(dot(d, uSunDir), 0.0);
-  c += uSunCol * uGlow * (pow(s, 10.0) * 0.45 + pow(s, 90.0) * 0.6);
-  c = mix(c, uSunCol, smoothstep(uSunSize - 0.0003, uSunSize + 0.00005, s));
+  // the sun's glow along the horizon (it stays in the west for a while after sunset)
+  float g = max(dot(d, uGlowDir), 0.0);
+  c += uSunCol * uGlow * (pow(g, 10.0) * 0.45 + pow(g, 90.0) * 0.6) * (1.0 - uMoon * 0.6);
+  // stars: one in a few hundred cells of the sky, small and of different brightness, none near the horizon
+  if (uStars > 0.01 && h > 0.0) {
+    vec3 p = d * 170.0, cell = floor(p), f = fract(p) - 0.5;
+    float r = hash3(cell);
+    if (r > 0.986) {
+      vec3 o = vec3(hash3(cell + 1.3), hash3(cell + 2.7), hash3(cell + 4.1)) - 0.5;
+      float st = 1.0 - smoothstep(0.05, 0.2, length(f - o * 0.5));
+      c += vec3(0.9, 0.92, 1.0) * st * (r - 0.986) * 70.0 * uStars * smoothstep(0.02, 0.25, h);
+    }
+  }
+  // the disc: sun by day, moon by night (with a darker sea on it)
+  float s = max(dot(d, uDiscDir), 0.0), disc = smoothstep(uSunSize - 0.0003, uSunSize + 0.00005, s);
+  vec3 dc = uSunCol;
+  if (uMoon > 0.5) { dc *= 0.82 + 0.18 * hash3(floor(d * 900.0)); c += uSunCol * pow(s, 400.0) * 0.12; }
+  c = mix(c, dc, disc);
   gl_FragColor = vec4(c * uBright, 1.0);
 }`;
 SH.uvV = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -105,6 +130,7 @@ SH.inF = `
 uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uSkyAmb; uniform vec3 uGndAmb; uniform float uBright;
 uniform sampler2D uShadowMap; uniform mat4 uShadowMat; uniform float uShadowTexel;
 uniform vec4 uOpen[4]; uniform vec3 uRoomAmb; uniform float uTex; uniform float uK; uniform vec4 uFlash;
+uniform float uNight; uniform float uDayK; uniform float uLampK; uniform vec4 uRoomLamp[4];
 ${G_ATLAS}
 varying vec3 vCol; varying vec3 vN; varying vec3 vW; varying vec2 vUv; varying float vTile;
 float unpackD(vec4 c) { return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
@@ -122,14 +148,23 @@ float shadowAt(vec3 wp, vec3 n) {
 }
 void main() {
   float t = floor(vTile + 0.5);
-  if (t > 29.5 && t < 30.5) { gl_FragColor = vec4(vCol * 1.15 * min(uBright, 1.7), 1.0); return; }  // daylight in a window, a lamp glass
+  if (t > 29.5 && t < 30.5) {   // daylight in a window (dark blue at night), a lamp glass (always bright)
+    vec3 e = vCol * 1.15 * min(uBright, 1.7);
+    if (vCol.b > 0.74 || (vCol.b > vCol.r && vCol.g > 0.6)) e = mix(e, vec3(0.06, 0.08, 0.15) * min(uBright, 1.7), uNight * 0.93);
+    gl_FragColor = vec4(e, 1.0); return;
+  }
   vec3 n = normalize(vN);
   vec3 alb = albedo(vCol, vTile, vUv, uTex);
   float sun = max(dot(n, uSunDir), 0.0) * shadowAt(vW, n);
-  vec3 lit = mix(uGndAmb, uSkyAmb, n.y * 0.5 + 0.5) * 0.14 + uRoomAmb + uSunCol * sun;
+  vec3 lit = mix(uGndAmb, uSkyAmb, n.y * 0.5 + 0.5) * 0.14 + uRoomAmb * (0.55 + 0.45 * uDayK) + uSunCol * sun * uDayK;
   for (int i = 0; i < 4; i++) {
     vec3 L = uOpen[i].xyz - vW; float d = length(L); vec3 l = L / max(d, 0.001);
-    lit += vec3(1.0, 0.93, 0.82) * uOpen[i].w * (max(dot(n, l), 0.0) * 0.75 + 0.25) / (1.0 + d * d * 0.08);
+    lit += vec3(1.0, 0.93, 0.82) * uOpen[i].w * uDayK * (max(dot(n, l), 0.0) * 0.75 + 0.25) / (1.0 + d * d * 0.08);
+  }
+  // the lanterns of the room: lit in the evening, they carry the room at night
+  if (uLampK > 0.01) for (int i = 0; i < 4; i++) {
+    vec3 L = uRoomLamp[i].xyz - vW; float d2 = dot(L, L);
+    lit += vec3(1.0, 0.74, 0.44) * uRoomLamp[i].w * uLampK * (max(dot(n, L * inversesqrt(max(d2, 1e-4))), 0.0) * 0.65 + 0.35) / (1.0 + d2 * 0.16);
   }
   if (uFlash.w > 0.001) { vec3 FL = uFlash.xyz - vW; float fd = length(FL); lit += vec3(1.0, 0.68, 0.34) * uFlash.w * 0.9 * (0.3 + 0.7 * max(dot(n, FL / max(fd, 0.001)), 0.0)) / (1.0 + fd * fd * 0.5); }
   gl_FragColor = vec4(alb * lit * uK * uBright, 1.0);
