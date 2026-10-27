@@ -17,6 +17,9 @@ const PHP = {
     this.hp = Math.max(0, this.hp - (o.shot ? 0.45 : (o.head ? 0.13 : 0.09)) * p * (o.heavy ? 1.5 : 1));
     this.daze += (o.head ? 0.32 : 0.15) * p * (o.heavy ? 1.6 : 1);
     this.flash = 1;
+    // the body jerks away from the blow (PHP.pose)
+    const c = Math.cos(PLAY.yaw), sn = Math.sin(PLAY.yaw), lx = o.dir.x * c - o.dir.z * sn, lz = o.dir.x * sn + o.dir.z * c;
+    this.jerk = { yaw: clamp(-lx * 1.2, -0.9, 0.9), pitch: o.head ? -0.45 * lz : 0.35, roll: clamp(lx * 0.6, -0.5, 0.5), head: o.head ? 1 : 0.4, k: o.heavy ? 1.3 : 0.9 };
     // the head snaps, the view jumps, the body is pushed the way the blow went
     PLAY.camShake = Math.max(PLAY.camShake, o.heavy ? 0.12 : 0.07);
     PLAY.camPush.set(o.dir.x, o.head ? 0.15 : -0.1, o.dir.z).multiplyScalar(o.heavy ? 0.35 : 0.2);
@@ -41,6 +44,13 @@ const PHP = {
     worldEvent('playerOut', PLAY.pos.x, PLAY.pos.y, PLAY.pos.z, { by: o.by ? o.by.id : 'world', shot: !!o.shot });
   },
   busy() { return !!this.out; },
+  // the jerk of a blow taken, laid over whatever the body is doing
+  pose(P, dt) {
+    const J = this.jerk; if (!J || J.k < 0.01) return;
+    J.k *= Math.exp(-dt * 7);
+    P.spYaw += J.yaw * J.k * 0.6; P.spPitch += J.pitch * J.k * 0.5; P.spRoll += J.roll * J.k * 0.5;
+    P.hdYaw += J.yaw * J.k * 0.5 * J.head; P.hdPitch += J.pitch * J.k * J.head; P.hdRoll = (P.hdRoll || 0) + J.roll * J.k * J.head;
+  },
   update(dt) {
     this.daze = Math.max(0, this.daze - dt * 0.12);
     if (!this.out && G.time - this.lastHit > 6) this.hp = Math.min(1, this.hp + dt * 0.012);

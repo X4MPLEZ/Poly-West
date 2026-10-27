@@ -275,5 +275,6 @@ function updateGait() {
   P.hatDy = g.hatY; P.hatTilt = -g.hatY * 3 - P.spPitch * 0.15;
   PLAY.phase = g.phase * TAU;
   if (typeof GUN !== 'undefined' && GUN.P) { GUN.pose(P, dt); FIST.pose(P, dt); DRINK.pose(P, dt); }
+  if (typeof PHP !== 'undefined') PHP.pose(P, dt);
   applyPose(ch);
 }

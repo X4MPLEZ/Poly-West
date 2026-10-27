@@ -284,7 +284,13 @@ class Vitals {
     this.pain = Math.max(0, this.pain - dt * 0.05);
     this.stunT = Math.max(0, this.stunT - dt);
     const F = this.flinch; F.k *= Math.exp(-dt * (F.punch ? 7 : 4.5));
-    if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) this.clutch = null; }
+    if (this.clutch) { this.clutch.t -= dt; if (this.clutch.t <= 0) { this.clutch = null; this.clutchRest = 3 + Math.random() * 5; } }
+    // an open gunshot on the body or an arm: the hand goes back to it now and then
+    else if (!this.dead && !this.anim && (this.clutchRest = (this.clutchRest || 0) - dt) <= 0) {
+      const w = this.wounds.find((x) => x.kind === 'shot' && !x.bandaged && x.heal < 0.4 && x.lp && x.part && /torso|pelvis|Arm/.test(x.part));
+      if (w) this.clutch = { part: w.part, lp: w.lp, t: 5 + Math.random() * 6, side: ZONES[w.zone].arm !== undefined ? w.side : '' };
+      else this.clutchRest = 4;
+    }
     N.body.r = this.down() ? 0 : 0.32;
   }
   /* ---- the pose: after the behaviour and the walk have set theirs, before the parts are placed ---- */
