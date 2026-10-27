@@ -98,10 +98,21 @@ const PHP = {
       if (t > 3.6) { this.out = null; this.fx = null; FALL.keep = false; }
     }
   },
+  // a night in the sheriff's cell: the morning, a fine, the door open
+  wakeJail(O) {
+    const m = TIME.until(8); TIME.skip(Math.max(60, m < 180 ? m + 1440 : m)); DAYNIGHT.update(0, true);
+    this.hp = Math.max(this.hp, 0.6); this.daze = 0;
+    const J = SHERIFF.jailSpot(), fine = Math.min(INV.money, O.why === 'kill' ? 1000 : O.why === 'wound' ? 500 : 200);
+    INV.money -= fine;
+    PLAY.pos.copy(J.p); PLAY.yaw = J.yaw; PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; PLAY.camYaw = PLAY.yaw + Math.PI;
+    FALL.startLying();
+    setTimeout(() => TOAST.show('Du wachst in der Zelle des Sheriffs auf. ' + (fine ? 'Er hat dir ' + money(fine) + ' Strafe abgenommen. ' : '') + 'Die Tür steht offen. Es ist ' + TIME.str() + ' Uhr.', 'long'), 600);
+  },
   // where you come to: thrown out of the saloon onto the street, or (shot) at the doctor's
   wake() {
     const O = this.out;
     FALL.cancel();
+    if (O.jail) return this.wakeJail(O);
     TIME.skip(60); DAYNIGHT.update(0, true);
     this.hp = O.shot ? 0.5 : 0.35; this.daze = 0;
     let text;
@@ -115,7 +126,7 @@ const PHP = {
       const R = ROOMS.find((r) => r.type === 'saloon'), inSaloon = O.by && O.by.room === R;
       const p = inSaloon ? rwp(R, 1.5, 0, R.z1 + 3.2) : PLAY.pos.clone();
       PLAY.pos.set(p.x, groundAt(p.x, p.z, 1), p.z);
-      text = inSaloon ? 'Du wachst im Staub vor dem Saloon auf. Hank hat dich rausgeworfen.' : 'Du kommst wieder zu dir. Dir dröhnt der Schädel.';
+      text = inSaloon ? 'Du wachst im Staub vor dem Saloon auf. ' + (O.by && O.by.name ? O.by.name : 'Der Barkeeper') + ' hat dich rausgeworfen.' : 'Du kommst wieder zu dir. Dir dröhnt der Schädel.';
     }
     PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; PLAY.camYaw = PLAY.yaw + Math.PI;
     FALL.startLying();

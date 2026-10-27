@@ -53,9 +53,11 @@ npc/harm.js
 npc/nav.js
 npc/places.js
 npc/brawl.js
+npc/gunman.js
 npc/barkeep.js
 npc/barkeep_fate.js
 npc/crew.js
+npc/sheriff.js
 npc/doctor.js
 npc/direct.js
 npc/hear.js

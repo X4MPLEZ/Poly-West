@@ -66,6 +66,17 @@ const CHAT = {
       return;
     }
   },
+  // what the two know of the stranger, said plainly in the third person (their memories are written to themselves:
+  // "Er hat dir … geschossen"), and whether he is standing there
+  stranger(a, b) {
+    const out = [];
+    for (const n of [a, b]) {
+      if (n.shotBy && TIME.min - n.shotBy < 1440) out.push('Der Fremde hat ' + n.name + ' angeschossen.');
+      else if (n.beatenBy && TIME.min - n.beatenBy < 720) out.push('Der Fremde hat ' + n.name + ' verprügelt.');
+    }
+    if ((a.room || null) === (G.room || null) && Math.hypot(PLAY.pos.x - a.pos.x, PLAY.pos.z - a.pos.z) < 12) out.push('Der Fremde steht gerade hier in der Nähe und hört zu; sie können auf ihn zeigen („Da ist er.“).');
+    return out.length ? out.join(' ') + ' ' : '';
+  },
   start(a, b, T) {
     if (a === b) b = NPCS.list.find((n) => n !== a && (n.room || null) === (a.room || null)) || b;
     const R = this.run = { a, b, lines: null, i: 0, wait: 0.3, asked: false, topic: !!T };
@@ -83,7 +94,8 @@ const CHAT = {
     const prompt = 'Schreibe ein kurzes, natürliches Gespräch zwischen zwei Leuten in Dust Creek, einem Städtchen im Wilden Westen (1885).\n' +
       a.name + ': ' + (a.role || a.name) + '. Was gerade los ist: ' + ctx(a) + '\n' + b.name + ': ' + (b.role || b.name) + '. Was gerade los ist: ' + ctx(b) + '\n' +
       (T ? T.prompt + ' ' : news.length ? a.name + ' erzählt ' + b.name + ' etwas über den Fremden, das er erlebt hat: „' + news[0] + '“ ' + b.name + ' ist neugierig und fragt nach. ' : '') +
-      'Sie reden kurz miteinander, nicht mit dem Fremden (der kann zuhören). Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
+      this.stranger(a, b) +
+      'Sie reden kurz miteinander, nicht mit dem Fremden. „Du“ heißt bei ihnen immer der andere von den beiden; den Fremden nennen sie „der Fremde“ oder „er“, nie „du“. Drei oder vier Zeilen, abwechselnd, ' + a.name + ' fängt an. ' +
       'Jede Zeile höchstens 12 Wörter, einfaches Deutsch, kein Markdown. Format je Zeile genau: Name: [stimmung] Text. Stimmungen: neutral, amused, angry, surprised, disgusted, sleepy, whisper.';
     TALK.callAI('Du schreibst kurze Dialoge für ein Western-Spiel.', prompt, { modelTier: 'default', cache: false, maxTokens: 160 }).then((r) => {
       if (this.run !== R) return;

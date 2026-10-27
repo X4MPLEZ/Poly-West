@@ -107,8 +107,10 @@ const DECALS = {
     this.pools.set(key, p);
     return p;
   },
-  add(R, pt, n, kind, surf) {
+  add(R, pt, n, kind, surf, fit) {
     const H = HOLE[kind]; if (!H) return;
+    // never wider than the face it is on (fit: the room there, in metres): the ring goes first, then the hole shrinks
+    const outer = (H.r2 > 0 ? H.r2 * (H.stretch || 1) : H.r1) * 1.5, sk = fit ? clamp(fit / outer, 0.18, 1) : 1;
     const p = this.pool(R), g = p.mesh.geometry, slot = p.next; p.next = (p.next + 1) % p.cap;
     const P = g.attributes.position.array, Nn = g.attributes.normal.array, C = g.attributes.color.array;
     const base = slot * this.VPD;
@@ -127,12 +129,12 @@ const DECALS = {
     };
     const ringCol = H.ring !== null && H.ring !== undefined ? mixc(surf, rgb(H.ring), H.mix) : mulc(surf, H.ringDark || 0.8);
     const coreCol = H.core !== null && H.core !== undefined ? rgb(H.core) : mulc(surf, H.dark || 0.4);
-    const s = 1.1 + Math.random() * 0.4;
-    if (H.r2 > 0) fan(0.004, 9, H.r2 * s * (H.stretch || 1), H.r2 * s, 0.55, ringCol);
+    const s = (1.1 + Math.random() * 0.4) * sk;
+    if (H.r2 > 0 && sk > 0.45) fan(0.004, 9, H.r2 * s * (H.stretch || 1), H.r2 * s, 0.55, ringCol);
     fan(0.006, 6, H.r1 * s, H.r1 * s, 0.3, coreCol);
     if (H.cracks) {
       for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * TAU + Math.random() * 0.6, L = 0.05 + Math.random() * 0.12, w = 0.0035;
+        const a = (i / 6) * TAU + Math.random() * 0.6, L = (0.05 + Math.random() * 0.12) * sk, w = 0.0035;
         const ca = Math.cos(a), sa = Math.sin(a), q = [[-sa * w, ca * w], [sa * w, -ca * w]];
         const p0 = at(0.005, q[0][0], q[0][1]), p1 = at(0.005, q[1][0], q[1][1]), p2 = at(0.005, ca * L + q[1][0] * 0.3, sa * L + q[1][1] * 0.3), p3 = at(0.005, ca * L + q[0][0] * 0.3, sa * L + q[0][1] * 0.3);
         put(p0, ringCol); put(p1, ringCol); put(p2, ringCol); put(p0, ringCol); put(p2, ringCol); put(p3, ringCol);
@@ -293,7 +295,16 @@ const FX = {
     if (n.dot(dir) > 0) n.negate();
     const p = hit.point, R = ROOMS.find((r) => r.mesh === hit.object) || null;
     const kind = S.kind;
-    if (kind && !DOORS.some((D) => D.meshes.includes(hit.object))) DECALS.add(R, p, n, kind, S.col);
+    /* how much room the hole has: the shortest edge of the face that was hit (a thin chair leg, the rim of a stool, a
+       slat) bounds it, so a small thing gets a small hole and a wall a full one */
+    let fit = 1;
+    const g = hit.object.geometry, pa = g && g.attributes.position;
+    if (pa && hit.face) {
+      const A = this._fa || (this._fa = new THREE.Vector3()), B = this._fb || (this._fb = new THREE.Vector3()), C = this._fc || (this._fc = new THREE.Vector3());
+      A.fromBufferAttribute(pa, hit.face.a).applyMatrix4(hit.object.matrixWorld); B.fromBufferAttribute(pa, hit.face.b).applyMatrix4(hit.object.matrixWorld); C.fromBufferAttribute(pa, hit.face.c).applyMatrix4(hit.object.matrixWorld);
+      fit = Math.min(A.distanceTo(B), B.distanceTo(C), C.distanceTo(A)) * 0.42;
+    }
+    if (kind && !DOORS.some((D) => D.meshes.includes(hit.object))) DECALS.add(R, p, n, kind, S.col, fit);
     const out = (sp, spread) => ({ vx: (n.x + (Math.random() - 0.5) * spread) * sp, vy: (n.y + (Math.random() - 0.5) * spread) * sp + 0.6, vz: (n.z + (Math.random() - 0.5) * spread) * sp });
     const debris = (count, col, size, grav) => { for (let k = 0; k < count; k++) this.debris.spawn(Object.assign({ x: p.x + n.x * 0.02, y: p.y + n.y * 0.02, z: p.z + n.z * 0.02, life: 0.6 + Math.random() * 0.7, size: size * (0.6 + Math.random() * 0.8), grav: grav || 9.8, drag: 0.6, bounce: true }, out(1.5 + Math.random() * 2.5, 1.4)), mulc(col, 0.85 + Math.random() * 0.3)); };
     const dust = (count, col, a0) => { for (let k = 0; k < count; k++) this.smoke.spawn(Object.assign({ x: p.x + n.x * 0.03, y: p.y + n.y * 0.03, z: p.z + n.z * 0.03, life: 0.7 + Math.random() * 0.8, size: 0.03, grow: 4 + Math.random() * 2, drag: 4, grav: -0.15, wind: 0.1, a0: a0 || 0.45 }, out(1 + Math.random() * 1.5, 1.2)), mixc(col, [0.9, 0.86, 0.8], 0.4)); };

@@ -358,7 +358,7 @@ const TALK = {
     if (!this.remark(n, situation + ' Du bist neugierig: frag ihn danach, kurz und direkt, eine Frage.', say, mood || 'neutral')) say();
     return true;
   },
-  remark(n, situation, fallback, mood, chance) {
+  remark(n, situation, fallback, mood, chance, opts) {
     if (chance !== undefined && Math.random() >= chance) return false;
     if (!n || !n.persona || !this.aiOn() || !(this.aiOk || this.aiEver) || this.busy || this.remarking) return false;
     if (!n.canBeHeard()) return true;   // nobody there to hear it: say nothing at all
@@ -370,6 +370,7 @@ const TALK = {
     if (tok < 1) return false;
     n.aiTok = tok - 1;
     this.remarking = true; this.remarkT = G.time;
+    const rk = this.remarkT; setTimeout(() => { if (this.remarkT === rk) this.remarking = false; }, 15000);   // (an answer that never comes must not silence everyone)
     const P = n.persona, seq = this.seq, F = this.stream(n, seq, true);
     const hist = (n.talkLog || []).slice(-8).map((l) => (l.who === 'p' ? 'Fremder: ' : n.name + ': ') + l.text).join('\n');
     const mine = (n.talkLog || []).filter((l) => l.who === 'n').slice(-5).map((l) => '„' + l.text + '“').join(' ');
@@ -379,7 +380,7 @@ const TALK = {
     const dire = n.plight && n.plight() >= 2;
     const sys = P.rules, prompt = 'Was gerade los ist:\n' + this.plightText(n) + P.context() + (hist ? '\n\nZuletzt geredet:\n' + hist : '') +
       '\n\nGerade eben, ohne dass er dich angesprochen hat: ' + situation +
-      '\nSag spontan von dir aus etwas dazu, direkt zu ihm. Diesmal als ' + (dire ? 'jemand, der um sein Leben bangt' : ang) + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
+      (opts && opts.to ? '\nSag spontan etwas dazu, und zwar zu ' + opts.to.name + ' (nicht zum Fremden: über den Fremden sprichst du in der dritten Person, „er“, „der da“, „der Fremde“).' : '\nSag spontan von dir aus etwas dazu, direkt zu ihm (zum Fremden, du sprichst ihn mit „du“ an).') + ' Diesmal als ' + (dire ? 'jemand, der um sein Leben bangt' : ang) + '. Zahlen nur, wenn sie wirklich etwas sagen; meist geht es ohne.' +
       (mine ? ' Deine letzten Sätze waren: ' + mine + ' – wiederhole davon nichts, auch nicht sinngemäß.' : '') +
       ' Ein kurzer Satz, höchstens 14 Wörter, nicht flüstern.\n\n' +
       'Antworte genau so: zuerst in eckigen Klammern EINE Aktion (' + acts.join(', ') + ') und, durch Komma getrennt, EINE Stimmung (' + this.MOODS.filter((m) => m !== 'whisper').join(', ') + '), dann deine Worte. Kein JSON, nichts davor.';

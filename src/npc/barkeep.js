@@ -41,6 +41,8 @@ const BARKEEP = {
     refuse: ['Nein. Für dich gibt’s nur noch Wasser.', 'Schluss für heute. Wasser kannst du haben.', 'Du hattest genug. Wasser oder nichts.'],
     leave: ['Geh schlafen, Cowboy.', 'Komm gut heim!', 'Pass auf die Stufe auf.', 'Vorsicht an der Tür.', 'Find den Weg nach Hause.', 'Morgen tut der Kopf weh.'],
     shot: ['Nicht in meinem Saloon!', 'Steck das Ding weg!', 'Bist du verrückt geworden?!', 'Leg das Ding weg, sofort!', 'Noch ein Schuss, und ich hol den Sheriff.', 'Das hier ist ein Saloon, kein Schießstand!'],
+    gunWarn: [['Waffe runter. Sofort.', 'angry'], ['Nicht in meinem Saloon. Steck sie weg.', 'angry'], ['Ich hab hier schon einen begraben. Steck sie weg.', 'angry']],
+    gunWarn2: [['Letzte Warnung!', 'angry'], ['Noch eine Bewegung, und ich drück ab.', 'angry']],
     aimed: ['Ganz ruhig, Mister…', 'Nimm das Ding runter.', 'Ich bin unbewaffnet. Ganz ruhig.', 'Was willst du? Sag’s einfach.', 'Keiner muss hier sterben.', ['Die Kasse ist fast leer, ehrlich.', 'surprised'], 'Überleg dir gut, was du tust.'],
     aimed2: ['Wie lange willst du da noch stehen?', ['Entweder du schießt oder du gehst.', 'angry'], 'Meine Arme werden müde, Freund.', 'Der Sheriff ist nicht weit. Denk daran.', 'Steck ihn weg, dann vergess ich das hier.'],
     punch: ['Keine Prügelei hier drin!', 'Raus damit auf die Straße!', 'Hände runter, oder du fliegst.', 'Schlag dich draußen, nicht hier.', 'Noch einmal, und es ist Schluss.'],
@@ -139,6 +141,7 @@ const BARKEEP = {
     if (P.bottle.visible) out.push(this._hb || (this._hb = mk('bottle', 1, 0.075, 0.12)));
     if (P.rag.visible) out.push(this._hr || (this._hr = mk('rag', 1, 0.07, 0)));
     if (P.shotgun && P.shotgun.visible) out.push(this._hs || (this._hs = mk('shotgun', 1, 0.11, 0)));
+    if (this.gunman && this.gunman.on) for (const g of this.gunman.held()) out.push(g);
     return out;
   },
   lose(kind) {
@@ -150,6 +153,7 @@ const BARKEEP = {
   // the body tells him what happened to it
   onHarm(info) {
     const N = this.npc;
+    if (this.gunman && this.gunman.on && (info.type === 'blow' || info.type === 'shot' || info.type === 'dead')) { this.gunman.drop(); if (this.st === 'wary') this.st = 'idle'; }
     this.pending = null; this.attending = false; this.standoff = null;
     if (info.type === 'dead') { this.abortServe(); this.orders.length = 0; this.st = 'dead'; this.diedAt = TIME.min; this.killedBy = 'player'; this.cause = info.cause === 'Kopfschuss' ? 'erschossen worden' : info.cause === 'verblutet' ? 'verblutet' : /schlagen/.test(info.cause) ? 'erschlagen worden' : 'gestorben'; CREW.died(this.whoI, { cause: info.cause, by: 'player' }, CREW.seenBy(N)); return; }
     if (info.type === 'up') { if (this.st !== 'brawl' && Math.random() < 0.6) this.shout('groan'); return; }
@@ -313,7 +317,7 @@ const BARKEEP = {
     const N = this.npc; if (soft || m < 20 || !N || N.hp.dead) return;
     if (this.st === 'shotgun') { this.props.shotgun.visible = false; this.sg = null; this.st = 'idle'; }
     if (N.fight.on) { N.fight.stop(); this.st = 'return'; this.returnT = 0.5; }
-    if (this.st === 'street' || this.st === 'duck') { this.st = 'return'; this.returnT = 0.5; }
+    if (this.st === 'street' || this.st === 'duck' || this.st === 'wary') { if (this.gunman) this.gunman.drop(); this.st = 'return'; this.returnT = 0.5; }
   },
   // nothing more to happen (for npc/sim.js)
   settled() {
@@ -390,7 +394,7 @@ const BARKEEP = {
       mind: 'Die Whiskeylieferung aus Tucson ist überfällig, das ärgert dich. Doc Whitfield hältst du für einen guten Arzt, aber du glaubst, er nimmt heimlich selbst Laudanum. Dein jüngerer Bruder Walt ist ein Hitzkopf, du sorgst dich um ihn. Den alten Jeb kennst du aus dem Krieg.',
       desc: { skin: 2, build: { width: 1.05, belly: 0.4 }, face: { nose: 'big', brows: 1.3 }, hair: { style: 'slick', color: rgb(0x231812) }, beard: { style: 'handlebar', color: rgb(0x231812) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xe9e3d3), rolled: true }, vest: rgb(0x2c303a), pants: { color: rgb(0x3b3532) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xe8e3d6), bowtie: rgb(0x7a1c1c), garter: rgb(0xa8323a), gun: false } },
-      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 } },
+      voice: { male: true, pitch: 0.95, length: 1.03, noiseW: 0.75, browserPitch: 0.82, rate: 0.95, prefer: ['conrad', 'killian'] }, fight: { courage: 0.7, power: 1, skill: 0.65, toughness: 1.4 }, gun: { kind: 'shotgun', skill: 0.55, courage: 0.7 } },
     { id: 'walt', name: 'Walt', age: 'Anfang vierzig, Hanks jüngerer Bruder, rotblonder Bart, Ärmelhalter', more: 'Hitzköpfig, misstrauisch, redet nicht gern, hält die Schrotflinte unter der Theke griffbereit. Du bist der stärkste Schläger im Saloon, vielleicht in der ganzen Stadt, und das weißt du: Du hast noch keine Prügelei verloren, Fäuste sind dir lieber als Worte, und wer dir dumm kommt, merkt es schnell. Du prahlst nicht viel, aber du lässt es jeden spüren.', kin: 'Bruder',
       lines: {
         brawl: [['Du willst dich mit mir anlegen? Mit mir?', 'amused'], ['Na endlich. Ich hab mich schon gelangweilt.', 'amused'], ['Komm her. Ich zeig dir, wie man das macht.', 'angry'], ['Das war dein letzter Fehler heute.', 'angry'], ['Mich hat noch keiner umgehauen. Du auch nicht.', 'angry']],
@@ -401,18 +405,18 @@ const BARKEEP = {
       mind: 'Den Saloon führst du mit deinem älteren Bruder Hank; eigentlich wolltest du Pferde züchten. Dem Doc traust du, sonst kaum jemandem.',
       desc: { skin: 1, build: { width: 1.12, belly: 0.15 }, face: { nose: 'normal', brows: 1.2 }, hair: { style: 'short', color: rgb(0x8a4a22) }, beard: { style: 'full', color: rgb(0x9a5a2a) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xd8cdb6), rolled: true }, vest: rgb(0x5a3a28), pants: { color: rgb(0x3e3a34) }, boots: rgb(0x3a2418), belt: rgb(0x2a1d15), apron: rgb(0xd8d0bc), garter: rgb(0x2a4a7a), gun: false } },
-      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.95, power: 1.35, skill: 0.85, toughness: 2.1 } },
+      voice: { male: true, pitch: 1.0, length: 0.97, noiseW: 0.8, browserPitch: 0.9, rate: 1.02, prefer: ['killian', 'conrad'] }, fight: { courage: 0.95, power: 1.35, skill: 0.85, toughness: 2.1 }, gun: { kind: 'shotgun', skill: 0.6, courage: 0.95 } },
     { id: 'jeb', name: 'Jeb', age: 'über sechzig, krumm, Glatze, Hanks alter Freund aus dem Krieg', more: 'Ruhig, vorsichtig, vergisst nichts, sagt wenig.', kin: 'alter Freund',
       mind: 'Dein Rücken plagt dich, und nachts träumst du vom Krieg, darum nimmst du gern die Nachtschicht. Hank und Walt sind wie Söhne für dich. Du beobachtest mehr, als du sagst.',
       desc: { skin: 2, build: { width: 0.92, belly: 0 }, face: { nose: 'big', brows: 1.1 }, hair: { style: 'bald', color: rgb(0xb0aaa0) }, beard: { style: 'chops', color: rgb(0xb0aaa0) },
         outfit: { hat: null, bandana: null, shirt: { color: rgb(0xcfc6b0), rolled: false }, vest: rgb(0x3a3a30), pants: { color: rgb(0x4a4238) }, boots: rgb(0x2a1d15), belt: rgb(0x2a1d15), apron: rgb(0xcfc8b4), gun: false } },
-      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 } },
+      voice: { male: true, pitch: 0.9, length: 1.08, noiseW: 0.7, browserPitch: 0.78, rate: 0.9, prefer: ['conrad'] }, fight: { courage: 0.4, power: 0.8, skill: 0.55, toughness: 1.2 }, gun: { kind: 'revolver', skill: 0.8, courage: 0.6 } },
     // when all three are dead: a new owner from out of town (npc/crew.js)
     { id: 'silas', name: 'Silas', age: 'Mitte vierzig, aus Tucson, schwarzer Hut, Revolver am Gürtel', more: 'Geschäftsmann, vorsichtig, höflich und kühl; du hast den Saloon billig gekauft, weil hier drei Barkeeper gestorben sind. Darum trägst du den Revolver am Gürtel und hast die Schrotflinte unter der Theke.', owner: true,
       mind: 'Du kennst niemanden in Dust Creek. Du willst Geld verdienen und am Leben bleiben, in dieser Reihenfolge nicht unbedingt. Fremden traust du nicht.',
       desc: { skin: 1, build: { width: 1.0, belly: 0.1 }, face: { nose: 'normal', brows: 1.0 }, hair: { style: 'short', color: rgb(0x2a2420) }, beard: { style: 'stache', color: rgb(0x2a2420) },
         outfit: { hat: { style: 'cowboy', color: rgb(0x1e1a18), band: rgb(0x4a3a2a) }, bandana: null, shirt: { color: rgb(0xd9d4c8), rolled: false }, vest: rgb(0x23242a), pants: { color: rgb(0x2e2c2a) }, boots: rgb(0x1e1612), belt: rgb(0x1e1612), apron: null, bowtie: rgb(0x1e1a18), gun: true } },
-      voice: { male: true, pitch: 1.02, length: 1.0, noiseW: 0.7, browserPitch: 0.95, rate: 1.0, prefer: ['killian'] }, fight: { courage: 0.75, power: 1.1, skill: 0.75, toughness: 1.5 } }
+      voice: { male: true, pitch: 1.02, length: 1.0, noiseW: 0.7, browserPitch: 0.95, rate: 1.0, prefer: ['killian'] }, fight: { courage: 0.75, power: 1.1, skill: 0.75, toughness: 1.5 }, gun: { kind: 'revolver', skill: 0.65, courage: 0.8 } }
   ],
   whoI: 0,
   who() { return this.WHO[Math.min(this.whoI, this.WHO.length - 1)]; },
@@ -428,7 +432,7 @@ const BARKEEP = {
     N.fight = new Brawler(N, W.fight);
     N.onHarm = (info) => this.onHarm(info);
     // the voice: the best fitting German voice of the device (see TALK.pickVoice), his own pitch and pace
-    N.voiceProfile = W.voice;
+    N.voiceProfile = W.voice; N.voiceKey = W.id;   // (each of them his own voice: npc/direct.js CAST)
     return N;
   },
   // what he remembers (for conversations): a few notable things, newest last
@@ -673,7 +677,7 @@ const BARKEEP = {
     this.aimedT = aimed ? Math.min(this.aimedT + dt, 3) : Math.max(0, this.aimedT - dt);
     /* a gun on him: at the start of a standoff he says something of his own (Claude, if it has answered here before),
        if it goes on he gets firmer; a new standoff is one after the gun was down for a few seconds */
-    if (aimed && this.aimedT > 0.25) {
+    if (aimed && this.aimedT > 0.25 && this.st !== 'wary') {
       if (!this.standoff || G.time - this.standoff.last > 4) {
         this.standoff = { t0: G.time, last: G.time, n: 0 };
         this.feel(-0.15, 'Er hat seinen Revolver auf dich gerichtet.');
@@ -686,6 +690,26 @@ const BARKEEP = {
         const sit2 = 'Der Fremde zielt jetzt schon ' + Math.round(G.time - this.standoff.t0) + ' Sekunden mit dem Revolver auf dich und sagt nichts. Deine Hände sind oben.';
         if (!TALK.remark(N, sit2, () => this.say('aimed2'), 'neutral', 0.5)) this.say('aimed2');
       }
+    }
+    /* wary (npc/crew.js alert: one of them was killed in the last days, or there was shooting in here not long ago):
+       his gun is at hand. Trouble from you (a gun out, a shot) and it is up and on you, with a warning, and he fires
+       if you go on; after a killing he stands there with it the first minute you are in, then lays it by and works */
+    const W0 = this.who(), alert = CREW.alert();
+    if (W0.gun && inside && (this.st === 'idle' || this.st === 'duck') && !N.hp.busy() && alert >= 0.5) {
+      const trouble = (GUN.state !== 'holster' && !GUN.reloadThenHolster) || G.time - GUNMAN.lastShot < 6;
+      if (trouble || (alert >= 0.9 && !this.waryDone)) {
+        if (!this.gunman || this.gunman.npc !== N) this.gunman = new Gunman(N, Object.assign({}, W0.gun, { onWord: (k) => this.say(k === 'warn' ? 'gunWarn' : 'gunWarn2') }));
+        this.abortServe(); this.orders.length = 0; this.gunman.draw(); this.st = 'wary'; this.waryCalm = 0;
+      }
+    }
+    if (!inside) this.waryDone = false;
+    if (this.st === 'wary') {
+      const G1 = this.gunman, calm = GUN.state === 'holster' && G.time - GUNMAN.lastShot > 15;
+      this.waryCalm = calm || !inside ? (this.waryCalm || 0) + dt : 0;
+      if (this.waryCalm > (alert >= 0.9 ? 45 : 10) || (!inside && this.waryCalm > 4)) { G1.holster(); this.waryDone = true; }
+      for (const k of ['glass', 'bottle', 'rag']) this.props[k].visible = false;
+      if (!G1.on || N.hp.busy()) { this.st = N.hp.busy() ? 'hurt' : 'idle'; this.hurtT = 0; this.pickIdle(); }
+      else { G1.update(dt); this.placeProps(); return; }
     }
     const handsUp = this.aimedT > 0.2;
     if (handsUp || this.st === 'duck') N.fear = G.time + 0.6;   // (his face: afraid)

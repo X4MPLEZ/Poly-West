@@ -34,12 +34,13 @@ const WORLDSIM = {
     for (const N of NPCS.list.slice()) if (!(soft && fighting(N))) N.hp.update(s);
     if (!(soft && fighting(BARKEEP.npc))) BARKEEP.update(s);
     if (!(soft && fighting(DOC.npc))) DOC.update(s);
+    if (!(soft && fighting(SHERIFF.npc))) SHERIFF.update(s);
     for (const N of NPCS.list) N.ff(s);
   },
   heal(m) { if (m > 0) for (const N of NPCS.list) N.hp.heal(m); },
   // nothing left that would change but healing
   settled() {
     for (const N of NPCS.list) { const H = N.hp; if (H.dead) continue; if (H.anim || H.bleed > 0 || H.dying > 0 || N.walking()) return false; }
-    return BARKEEP.settled() && DOC.settled();
+    return BARKEEP.settled() && DOC.settled() && SHERIFF.settled();
   }
 };

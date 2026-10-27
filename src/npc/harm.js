@@ -173,7 +173,7 @@ class Vitals {
   shot(info) {
     const N = this.npc, Z = ZONES[info.zone], dir = info.dir;
     if (this.dead) { this.blood = Math.max(0, this.blood - 0.05); HARM.bloodFx(info.point, dir, 0.6, N); return { zone: info.zone, onBody: true }; }
-    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + 1.1 };
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + 1.1 }; N.shotBy = TIME.min;
     if (info.zone === 'hat') { this.hatOff = true; HARM.knockHat(N, dir); this.flinchBy(dir, 0.5, 'head'); this.pain += 0.1; return { zone: 'hat' }; }
     if ((info.hatToo || info.zone === 'head') && !this.hatOff) { this.hatOff = true; HARM.knockHat(N, dir); }   // (a bullet in the head takes the hat with it)
     HARM.bloodFx(info.point, dir, info.zone === 'head' ? 1.6 : 1, N);
@@ -211,7 +211,7 @@ class Vitals {
   blow(o) {
     if (this.dead) return null;
     const N = this.npc;
-    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + (o.heavy ? 0.9 : 0.55) };
+    this.lastHit = G.time; N.hitFrom = { x: PLAY.pos.x, z: PLAY.pos.z, until: G.time + (o.heavy ? 0.9 : 0.55) }; N.beatenBy = TIME.min;
     const head = o.head, p = o.power || 1, tough = (N.fight && N.fight.toughness) || 1;
     /* a beating knocks a man out long before it kills him: blows daze him, enough of them put him out cold (ko,
        lying there with his eyes shut); only a long, long beating of a man who is already out kills (trauma) */
@@ -370,6 +370,7 @@ class Vitals {
     return k;
   }
   die(cause, dir, how) {
+    if (this.dying > 0 || this.blood < BLOOD_FAINT) { const N0 = this.npc; if ((N0.room || null) === (G.room || null) && Math.hypot(N0.pos.x - PLAY.pos.x, N0.pos.z - PLAY.pos.z) < 14) FOLEY.moan(N0.pos, N0.voiceProfile && N0.voiceProfile.pitch, 'last', 1); }
     if (this.dead) return;
     const N = this.npc;
     this.dead = true; this.cause = cause; this.deadAt = Math.round(TIME.min); this.bleed = 0; this.dying = 0;
@@ -415,6 +416,19 @@ class Vitals {
     // gut-shot: it does not let go of him (the pain keeps coming back, he moans and writhes)
     const gut = this.wounds.find((w) => w.gut && !w.bandaged && w.heal < 0.5);
     if (gut) this.pain = Math.max(this.pain, 0.75 + 0.25 * Math.sin(G.time * 0.7 + Math.sin(G.time * 0.23) * 3));
+    /* suffering on the floor (shot, bleeding, dying; not out cold): moans, whimpers and heavy breathing, heard only
+       close by and in the same room; each moan also goes through the body (pose: moanK) */
+    const suffer = !this.out && this.anim && this.anim.holding() && (this.dying > 0 || this.bleed > 0.0004 || this.blood < BLOOD_WEAK || this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5));
+    this.moanK = Math.max(0, (this.moanK || 0) - dt * 0.9);
+    if (suffer && !G.abstract) {
+      const near = (N.room || null) === (G.room || null) && Math.hypot(N.pos.x - PLAY.pos.x, N.pos.z - PLAY.pos.z) < 14, pit = N.voiceProfile && N.voiceProfile.pitch;
+      if ((this.moanT = (this.moanT === undefined ? 1.5 : this.moanT) - dt) <= 0) {
+        const dyingNow = this.dying > 0 || this.blood < BLOOD_FAINT;
+        this.moanT = dyingNow ? 2.2 + Math.random() * 2.5 : 3.5 + Math.random() * 4.5;
+        if (near && !(N.talking || VOICE.speaking(N))) { FOLEY.moan(N.pos, pit, dyingNow && Math.random() < 0.5 ? 'whimper' : 'moan', dyingNow ? 0.8 : 1); this.moanK = 1; }
+      }
+      if ((this.breathT = (this.breathT || 0) - dt) <= 0) { this.breathT = 3.2 + Math.random(); if (near) FOLEY.breathe(N.pos, pit, this.dying > 0 ? 1.2 : 0.8); }
+    }
     // the lungs: a cough now and then, blood on the lips
     const lung = this.wounds.find((w) => w.zone === 'chest' && w.kind === 'shot' && !w.bandaged && w.heal < 0.4);
     if (lung && !this.out && (this.coughT = (this.coughT === undefined ? 3 : this.coughT) - dt) <= 0) { this.coughT = 4 + Math.random() * 7; HARM.cough(N); }
@@ -455,7 +469,13 @@ class Vitals {
       else if (this.anim.holding()) {
         if (this.out) { P.hdYaw = 0.2; P.hdPitch += 0.15; P.spPitch += Math.sin(G.time * 1.6) * 0.01; }   // out cold: only the breath
         else {
-          P.spPitch += Math.sin(G.time * 2.2) * 0.03 * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3;
+          // breath: short and heavy when he is bleeding out, quicker still when he is dying; a tremor in the last minutes
+          const dyingNow = this.dying > 0 || this.blood < BLOOD_FAINT, rate = dyingNow ? 4.6 : this.bleed > 0.0004 ? 3.2 : 2.2;
+          P.spPitch += Math.sin(G.time * rate) * (dyingNow ? 0.05 : 0.035) * (1 - this.lowness * 0.5); P.hdYaw = Math.sin(G.time * 0.6) * 0.3;
+          if (dyingNow) { const tr = 0.02 * Math.sin(G.time * 23) * Math.sin(G.time * 1.7); P.hdRoll = (P.hdRoll || 0) + tr; for (let i = 0; i < 2; i++) if (P.armOv[i]) P.armOv[i].el += tr * 2; }
+          // a moan goes through him: the head back, the back arches, the knees come up a little, a hand clenches
+          const mk = this.moanK || 0;
+          if (mk > 0.01) { const e = Math.sin(Math.min(1, (1 - mk) * 1.6) * Math.PI) ; P.hdPitch -= 0.28 * e; P.spPitch -= 0.1 * e; P.pelRoll += 0.08 * e * (this.seedT ? Math.sign(Math.sin(this.seedT)) : 1); for (let i = 0; i < 2; i++) { P.ank[i].z += 0.06 * e; } if (P.hand) for (let i = 0; i < 2; i++) if (P.hand[i]) P.hand[i].fist = Math.max(P.hand[i].fist || 0, 0.7 * e); }
           // gut-shot: he writhes. Waves of pain: he rolls from one side to the other, the knees fall over together,
           // one leg pushes out and drags back, the head goes back and forth, at the worst he curls up tight
           if (this.wounds.some((w) => w.gut && !w.bandaged && w.heal < 0.5)) {
@@ -936,7 +956,8 @@ const HARM = {
         }
       }
     }
-    if (bestItem && (!best || bestItem.t < best.t + 0.06)) return bestItem;
+    // (what he holds counts only when it is in front of what the bullet would hit on him: a shotgun at his cheek does not catch a shot at his head)
+    if (bestItem && (!best || bestItem.t < best.t - 0.005)) return bestItem;
     // through the hat into the head: the head counts (the hat goes as well)
     if (best && best.part === 'hat') {
       const N = best.npc, part = N.ch.p.head; this._inv.copy(part.matrixWorld).invert();
@@ -966,7 +987,7 @@ const HARM = {
   // the zone of a point on a part (part frame: +x his left, +y up, +z ahead)
   zoneOf(part, p) {
     const side = /L$/.test(part) ? 'L' : /R$/.test(part) ? 'R' : '';
-    if (part === 'head') return { zone: p.y > -0.02 ? 'head' : 'neck', side: '' };
+    if (part === 'head') return { zone: p.y > -0.06 ? 'head' : 'neck', side: '' };   // (the jaw and the chin are the head; the neck is the bit below)
     if (part === 'hat') return { zone: 'hat', side: '' };
     if (part === 'torso') {
       if (p.y > 0.3 && Math.abs(p.x) > 0.1) return { zone: 'shoulder', side: p.x > 0 ? 'L' : 'R' };
@@ -995,6 +1016,7 @@ const HARM = {
       if (Z.drop || Z.lethal || Z.dying || Z.down) this.dropHand(N, hit.side === 'L' ? 0 : hit.side === 'R' ? 1 : -1, dir);
     } else GSFX.impact(hit.point, 'cloth');
     worldEvent('npcShot', hit.point.x, hit.point.y, hit.point.z, { by: 'player', npc: N.id, zone: hit.zone, side: hit.side, dead: N.hp.dead, room: N.room ? N.room.type : null });
+    if (!N.hp.dead && hit.zone !== 'hat') setTimeout(() => { if (!N.hp.dead && !N.hp.out) FOLEY.pain(N.pos, N.voiceProfile && N.voiceProfile.pitch, 1.1); }, 60 + Math.random() * 90);
     if (N.onHarm && !N.hp.dead) N.onHarm({ type: 'shot', zone: hit.zone, side: hit.side, wound: w });
   },
   // shot out of his hand: the thing breaks or flies, he jerks the hand back (a sting, no wound)
@@ -1050,7 +1072,11 @@ const HARM = {
   fleshSound(p, head) {
     GSFX.run(() => {
       const { g, t } = GSFX.out(0.8, p);
-      SFX.thump(t, g, head ? 150 : 110, 50, head ? 0.6 : 0.5, 0.07);
+      /* the bullet going in: the wet crack of the recording (the head: a harder one), a deep thud under it that you
+         feel, and a short bright tick of the cloth tearing; each a little different */
+      const rec = GSFX.play(head ? 'fleshH' : 'flesh' + (1 + Math.floor(Math.random() * 3)), g, t, (head ? 1.05 : 0.9) + Math.random() * 0.12, head ? 0.95 : 0.8);
+      SFX.thump(t, g, head ? 150 : 110, 50, rec ? 0.35 : 0.6, 0.07);
+      if (rec) { SFX.noiseHit(t + 0.002, g, { type: 'bandpass', freq: 3200, q: 1.5, gain: 0.06, attack: 0.0006, decay: 0.012 }); return; }
       SFX.noiseHit(t, g, { type: 'lowpass', freq: 900, q: 0.8, gain: 0.45, attack: 0.001, decay: 0.05 });
       SFX.noiseHit(t + 0.004, g, { type: 'bandpass', freq: 2400, q: 2, gain: 0.12, attack: 0.001, decay: 0.03 });
     });

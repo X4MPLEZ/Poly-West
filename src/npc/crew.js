@@ -33,6 +33,9 @@ const CREW = {
     out: [['Verschwinde. Sofort.', 'angry'], ['Raus hier. Lass uns allein.', 'sad']],
     quiet: [['Na gut. Ich geh wieder hoch.', 'neutral'], ['Ruft, wenn was ist.', 'neutral']],
     hands: [['Nicht schießen!', 'surprised'], ['Ganz ruhig, Mister…', 'neutral']],
+    sheriff: [['Sheriff! Im Saloon liegt einer tot!', 'surprised'], ['Sheriff, schnell, in den Saloon! Da ist einer umgebracht worden!', 'surprised']],
+    gunWarn: [['Waffe runter! Sofort!', 'angry'], ['Steck das Ding weg, oder ich schieße.', 'angry'], ['Keine Bewegung!', 'angry']],
+    gunWarn2: [['Letzte Warnung!', 'angry'], ['Ich zähl nicht bis drei.', 'angry']],
     takeOver: [['Ich übernehme, {o}. Leg dich hin.', 'neutral'], ['Alles ruhig, {o}? Ich mach weiter.', 'neutral'], ['Geh schlafen, {o}. Ich hab’s.', 'neutral']],
     handOver: [['Ruhiger Tag. Bis morgen.', 'sleepy'], ['Pass auf den da auf.', 'whisper'], ['Die Theke gehört dir.', 'sleepy']]
   },
@@ -84,8 +87,8 @@ const CREW = {
   // back to the start (tests, "Erinnerungen zurücksetzen" does only the memories)
   reset() {
     const B = BARKEEP;
-    for (const h of this.helpers) h.npc.dispose();
-    this.helpers.length = 0; this.closedAt = null; this.lastDead = null; this.told.clear();
+    for (const h of this.helpers) { if (h.gun) h.gun.dispose(); h.npc.dispose(); }
+    this.helpers.length = 0; this.closedAt = null; this.shotsAt = this.noiseAt = undefined; this.sheriffCalled = null; this.lastDead = null; this.told.clear();
     if (B.npc) B.npc.dispose();
     this.m.forEach((m) => { m.alive = true; m.away = m.i >= this.OWNER; m.d = this.blank(); m.noise = 0; m.comeT = 0; m.died = null; });
     B.whoI = 0; this.m[0].d = null; B.makeNpc(B.scene0); B.st = 'idle'; B.pickIdle();
@@ -149,7 +152,7 @@ const CREW = {
     B.whoI = i; const N = B.makeNpc(B.scene0);
     N.talkLog = d.talkLog || []; N.asked = new Set(d.asked || []);
     if (d.body) { N.hp.load(d.body); if (d.bodyAt !== null && N.hp.heal) N.hp.heal(Math.max(0, TIME.min - d.bodyAt)); }
-    if (where) { N.pos.copy(where); N.room = roomAt(N.pos.x, N.pos.z, 0.05, N.pos.y + 0.1); N.yaw = B.yawFor(1); N.faceYaw = null; }
+    if (where) { N.pos.copy(where); N.room = roomAt(N.pos.x, N.pos.z, 0.05, N.pos.y + 0.1); N.yaw = B.yawFor(-1) + Math.PI / 2; N.faceYaw = null; }
     B.st = where ? 'return' : 'idle'; B.returnT = 0.3; B.pickIdle();
     return N;
   },
@@ -160,6 +163,18 @@ const CREW = {
   },
   // where the stairs are (room frame of the saloon): the foot, and a point up in the opening
   stair(i, out) { const R = BARKEEP.R, h = (R.ceilY - R.floorY) / 14, x = i < 0 ? 0.25 : -0.6 - i * 0.33; const p = rwp(R, x, R.floorY + (i < 0 ? 0 : (i + 1) * h), R.z0 + 0.6); return out.set(p.x, groundAt(p.x, p.z, p.y + 0.4), p.z); },
+  /* the way between their rooms upstairs and the saloon floor (room frame of the saloon): the room door on the
+     upstairs corridor, along it to the landing, the stairs down to their foot. Each one has his own door. */
+  DOORS: [4.0, 0.0, -4.0, 4.0],
+  stairWay(i, down) {
+    const R = BARKEEP.R, z0 = R.z0, dx = this.DOORS[i] || 0;
+    const pts = [[dx, z0 + 2.45], [-5.6, z0 + 2.0], [-5.6, z0 + 0.6], [-4.9, z0 + 0.6], [-2.6, z0 + 0.6], [-0.6, z0 + 0.6], [0.4, z0 + 0.6]];
+    const w = pts.map(([x, z]) => { const p = rwp(R, x, 0, z); return [p.x, p.z]; });
+    return down ? w : w.reverse();
+  },
+  upstairs(i, out) { const R = BARKEEP.R, U = R.upper, p = rwp(R, this.DOORS[i] || 0, 0, R.z0 + 2.45), y = (U ? U.floorY : R.ceilY + 0.1); return out.set(p.x, y, p.z); },
+  // walk a fixed way (the stairs are not in NAV): legs passed through, the last one the end
+  follow(N, way) { const w = way.slice(), last = w.pop(); N.stop(); N.path = w; N.dest = [last[0], last[1], null]; N.nextLeg(); },
   change(cur, want) {
     const B = BARKEEP, see = G.room === B.R && !G.abstract;
     if (cur >= 0) this.stash(cur);
@@ -169,7 +184,8 @@ const CREW = {
     for (const k in B.props) B.props[k].visible = false;
     if (want < 0) { B.st = 'closed'; return; }
     const d = this.unstash(want);
-    const N = this.onDuty(want, d, see ? this.stair(8, this._v) : null);
+    const N = this.onDuty(want, d, see ? this.upstairs(want, this._v) : null);
+    if (see) { this.follow(N, this.stairWay(want, true).slice(1)); B.returnT = 0; }
     if (see && outN) setTimeout(() => { if (B.npc === N && !N.hp.dead) this.say(N, 'takeOver', this.W(cur).name); }, 2400);
     return N;
   },
@@ -177,7 +193,7 @@ const CREW = {
   leave(N, i, next) {
     const h = this.wire(N, i);
     h.ph = 'up'; h.t = 0; N.hurry = 1;
-    const f = this.stair(-1, this._v); N.walkTo(f.x, f.z);
+    this.toStairs(h);
     if (next >= 0) setTimeout(() => { if (!N.hp.dead) this.say(N, 'handOver'); }, 4200);
   },
 
@@ -194,6 +210,8 @@ const CREW = {
       const who = e.npc && NPCS.list.find((n) => n.id === e.npc && n !== h.npc);
       if (who && e.type === 'npcShot' && !h.said['saw' + who.id]) { h.said['saw' + who.id] = 1; this.note(h.i, 'Du hast gesehen, wie der Fremde auf ' + who.name + ' geschossen hat (' + TIME.stamp() + ').'); }
     }
+    // (shooting at people in here puts them on edge; at bottles, less so)
+    if (inR && e.by === 'player') { if (e.type === 'npcShot') this.shotsAt = TIME.min; else if (e.type === 'shot') this.noiseAt = TIME.min; }
     const hr = TIME.hour();
     for (const m of this.living()) {
       if (m.i === B.whoI && B.npc) continue;
@@ -208,7 +226,7 @@ const CREW = {
   makeBody(i, pos, yaw) {
     const W = this.W(i), m = this.m[i];
     const N = new NPC({ attitude: () => (m.d ? m.d.att : 0), id: 'crew_' + W.id, name: W.name, room: null, scene: BARKEEP.scene0, pos, yaw, desc: W.desc });
-    N.room = roomAt(pos.x, pos.z, 0.05, pos.y + 0.1); N.voiceProfile = W.voice; N.role = W.name + ' aus dem Saloon (' + W.age + ')';
+    N.room = roomAt(pos.x, pos.z, 0.05, pos.y + 0.1); N.voiceProfile = W.voice; N.voiceKey = W.id; N.role = W.name + ' aus dem Saloon (' + W.age + ')';
     if (m.d && m.d.body) { N.hp.load(m.d.body); if (m.d.bodyAt !== null && N.hp.heal) N.hp.heal(Math.max(0, TIME.min - m.d.bodyAt)); }
     return this.wire(N, i);
   },
@@ -216,7 +234,7 @@ const CREW = {
     const W = this.W(i), m = this.m[i];
     if (!m.d) m.d = this.blank();
     const h = { i, npc: N, ph: 'down', t: 0, said: {}, saw: 0 };
-    N.id = 'crew_' + W.id; N.held = () => [];
+    N.id = 'crew_' + W.id; N.voiceKey = W.id; N.held = () => [];
     N.talkLog = m.d.talkLog || (m.d.talkLog = []); N.asked = new Set(m.d.asked || []);
     N.persona = this.persona(h);
     N.gossip = { facts: () => m.d.mem.filter((x) => !/hat dir erzählt/.test(x) && /\bEr\b|Fremde/.test(x)), hear: (from, f) => this.note(i, GOSSIP.told(from, f)) };
@@ -228,9 +246,26 @@ const CREW = {
   note(i, text) { const d = this.m[i].d || (this.m[i].d = this.blank()); d.mem.push(text); if (d.mem.length > 10) d.mem.shift(); if (/Fremde.*(umgebracht|erschossen|getötet|erschlagen)/.test(text)) this.learnKiller(i); },
   come(m) {
     m.comeT = 0; m.noise = 0;
-    const h = this.makeBody(m.i, this.stair(10, this._v).clone(), 0);
-    const f = this.stair(-1, this._w); h.npc.hurry = m.why === 'shots' ? 2.1 : 1.5; h.npc.goTo(f.x, f.z);
+    const h = this.makeBody(m.i, this.upstairs(m.i, this._v).clone(), 0);
+    // shots below, or the saloon has seen killing: he takes his gun down with him, ready
+    if (m.why === 'shots' || this.alert() >= 0.5) this.arm(h);
+    h.npc.hurry = m.why === 'shots' ? 2.1 : 1.5; this.follow(h.npc, this.stairWay(m.i, true).slice(1));
     this.note(m.i, (m.wasAsleep ? 'Du bist oben von ' + (m.why === 'shots' ? 'Schüssen' : 'Lärm') + ' aufgewacht' : 'Du hast oben ' + (m.why === 'shots' ? 'Schüsse' : 'Lärm') + ' gehört') + ' und bist in den Saloon hinuntergelaufen (' + TIME.stamp() + ').');
+  },
+  // his own gun (BARKEEP.WHO[i].gun), drawn
+  arm(h) {
+    const G0 = this.W(h.i).gun; if (!G0 || h.gun) return;
+    h.gun = new Gunman(h.npc, Object.assign({}, G0, { onWord: (k) => this.react(h, k === 'warn' ? 'gunWarn' : 'gunWarn2', 'Der Fremde hat seine Waffe in der Hand. Du hast deine ' + (G0.kind === 'shotgun' ? 'Schrotflinte' : 'Waffe') + ' auf ihn gerichtet und warnst ihn: Waffe runter.') }));
+    h.gun.draw(); h.npc.held = () => h.gun ? h.gun.held() : [];
+  },
+  /* how much on edge the saloon is: one of them killed in the last three days (1), shots in the saloon in the last
+     hours (0.6, fading); the next one at the bar keeps his gun at hand, those coming down bring theirs */
+  alert() {
+    let a = 0;
+    for (const m of this.m) if (m.died && m.died.by === 'player' && TIME.min - m.died.at < 4320) a = 1;
+    if (this.shotsAt !== undefined) a = Math.max(a, 0.7 * clamp(1 - (TIME.min - this.shotsAt) / 360, 0, 1));
+    if (this.noiseAt !== undefined) a = Math.max(a, 0.35 * clamp(1 - (TIME.min - this.noiseAt) / 120, 0, 1));
+    return a;
   },
   helperHarm(h, info) {
     const N = h.npc, m = this.m[h.i];
@@ -253,7 +288,7 @@ const CREW = {
     const D = DOC.npc; if (D && !D.hp.dead && !D.hp.out && (D.room || null) === R && (R || Math.hypot(D.pos.x - N.pos.x, D.pos.z - N.pos.z) < 30)) by.push('doctor');
     return by;
   },
-  toStairs(h) { const f = this.stair(-1, this._v); h.npc.hurry = 1; h.npc.walkTo(f.x, f.z); },
+  toStairs(h) { const f = this.stair(-1, this._v); h.npc.hurry = Math.max(1, h.npc.hurry || 1); h.npc.walkTo(f.x, f.z); h.climb = false; },
   aimedAt(N) {
     if (!(GUN.camW > 0.5)) return false;
     const cam = G.cam, d = this._v.set(N.pos.x, N.pos.y + 1.4, N.pos.z).sub(cam.position), L = d.length(); if (L > 18) return false;
@@ -267,8 +302,18 @@ const CREW = {
     N.handShape[0] = N.handShape[1] = null;
     if (H.busy() || H.out) { N.free(0); N.free(1); N.crouchT = 0; return; }
     const inside = G.room === N.room && !!N.room, dP = Math.hypot(PLAY.pos.x - N.pos.x, PLAY.pos.z - N.pos.z);
-    // a gun on him: hands up, whatever he was doing
-    if (inside && this.aimedAt(N) && h.ph !== 'up') {
+    /* armed: while you are a danger (gun out, shots, a killing) he stands his ground with it; once you have put it
+       away and stayed calm, he lowers it and sees to the rest (the hurt man, the body); out of the room, he puts it up */
+    if (h.gun && h.gun.on && h.ph !== 'up' && h.ph !== 'hurt' && h.ph !== 'down') {
+      const calm = GUN.state === 'holster' && G.time - GUNMAN.lastShot > 10 && G.time - (h.gun.provoked || -99) > 12;
+      h.calmT = calm || !inside ? (h.calmT || 0) + dt : 0;
+      if (h.calmT > (inside ? 6 : 8)) h.gun.holster();
+      else if (h.gun.update(dt)) { if (h.ph === 'brawl') { N.fight.stop(); h.ph = 'look'; } return; }
+    } else if (h.gun && h.gun.st === 'holster') h.gun.update(dt);
+    // trouble again with the gun put away: out with it
+    if (h.gun && !h.gun.on && inside && h.ph !== 'up' && (GUN.state !== 'holster' || G.time - GUNMAN.lastShot < 2)) { h.gun.draw(); h.calmT = 0; }
+    // a gun on him: hands up, whatever he was doing (unarmed)
+    if (inside && this.aimedAt(N) && h.ph !== 'up' && !(h.gun && h.gun.on)) {
       if (N.fight.on) N.fight.stop();
       N.stop(); N.crouchT = 0; N.reach(0, 0.32, 1.95, 0.12); N.reach(1, -0.32, 1.95, 0.12); N.fear = G.time + 0.6;
       if (!h.said.hands || G.time - h.said.hands > 20) { h.said.hands = G.time; this.say(N, 'hands'); }
@@ -286,15 +331,18 @@ const CREW = {
     if (h.ph === 'up') {
       // at the foot of the stairs: up them and gone
       if (!N.walking()) {
-        if (!h.climb) { h.climb = true; const s = this.stair(12, this._v); N.goTo(s.x, s.z); }
+        // at the foot: up the stairs, along the corridor to his door, and in
+        if (!h.climb) { h.climb = true; this.follow(N, this.stairWay(h.i, false).slice(1)); }
         else this.gone(h);
       }
-      if (h.t > 40) this.gone(h);
+      if (h.t > 60) this.gone(h);
       return;
     }
     if (h.ph === 'down') {
-      if (N.walking() && h.t < 12) return;
+      if (N.walking() && h.t < 25) return;
       h.ph = 'look'; h.t = 0;
+      // a step off the stairs into the room, each to his own spot (so two do not stand in each other)
+      { const k = this.helpers.filter((x) => x !== h && x.ph !== 'dead').length, p = rwp(R, 1.1 + k * 1.0, 0, R.z0 + 1.7 + k * 0.5); N.walkTo(p.x, p.z); }
       if (BN && BN.hp.dead && G.room === R && dP < 14) { h.caught = true; }
       // what the one at the bar can tell him (he is alive): who shot him
       if (BN && !BN.hp.dead) this.handTale({ i: B.whoI, d: null }, this.m[h.i].d, h.i);
@@ -310,6 +358,19 @@ const CREW = {
         h.ph = 'back'; h.t = 0; N.hurry = 1.8; return;
       }
       if (!N.walking() || (h.walkT = (h.walkT || 0) - dt) <= 0) { h.walkT = 2; N.walkTo(D.pos.x, D.pos.z); }
+      return;
+    }
+    // running for the sheriff: a killing (the body is here); he is told who it was, if this one knows
+    if (h.ph === 'fetchS') {
+      const S = SHERIFF.npc;
+      if (!S || S.hp.dead || h.t > 120) { h.ph = 'back'; h.t = 0; return; }
+      if (Math.hypot(N.pos.x - S.pos.x, N.pos.z - S.pos.z) < 3.2 && (N.room || null) === (S.room || null)) {
+        const dead = this.lastDead ? this.W(this.lastDead.i).name : 'einer von uns', known = !!(this.lastDead && this.lastDead.died && this.lastDead.died.known);
+        SHERIFF.report(this.W(h.i).name, PLACEMAP.find('im Saloon'), dead + ' liegt tot im Saloon' + (known ? ', der Fremde hat ihn umgebracht' : ', wer es war, weiß keiner'), known);
+        this.say(N, 'sheriff'); this.note(h.i, 'Du hast den Sheriff in den Saloon geholt (' + TIME.stamp() + ').');
+        h.ph = 'back'; h.t = 0; N.hurry = 1.8; return;
+      }
+      if (!N.walking() || (h.walkT = (h.walkT || 0) - dt) <= 0) { h.walkT = 2; N.hurry = 2.1; N.walkTo(S.pos.x, S.pos.z); }
       return;
     }
     if (h.ph === 'back') {
@@ -369,12 +430,17 @@ const CREW = {
         h.knelt = true; h.kneltT = G.time; N.free(1); N.crouchT = 0;
         // you are still here, standing over him: he knows
         const seen = (h.caught || h.saw) && inside && dP < 14;
-        if (seen) { this.learnKiller(h.i); this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
+        if (seen) { this.learnKiller(h.i); if (h.gun && this.W(h.i).gun.courage >= 0.6) { h.gun.draw(); h.gun.provoked = G.time; } this.react(h, 'caught', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Der Fremde steht hier, er hat ihn umgebracht. Du sagst es ihm ins Gesicht.'); h.angry = true; }
         else this.react(h, 'grief', P.name + ' liegt tot vor dir, du hast neben ihm gekniet. Er war ' + (this.KIN[this.W(h.i).id] && this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] ? 'dein ' + this.KIN[this.W(h.i).id][this.W(BARKEEP.whoI).id] : 'einer von euch') + '. Wer es war, hast du nicht gesehen.');
       }
       return;
     }
     N.mood = 'sad'; N.moodT = G.time + 2;
+    // somebody has to fetch the sheriff: the most timid of them goes (not into your gun; alone only once you are gone)
+    if (this.sheriffCalled !== this.lastDead && SHERIFF.npc && !SHERIFF.npc.hp.dead && G.time - h.kneltT > 5 && SHERIFF.st !== 'respond' && SHERIFF.st !== 'scene') {
+      const others = this.helpers.filter((x) => x !== h && x.ph !== 'dead' && x.ph !== 'up'), timid = others.every((x) => this.W(x.i).fight.courage >= this.W(h.i).fight.courage);
+      if (timid && (others.length || !inside)) { this.sheriffCalled = this.lastDead; h.ph = 'fetchS'; h.t = 0; N.crouchT = 0; if (h.gun) h.gun.holster(); return; }
+    }
     // the one who did it is still here: Walt (and Hank) go for him, Jeb wants him gone
     if (h.angry && inside && dP < 6 && GUN.state === 'holster' && this.W(h.i).fight.courage >= 0.6 && !PHP.out && !h.fought) { h.fought = true; h.ph = 'brawl'; h.npc.fight.start(); return; }
     if (h.angry && inside && !h.said.out && G.time - h.kneltT > 8) { h.said.out = 1; this.say(N, 'out'); }
@@ -383,6 +449,7 @@ const CREW = {
   gone(h) {
     const i = this.helpers.indexOf(h); if (i >= 0) this.helpers.splice(i, 1);
     const m = this.m[h.i]; if (m.d) { m.d.body = h.npc.hp.save(); m.d.bodyAt = TIME.min; m.d.talkLog = (h.npc.talkLog || []).slice(-12); m.d.asked = [...(h.npc.asked || [])]; }
+    if (h.gun) h.gun.dispose();
     h.npc.dispose();
   },
   // he knows you did it: how he takes it (the tempers of npc/barkeep_fate.js), unless he already has
@@ -444,7 +511,7 @@ const CREW = {
   /* ---- every frame ---- */
   update(dt) {
     const B = BARKEEP; if (!B.R || !this.m.length) return;
-    for (let i = this.helpers.length - 1; i >= 0; i--) { const h = this.helpers[i]; this.updHelper(h, dt); if (h.ph === 'dead' && TIME.min - (h.diedAt || TIME.min) > 120 && B.unseen()) { GRAVES.add(this.W(h.i).name, TIME.day()); this.helpers.splice(i, 1); h.npc.dispose(); this.buried(h.i); } }
+    for (let i = this.helpers.length - 1; i >= 0; i--) { const h = this.helpers[i]; this.updHelper(h, dt); if (h.ph === 'dead' && TIME.min - (h.diedAt || TIME.min) > 120 && B.unseen()) { GRAVES.add(this.W(h.i).name, TIME.day()); this.helpers.splice(i, 1); if (h.gun) h.gun.dispose(); h.npc.dispose(); this.buried(h.i); } }
     for (const m of this.living()) if (m.comeT && G.time > m.comeT) { if (m.i === B.whoI && B.npc) m.comeT = 0; else this.come(m); }
     // everybody is dead: closed; three days later the new owner
     if (!this.living().length) {
@@ -480,7 +547,7 @@ const CREW = {
   },
   load(s) {
     if (!s || !Array.isArray(s.m)) return;
-    for (const h of this.helpers) h.npc.dispose();
+    for (const h of this.helpers) { if (h.gun) h.gun.dispose(); h.npc.dispose(); }
     this.helpers.length = 0;
     s.m.forEach((x, i) => {
       const m = this.m[i]; if (!m || !x) return;

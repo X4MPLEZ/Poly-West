@@ -25,7 +25,7 @@ const DOC = {
     coming: [['Ich komme! Geh voraus!', 'surprised'], ['Meine Tasche… los, schnell!', 'surprised'], ['Bin unterwegs!', 'surprised'], ['Verdammt. Ich komme.', 'angry']],
     comingCalm: [['Ich seh es mir an.', 'neutral'], ['Gut, ich komme mit.', 'neutral'], ['Na schön. Zeig es mir.', 'neutral']],
     onsite: [['Platz da! Lasst mich ran!', 'angry'], ['Halt still. Ich bin ja da.', 'neutral'], ['Zeig her… ruhig atmen.', 'neutral']],
-    dead: [['Der ist tot. Da kann ich nichts mehr tun.', 'sleepy'], ['Tot. Kein Puls mehr. Zu spät.', 'sleepy'], ['Für den kommt jede Hilfe zu spät.', 'sleepy'], ['Er ist tot. Ich hätte früher hier sein müssen.', 'sleepy']],
+    dead: [['Der ist tot. Da kann ich nichts mehr tun.', 'sleepy'], ['Tot. Kein Puls mehr. Zu spät.', 'sleepy'], ['Er ist tot. Für den kommt jede Hilfe zu spät.', 'sleepy'], ['Er ist tot. Ich hätte früher hier sein müssen.', 'sleepy']],
     late: [['Zu spät. Für den kann ich nichts mehr tun.', 'sleepy'], ['Er ist tot. Ich hätte früher da sein müssen.', 'sleepy']],
     fooled: [['Da ist niemand. Hältst du mich für einen Narren?', 'angry'], ['Ich laufe quer durch die Stadt für nichts?!', 'angry'], ['Das war das letzte Mal, dass ich dir glaube.', 'disgusted']],
     refuseCall: [['Ich falle nicht noch einmal auf dich herein.', 'disgusted'], ['Such dir einen anderen Dummen.', 'disgusted']],
@@ -183,7 +183,7 @@ const DOC = {
     const N = this.npc;
     N.role = 'Doc Whitfield, der Arzt von Dust Creek (um die sechzig, gebildet, trocken)';
     N.gossip = { facts: () => this.mem.filter((m) => !/hat dir erzählt/.test(m)), hear: (from, f) => { this.knows.push(GOSSIP.told(from, f)); if (this.knows.length > 6) this.knows.shift(); } };
-    N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
+    N.voiceKey = 'doc'; N.voiceProfile = { male: true, pitch: 1.04, length: 0.98, noiseW: 0.7, browserPitch: 0.95, rate: 1.02, prefer: ['daniel', 'adam'] };
     N.persona = this.persona();
     N.fight = new Brawler(N, { courage: 0.3, power: 0.7, skill: 0.35, toughness: 0.85 });
     N.onHarm = (info) => this.onHarm(info);

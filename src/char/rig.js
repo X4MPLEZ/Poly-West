@@ -132,7 +132,10 @@ function buildCharacter(over, opt) {
     mb.box(0, 0.1, belly * 0.02, 0.47 * W, 0.09, 0.28 + belly * 0.05, O.belt, 0);
     mb.box(0, 0.11, 0.142 + belly * 0.045, 0.1, 0.07, 0.02, O.buckle, 0);
     if (O.gun) mb.box(-0.265 * W, -0.22, 0.02, 0.08, 0.3, 0.15, O.belt, 0, { bottom: true });
-    if (O.apron) { mb.box(0, -0.46, 0.142 + belly * 0.04, 0.42, 0.6, 0.02, O.apron, 9); mb.box(0, 0.1, 0.152 + belly * 0.05, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
+    /* the apron: here only its top (waist to the hip joints) and the band; below that it hangs in front of each leg
+       (thigh and shin parts), so it moves with the legs instead of being a board they swing through */
+    if (O.apron) { mb.box(0, -0.07, 0.142 + belly * 0.04, 0.44, 0.21, 0.02, O.apron, 9);   // (MB.box: y is the bottom)
+      mb.box(0, 0.1, 0.152 + belly * 0.05, 0.48, 0.05, 0.015, mulc(O.apron, 0.85), 0); }
   });
   // torso: origin at the waist
   add('torso', (mb) => {
@@ -143,6 +146,7 @@ function buildCharacter(over, opt) {
       mb.box(0, 0.03, -0.135, 0.46 * W, 0.41, 0.03, O.vest, 9);
     }
     if (O.apron) mb.box(0, 0.0, 0.14 + belly * 0.08, 0.3, 0.32, 0.015, O.apron, 9);
+    if (O.badge) { mb.box(0.13 * W, 0.28, 0.152 + belly * 0.07, 0.06, 0.06, 0.012, O.badge, 0); mb.box(0.13 * W, 0.295, 0.158 + belly * 0.07, 0.025, 0.03, 0.008, mulc(O.badge, 1.15), 0); }
     mb.box(0, 0.47, 0, 0.36 * W, 0.03, 0.22, shirt, 9);
   });
   add('head', (mb) => buildHead(mb, L, FACE0), (mb, e) => buildHead(mb, L, Object.assign({}, FACE0, e)));
@@ -168,7 +172,11 @@ function buildCharacter(over, opt) {
     const h0 = { fist: 0, open: 0, point: 0 };
     add('hand' + side, (mb) => buildHand(mb, L, s, h0), (mb, e) => buildHand(mb, L, s, Object.assign({}, h0, e)));
     // legs
-    add('thigh' + side, (mb) => mb.box(0, -RIG.thigh - 0.03, 0, 0.19, RIG.thigh + 0.07, 0.21, pants, 9, { bottom: true }));
+    add('thigh' + side, (mb) => {
+      mb.box(0, -RIG.thigh - 0.03, 0, 0.19, RIG.thigh + 0.07, 0.21, pants, 9, { bottom: true });
+      // its half of the apron, a little off the leg and reaching to the middle (the two halves overlap there)
+      if (O.apron) mb.box(-s * 0.02, -RIG.thigh - 0.03, 0.128 + belly * 0.03 + (s > 0 ? 0 : 0.004), 0.25, RIG.thigh - 0.02, 0.018, O.apron, 9);
+    });
     add('shin' + side, (mb) => {
       mb.box(0, -0.2, 0, 0.18, 0.22, 0.19, pantsD, 9, { bottom: true });
       mb.box(0, -RIG.shin, 0, 0.2, 0.24, 0.215, O.boots, 0, { bottom: true });

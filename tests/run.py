@@ -17,7 +17,8 @@ RESET = '''() => { G.noRender = true; G.camHook = null; INPUT.keys.clear(); if (
   if (GUN.state !== 'holster') { GUN.state = 'holster'; GUN.inHand = false; GUN.reload = null; } GUN.setAim(false); GUN.hipT = 0;
   FIST.st = 'idle'; FIST.clip = null; FIST.fight = 0; FIST.holding = false; FIST.queued = false; FIST.stamina = 1;
   PLAY.vx = PLAY.vz = 0; PLAY.softColl = 0; GAIT.init = false; G.lookAt = null; CREW.hold = true;
-  if (CREW.helpers.length || CREW.m.some((m) => m.died || (!m.alive && m.i < 3)) || BARKEEP.whoI !== 0 || !BARKEEP.npc) CREW.reset(); }'''
+  if (CREW.helpers.length || CREW.m.some((m) => m.died || (!m.alive && m.i < 3)) || BARKEEP.whoI !== 0 || !BARKEEP.npc) CREW.reset();
+  GUNMAN.lastShot = GUNMAN.lastKill = -99; CREW.shotsAt = CREW.noiseAt = undefined; TALK.remarking = false; if (BARKEEP.st === 'wary' && BARKEEP.gunman) { BARKEEP.gunman.drop(); BARKEEP.st = 'idle'; } if (SHERIFF.npc) { SHERIFF.alarm = null; SHERIFF.wanted = 0; SHERIFF.arrT = 0; if (SHERIFF.st !== 'office' && SHERIFF.st !== 'dead') SHERIFF.beforeSkip(60, false); } }'''
 PLACE = '''(a) => { PLAY.pos.set(a[0], a[1], a[2]); PLAY.yaw = a[3] + Math.PI; PLAY.camYaw = a[3]; PLAY.camPitch = 0.3; PLAY.camDist = 5;
   PLAY.vx = PLAY.vz = 0; GAIT.init = false; G.lookAt = null; for (let k = 0; k < 20; k++) G.stepFrame(1/60); }'''
 WALK = '''(a) => { const [yaw, secs, keys] = a; INPUT.keys.clear(); (keys || ['w']).forEach(k => INPUT.keys.add(k));
@@ -511,7 +512,7 @@ async def check_ownkeys(g):
       window.fetch = async (url, o) => { calls.push({ url: String(url), o });
         if (/api\.anthropic\.com/.test(url)) return sse();
         if (/api\.groq\.com/.test(url)) return new Response(new ReadableStream({ start(c) { const e = new TextEncoder(); for (const piece of ['[nod, ', 'neutral] Howdy ', 'aus Groq.']) c.enqueue(e.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: piece } }] }) + '\n\n')); c.enqueue(e.encode('data: [DONE]\n\n')); c.close(); } }), { status: 200 });
-        if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', labels: { gender: 'female' } }, { voice_id: 'clyde1', name: 'Clyde', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
+        if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'f1', name: 'Rachel', category: 'premade', labels: { gender: 'female' } }, { voice_id: 'clyde1', name: 'Clyde', category: 'premade', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
         if (/text-to-speech/.test(url)) { if (ttsStatus !== 200) return new Response(JSON.stringify({ detail: { message: 'invalid api key' } }), { status: ttsStatus });
           const n = 12000, b = new Int16Array(n); for (let i = 0; i < n; i++) b[i] = Math.round(Math.sin(i * 0.05) * 8000); return new Response(b.buffer, { status: 200 }); }
         return real(url, o); };
@@ -530,8 +531,8 @@ async def check_ownkeys(g):
         const gc = calls.find((c) => /api\.groq\.com/.test(c.url)), gb = JSON.parse(gc.o.body); out.groqReq = [gc.o.headers.authorization, gb.model, gb.stream];
         // ElevenLabs: Piper is not wanted any more, a sentence comes as 24 kHz sound in Hank's (found) voice
         VOICE.backup = false; SETTINGS.set('elevenKey', 'el-test'); out.eleven = VOICE.eleven() && !VOICE.wanted() && VOICE.ready();
-        try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {} DIRECT.voiceIds = {}; DIRECT.ttsCache.clear();
-        const hank = { id: 'barkeep', name: 'Hank', pos: PLAY.pos, voiceProfile: {} }; VOICE.q = [];
+        try { localStorage.removeItem('polywest.elCast2'); } catch (e) {} DIRECT.cast = null; DIRECT.premade = null; DIRECT.voiceIds = {}; DIRECT.ttsCache.clear();
+        const hank = { id: 'barkeep', voiceKey: 'hank', name: 'Hank', pos: PLAY.pos, voiceProfile: {} }; VOICE.q = [];
         const pcm = await DIRECT.tts(hank, 'Howdy, Fremder.', 'angry'); out.pcm = [pcm.length, +Math.max(...pcm.slice(0, 200)).toFixed(2)];
         const tc = calls.filter((c) => /text-to-speech/.test(c.url)).pop(), tb = JSON.parse(tc.o.body);
         out.tts = [/\/clyde1\/stream\?output_format=pcm_24000/.test(tc.url), tb.model_id, tb.language_code, tb.voice_settings.stability < 0.5, tc.o.headers['xi-api-key']];
@@ -565,7 +566,7 @@ async def check_ownkeys(g):
           window.fetch = async (url, o) => { if (/v1\/voices$/.test(url)) return new Response(JSON.stringify({ voices: [{ voice_id: 'lib9', name: 'Bernd', category: 'professional', labels: { gender: 'male', age: 'old' } }, { voice_id: 'george', name: 'George', category: 'premade', labels: { gender: 'male', age: 'middle aged' } }] }), { status: 200 });
             const m = /text-to-speech\/([^/?]+)/.exec(url); if (m) { used.push(m[1]); if (m[1] === 'lib9') return new Response(JSON.stringify({ detail: { status: 'payment_required', message: 'Free users cannot use library voices via the API. Please upgrade your subscription to use this voice.' } }), { status: 402 });
               return new Response(new Int16Array(2400).buffer, { status: 200 }); } return new Response('{}', { status: 500 }); };
-          SETTINGS.set('elevenVoice', 'lib9'); DIRECT.ttsCache.clear(); DIRECT.badVoices.clear(); DIRECT.voiceIds = {}; try { localStorage.removeItem('polywest.elVoice.barkeep'); } catch (e) {}
+          SETTINGS.set('elevenVoice', 'lib9'); DIRECT.ttsCache.clear(); DIRECT.badVoices.clear(); DIRECT.voiceIds = {}; DIRECT.cast = null; DIRECT.premade = null; try { localStorage.removeItem('polywest.elCast2'); } catch (e) {}
           const pc = await DIRECT.tts(hank, 'Noch einen?', 'neutral'); TOAST.show = ts;
           out.libVoice = [used.join(','), pc.length, /Gratis-Tarif/.test(told)]; SETTINGS.set('elevenVoice', ''); DIRECT.badVoices.clear(); }
         // trying a voice out that fails: the reason is shown, no stand-in voice speaks
@@ -591,6 +592,23 @@ async def check_ownkeys(g):
     ok = (r['own'] and r['field'] and r['via'] == 'key' and r['aiOn'] and r['answer'] == 'Howdy, Fremder.' and r['req'] == ['sk-ant-test', 'true', 'claude-sonnet-5-5', True] and r['groqName'] == 'Groq' and r['groqAnswer'] == 'Howdy aus Groq.' and r['groqReq'] == ['Bearer gsk_test', 'llama-3.3-70b-versatile', True] and r['list'] == ['own1', 'f1'] and r['taken'] == 'own1' and r['modelSwitch'] == ['[nod, neutral] Klar.', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 2, 'low'] and 'Organization has been restricted' in r['realErr'] and r['libVoice'] == ['lib9,george', 2400, True] and r['queue'] == [2, 5] and r['previewNoRobot'] and r['german'] == [1, True, True] and r['added'] == 'mine1' and r['addedTaken'] == 'mine1'
           and r['eleven'] and r['pcm'][0] == 12000 and r['tts'] == [True, 'eleven_flash_v2_5', 'de', True, 'el-test'] and r['job'] and r['dead'] and r['after'] == ['', False])
     return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_cast(g):
+    """every character his own ElevenLabs voice, only from the standard (premade) ones, by his part (CAST)"""
+    await g.js(RESET)
+    r = await g.js('''async () => { const f0 = window.fetch, k0 = SETTINGS.v.elevenKey; SETTINGS.v.elevenKey = 'el-test';
+      const names = ['Roger', 'Charlie', 'George', 'Callum', 'Liam', 'Will', 'Eric', 'Chris', 'Brian', 'Daniel', 'Bill'];
+      const voices = names.map((n) => ({ voice_id: 'id_' + n.toLowerCase(), name: n, category: 'premade', labels: { gender: 'male' } })).concat([{ voice_id: 'lib1', name: 'Bernd', category: 'professional', labels: { gender: 'male' } }, { voice_id: 'f1', name: 'Sarah', category: 'premade', labels: { gender: 'female' } }]);
+      window.fetch = async (url) => /v1\\/voices$/.test(url) ? new Response(JSON.stringify({ voices }), { status: 200 }) : new Response('{}', { status: 500 });
+      DIRECT.cast = null; DIRECT.premade = null; DIRECT.voiceIds = {}; try { localStorage.removeItem('polywest.elCast2'); } catch (e) {}
+      const out = {};
+      for (const k of ['hank', 'walt', 'jeb', 'doc', 'sheriff', 'silas']) out[k] = await DIRECT.voiceFor({ id: 'x', voiceKey: k });
+      out.crewWalt = await DIRECT.voiceFor({ id: 'crew_walt', voiceKey: 'walt' });
+      window.fetch = f0; SETTINGS.v.elevenKey = k0; DIRECT.cast = null; DIRECT.premade = null; DIRECT.voiceIds = {}; try { localStorage.removeItem('polywest.elCast2'); } catch (e) {}
+      return out; }''')
+    vals = [r[k] for k in ['hank', 'walt', 'jeb', 'doc', 'sheriff', 'silas']]
+    ok = len(set(vals)) == 6 and all(v.startswith('id_') for v in vals) and r['hank'] == 'id_bill' and r['walt'] == 'id_callum' and r['jeb'] == 'id_george' and r['crewWalt'] == r['walt']
+    return ok, json.dumps(r)
 
 async def check_touch(g):
     """phone controls: the stick only in the lower left corner, elsewhere a finger turns the camera, a tap on the
@@ -873,7 +891,7 @@ async def check_fate(g):
        it knows: killed with the others coming down while you stand there → they know (a temper of their own, the
        greeting); killed and gone before anyone came → nobody knows who; all of it in the save"""
     await g.js(RESET)
-    r = await g.js('''() => { const B = BARKEEP, R = B.R, out = {}; CREW.reset(); CREW.hold = true; G.noRender = true;
+    r = await g.js('''() => { const B = BARKEEP, R = B.R, out = {}; CREW.reset(); CREW.hold = true; G.noRender = true; const arm0 = CREW.arm; CREW.arm = () => {};   // (unarmed: this is about who knows what)
       const rnd0 = Math.random; let seed = 7; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
       const kill = (stay) => { const N = B.npc; TIME.min = 1440 * 2 + 12 * 60; const p = rwp(R, 0, R.floorY, -3); PLAY.pos.copy(p); G.room = R; GAIT.init = false; for (let k = 0; k < 30; k++) G.stepFrame(1/60);
         N.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(0, 0.15, 0.1).applyMatrix4(N.ch.p.head.matrixWorld);
@@ -900,7 +918,7 @@ async def check_fate(g):
       out.doc = DOC.knows.slice(-1)[0];
       Math.random = rnd0;
       for (const m of GRAVES.meshes) if (m) G.scene.remove(m); GRAVES.list = []; GRAVES.meshes = []; DOC.knows = []; DOC.att = 0; DOC.mem = [];
-      CREW.reset(); CREW.hold = true; G.noRender = false; return out; }''')
+      CREW.arm = arm0; CREW.reset(); CREW.hold = true; G.noRender = false; return out; }''')
     ok = (r['dead'] and r['noBar'] and r['grave'] and r['next'] == 'Walt' and r['known'] and r['temper'] and abs(r['grudge'] - r['tGrudge']) < 0.01
           and r['knows'] and r['jeb'] and r['ctx'] and r['saved'] and r['next2'] == 'Jeb' and not r['known2'] and not r['temper2'] and r['unknown'])
     return ok, json.dumps(r, ensure_ascii=False)
@@ -999,6 +1017,54 @@ async def check_aim(g):
       GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; B.revive(); G.noRender = false; return out; }''')
     ok = (r['thigh'] == 'thighL/thigh' and r['arm'] == 'uArmR/arm' and r['chest'].startswith('torso/') and r['brim'] == 'head' and r['dead'] and r['hatOff']
           and r['camJump'] < 0.12 and r['turn'] < 0.008)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_sheriff(g):
+    """shots in town bring the sheriff out with his revolver: the first time a warning; a killing: he arrests you, and
+       with your gun away you wake up in his cell the next morning, fined"""
+    await g.js(RESET)
+    r = await g.js('''() => { G.noRender = true; const S = SHERIFF, N = S.npc, out = {}; S.forget = S.persona && S.npc.persona.forget; N.persona.forget(); S.CRIMES = []; S.st = 'office';
+      const rnd0 = Math.random; let seed = 5; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      const run = (s, f) => { for (let k = 0; k < 60 * s; k++) { G.stepFrame(1/60); if (f) f(); } };
+      TIME.min = 1440 + 12 * 60; INV.money = 1000; PLAY.pos.set(-20, 0, 4); G.room = null; GAIT.init = false; run(0.3);
+      worldEvent('shot', PLAY.pos.x, 1.5, PLAY.pos.z, { by: 'player', room: null });
+      const sts = []; run(40, () => { if (sts[sts.length - 1] !== S.st) sts.push(S.st); });
+      out.first = sts; out.warned = S.warned; out.gunOut = N.gun.st;
+      run(30);
+      const B = BARKEEP, R = B.R; PLAY.pos.copy(rwp(R, 0, R.floorY, -3)); G.room = R; GAIT.init = false; run(1);
+      const H = B.npc; H.ch.root.updateMatrixWorld(true); const w = new THREE.Vector3(0, 0.15, 0.1).applyMatrix4(H.ch.p.head.matrixWorld);
+      const o = new THREE.Vector3(PLAY.pos.x, PLAY.pos.y + 1.5, PLAY.pos.z), d = w.clone().sub(o).normalize(); worldEvent('shot', o.x, o.y, o.z, { by: 'player', room: 'saloon' });
+      GUN.hitResult(GUN.trace(o, d, 0, 50), d, 0);
+      for (const h of CREW.helpers.slice()) CREW.gone(h); for (const m of CREW.m) m.comeT = 0;   // (no crew in the way)
+      const sts2 = []; let jail = false; run(70, () => { if (sts2[sts2.length - 1] !== S.st) sts2.push(S.st); if (PHP.out && PHP.out.jail) jail = true; for (const m of CREW.m) m.comeT = 0; });
+      out.arrest = sts2; out.jail = jail; out.cell = G.room && G.room.type; out.morning = TIME.hour() >= 8 && TIME.hour() < 9; out.money = INV.money;
+      Math.random = rnd0; PHP.out = null; PHP.fx = null; FALL.cancel(); N.persona.forget(); S.CRIMES = []; S.goBack(); S.beforeSkip(60, false);
+      CREW.reset(); G.noRender = false; return out; }''')
+    ok = (r['first'][:3] == ['office', 'respond', 'scene'] and r['warned'] == 1 and 'arrest' in r['arrest'] and r['jail'] and r['cell'] == 'sheriff' and r['morning'] and r['money'] < 1000)
+    return ok, json.dumps(r, ensure_ascii=False)
+
+async def check_armed(g):
+    """shots in the saloon: the ones upstairs come down with their guns; keep yours on one of them and he warns you,
+       then fires; after a killing the next man at the bar stands there with his shotgun ready"""
+    await g.js(RESET)
+    r = await g.js('''() => { G.noRender = true; CREW.hold = true; const B = BARKEEP, R = B.R, out = {}, shots = []; onWorldEvent((e) => { if (e.type === 'npcShot2' && /crew_/.test(e.by)) shots.push(e.by); });
+      const rnd0 = Math.random; let seed = 9; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      const run = (s, f) => { for (let k = 0; k < 60 * s; k++) { G.stepFrame(1/60); if (f) f(); } };
+      TIME.min = 1440 + 12 * 60; PHP.hp = 1; PLAY.pos.copy(rwp(R, 1.5, R.floorY, -3)); PLAY.camYaw = PLAY.yaw = 0; G.room = R; GAIT.init = false; run(0.3);
+      worldEvent('shot', PLAY.pos.x, 1.6, PLAY.pos.z, { by: 'player', room: 'saloon' }); GUNMAN.lastShot = G.time - 5; SHERIFF.alarm = null;
+      run(25, () => { SHERIFF.alarm = null; });
+      out.armed = CREW.helpers.map((h) => h.npc.name + ':' + (h.gun ? h.gun.st : '-'));
+      const h = CREW.helpers.find((x) => x.gun && x.gun.on); if (!h) { Math.random = rnd0; CREW.reset(); return out; }
+      GUN.state = 'drawn'; GUN.inHand = true; GUN.setAim(true); const N = h.npc;
+      run(6, () => { const d = new THREE.Vector3(N.pos.x - G.cam.position.x, N.pos.y + 1.4 - G.cam.position.y, N.pos.z - G.cam.position.z).normalize(); PLAY.camYaw = Math.atan2(-d.x, -d.z); PLAY.aimPitch = -Math.asin(d.y); SHERIFF.alarm = null; });
+      out.warned = h.gun.warnN; out.fired = shots.length; out.hp = +PHP.hp.toFixed(2);
+      GUN.setAim(false); GUN.state = 'holster'; GUN.inHand = false; PHP.out = null; PHP.fx = null; PHP.hp = 1; FALL.cancel();
+      // after a killing: the next one at the bar has his shotgun ready
+      CREW.reset(); CREW.m[1].died = { at: TIME.min, cause: 'erschossen worden', by: 'player', known: false };
+      PLAY.pos.set(20, 0, 3); G.room = null; run(0.5); PLAY.pos.copy(rwp(R, 1.5, R.floorY, -3)); G.room = R; GAIT.init = false; run(2);
+      out.ready = [B.st, B.gunman && B.gunman.st];
+      Math.random = rnd0; CREW.reset(); SHERIFF.beforeSkip(60, false); G.noRender = false; return out; }''')
+    ok = len(r.get('armed', [])) >= 1 and all(':' in a and not a.endswith(':-') for a in r['armed']) and r.get('warned', 0) >= 1 and r.get('fired', 0) >= 1 and r.get('ready', [None])[0] == 'wary'
     return ok, json.dumps(r, ensure_ascii=False)
 
 async def check_block(g):
@@ -1434,7 +1500,7 @@ async def check_beating(g):
     return ok, json.dumps(r, ensure_ascii=False)
 
 CHECKS = [('boot', check_boot), ('fingerprint', check_fingerprint), ('budget', check_budget), ('gait', check_gait), ('fists', check_fists),
-          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('mission', check_mission), ('aim', check_aim), ('voice', check_voice)]
+          ('gun', check_gun), ('doors', check_doors), ('stairs', check_stairs), ('seats', check_seats), ('sitblock', check_sit_block), ('save', check_save), ('menu', check_menu), ('dev', check_dev), ('drink', check_drink), ('drunk', check_drunk), ('npc', check_npc), ('glass', check_glass), ('manners', check_manners), ('ownkeys', check_ownkeys), ('cast', check_cast), ('touch', check_touch), ('hear', check_hear), ('deepgram', check_deepgram), ('quick', check_quick), ('daynight', check_daynight), ('sleep', check_sleep), ('harm', check_harm), ('brawl', check_brawl), ('block', check_block), ('beating', check_beating), ('falls', check_falls), ('figure', check_figure), ('survive', check_survive), ('gesture', check_gesture), ('poison', check_poison), ('call', check_call), ('bleed', check_bleed), ('aid', check_aid), ('docmeet', check_docmeet), ('docplaces', check_docplaces), ('fastclock', check_fastclock), ('react', check_react), ('doctor', check_doctor), ('revenge', check_revenge), ('fate', check_fate), ('crew', check_crew), ('mission', check_mission), ('aim', check_aim), ('sheriff', check_sheriff), ('armed', check_armed), ('voice', check_voice)]
 
 async def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]

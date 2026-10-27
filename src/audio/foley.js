@@ -82,6 +82,31 @@ const FOLEY = {
       SFX.thump(t + 0.005, g, 150 * p, 110 * p, 0.05 * (k || 1), 0.08);
     });
   },
+  /* the voice of pain (recordings): a cry when hit; moaning (slowed, darker, with a slow waver), whimpering (short,
+     higher, two or three), a last breath. pitch: the man's own (voiceProfile.pitch) */
+  pain(pos, pitch, k) {
+    GSFX.run(() => { const { g, t } = GSFX.out(0.55 * (k || 1), pos); GSFX.play('hurt' + (1 + Math.floor(Math.random() * 4)), g, t, (pitch || 1) * (0.94 + Math.random() * 0.1), 1); });
+  },
+  moan(pos, pitch, kind, k) {
+    GSFX.run(() => {
+      const c = SFX.ctx, { g, t } = GSFX.out(0.42 * (k || 1), pos), p = pitch || 1;
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kind === 'whimper' ? 2600 : 1300; lp.Q.value = 0.6; lp.connect(g);
+      if (kind === 'whimper') {
+        for (let i = 0, n = 2 + Math.floor(Math.random() * 2); i < n; i++) GSFX.play(Math.random() < 0.5 ? 'hurt3' : 'hurt4', lp, t + i * (0.42 + Math.random() * 0.2), p * (1.08 + Math.random() * 0.1), 0.55 - i * 0.12);
+      } else if (kind === 'last') {
+        const v = GSFX.play('breath', lp, t, p * 0.8, 0.5); if (v) { v.gain.setValueAtTime(0.5, t + 0.6); v.gain.exponentialRampToValueAtTime(0.01, t + 1.6); }
+        GSFX.play('hurt1', lp, t + 0.1, p * 0.62, 0.45);
+      } else {
+        // a moan: the cry drawn out, low, with a waver in it
+        const n = 'hurt' + (1 + Math.floor(Math.random() * 2)), src = c.createBufferSource(), gg = c.createGain(), b = GSFX.buf[n]; if (!b) return;
+        src.buffer = b; src.playbackRate.value = p * (0.66 + Math.random() * 0.08); gg.gain.value = 0.9; src.connect(gg); gg.connect(lp);
+        const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 5 + Math.random() * 2; lg.gain.value = 0.025; lfo.connect(lg); lg.connect(src.playbackRate);
+        src.start(t); lfo.start(t); lfo.stop(t + 1.2);
+      }
+    });
+  },
+  // heavy breathing of one lying hurt (a stretch of the recording, quiet)
+  breathe(pos, pitch, k) { GSFX.run(() => { const { g, t } = GSFX.out(0.22 * (k || 1), pos); GSFX.play('breath', g, t, (pitch || 1) * (0.9 + Math.random() * 0.15), 1); }); },
   // a body hits the floor (k: how hard); dust where it lands
   bodyFall(pos, k, wood) {
     GSFX.run(() => {

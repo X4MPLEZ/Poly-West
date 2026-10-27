@@ -18,15 +18,44 @@ const BUMP = {
 };
 const NPCS = {
   list: [], bodies: [], _v: new THREE.Vector3(),
-  init(scene) { this.scene = scene; SAY.init(); BARKEEP.init(scene); DOC.init(scene); TALK.init(); onWorldEvent((e) => this.heard(e)); },
+  init(scene) { this.scene = scene; SAY.init(); GUNMAN.init(); BARKEEP.init(scene); DOC.init(scene); SHERIFF.init(scene); TALK.init(); onWorldEvent((e) => this.heard(e)); },
   update(dt) {
     BARKEEP.update(dt);
     DOC.update(dt);
+    SHERIFF.update(dt);
     TALK.update(dt);
     CHAT.update(dt);
     for (const n of this.list) n.update(dt);
+    this.entered(dt);
     HARM.update(dt);
     SAY.update(dt);
+  },
+  /* you come into a room where someone you shot (or beat up) is, with somebody else there (the doctor patching him
+     up, one of the crew): he points you out to the other one, about you and not to you ("Da ist er!") */
+  entered(dt) {
+    const R = G.room || null;
+    if (R === this.lastRoom) return;
+    this.lastRoom = R;
+    if (!R || G.abstract) return;
+    for (const n of this.list) {
+      if (n.room !== R || n.hp.dead || n.hp.out || !n.persona) continue;
+      const shot = n.shotBy && TIME.min - n.shotBy < 1440, beat = !shot && n.beatenBy && TIME.min - n.beatenBy < 720;
+      if (!shot && !beat) continue;
+      if (n.pointedT && TIME.min - n.pointedT < 30) continue;
+      const other = this.list.find((m) => m !== n && m.room === R && !m.hp.dead && !m.hp.out);
+      if (!other) continue;
+      n.pointedT = TIME.min;
+      const what = shot ? 'angeschossen' : 'verprügelt';
+      setTimeout(() => {
+        if (G.room !== R || n.hp.dead) return;
+        n.lookAt(n._hs.set(PLAY.pos.x, PLAY.pos.y + 1.55, PLAY.pos.z), 1);
+        if (!n.hp.busy()) n.gesture('point_you', null);
+        const line = shot ? 'Da ist er! Das ist der, der auf mich geschossen hat!' : 'Da ist er. Das ist der Kerl, der mich verprügelt hat.';
+        const say = () => { n.speak(line, undefined, 'angry', true); };
+        if (!TALK.remark(n, 'Der Fremde, der dich ' + what + ' hat, kommt gerade herein. ' + other.name + ' ist bei dir.', say, 'angry', 1, { to: other })) say();
+      }, 900 + Math.random() * 600);
+      return;
+    }
   },
   // the player's position seen from a room: is he in it?
   playerIn(R) { return G.room === R; },
@@ -263,6 +292,12 @@ class NPC {
           }
         } else this.blockT = 0;
       } else this.blockT = 0;
+    }
+    // other people: nobody walks into or stands inside another (each gives way half)
+    if (!H.down()) for (const o of NPCS.list) {
+      if (o === this || o.hp.down() || (o.room || null) !== (this.room || null)) continue;
+      const ox = nx - o.pos.x, oz = nz - o.pos.z, od = Math.hypot(ox, oz);
+      if (od < 0.58 && od > 1e-4 && Math.abs(o.pos.y - this.pos.y) < 1) { const push = (0.58 - od) * 0.5; nx += (ox / od) * push; nz += (oz / od) * push; }
     }
     // lying on the floor and shoved along (blows, kicks): the whole body must stay out of the walls, not only where
     // he stands — head, chest and hips are tested where they would be, and he stops at the wall

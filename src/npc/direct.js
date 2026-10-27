@@ -155,27 +155,33 @@ const DIRECT = {
   },
 
   /* ---- ElevenLabs ---- */
-  // the voice for a person: the one set in the settings (Hank), the one found before, or a fitting one from the account
+  /* the voice for a person: each character his own, from ElevenLabs' standard (premade) voices only, which every
+     plan may use (library voices need a paid plan). Who gets which: by the character (CAST, in order of preference),
+     never one another already has; kept in the browser so a man keeps his voice. Hank's can be set in the settings. */
+  CAST: { hank: ['Bill', 'Clyde', 'George'], walt: ['Callum', 'Arnold', 'Clyde'], jeb: ['George', 'Bill', 'Thomas'], doc: ['Daniel', 'Brian', 'Adam'],
+    sheriff: ['Brian', 'Roger', 'Josh'], silas: ['Eric', 'Chris', 'Liam'], any: ['Roger', 'Will', 'Charlie'] },
+  voiceKey(npc) { return (npc && (npc.voiceKey || npc.id)) || 'any'; },
   async voiceFor(npc) {
     if (npc && npc.voiceId) return npc.voiceId;   // (trying a voice out in the settings)
+    const key = this.voiceKey(npc);
     const set = (SETTINGS.v.elevenVoice || '').trim();
-    if (set && !this.badVoices.has(set) && (!npc || npc.id === 'barkeep')) return set;
-    const key = (npc && npc.id) || 'any';
-    if (this.voiceIds[key]) return this.voiceIds[key];
-    let saved = null; try { saved = localStorage.getItem('polywest.elVoice.' + key); } catch (e) { /* none */ }
-    if (saved && !this.badVoices.has(saved)) return (this.voiceIds[key] = saved);
+    if (set && !this.badVoices.has(set) && key === 'hank') return set;
+    if (this.voiceIds[key] && !this.badVoices.has(this.voiceIds[key])) return this.voiceIds[key];
+    if (!this.cast) { try { this.cast = JSON.parse(localStorage.getItem('polywest.elCast2') || '{}') || {}; } catch (e) { this.cast = {}; } }
+    if (this.cast[key] && !this.badVoices.has(this.cast[key])) return (this.voiceIds[key] = this.cast[key]);
     let id = this.FALLBACK_VOICE;
     try {
-      const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } });
-      if (r.ok) {
-        const vs = ((await r.json()).voices || []).filter((v) => v && v.voice_id && !this.badVoices.has(v.voice_id) && (v.category === 'premade' || !this.badVoices.size));
-        const male = (v) => /male/i.test((v.labels && v.labels.gender) || '') && !/female/i.test((v.labels && v.labels.gender) || '');
-        const older = (v) => /old|middle/i.test((v.labels && v.labels.age) || '');
-        const best = vs.find((v) => this.PREFER.test(v.name || '') && male(v)) || vs.find((v) => male(v) && older(v)) || vs.find(male);
-        if (best) id = best.voice_id;
-      }
+      if (!this.premade) this.premade = fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': SETTINGS.v.elevenKey.trim() } }).then((r) => (r.ok ? r.json() : { voices: [] })).then((j) => (j.voices || []).filter((v) => v && v.voice_id && v.category === 'premade'));
+      const vs = (await this.premade).filter((v) => !this.badVoices.has(v.voice_id));
+      const male = (v) => /male/i.test((v.labels && v.labels.gender) || '') && !/female/i.test((v.labels && v.labels.gender) || '');
+      const taken = new Set(Object.entries(this.cast).filter(([k]) => k !== key).map(([, v]) => v));
+      const want = this.CAST[key.replace(/^crew_/, '')] || this.CAST.any;
+      const free = vs.filter((v) => male(v) && !taken.has(v.voice_id));
+      const best = want.map((n) => free.find((v) => (v.name || '').toLowerCase().startsWith(n.toLowerCase()))).find(Boolean) || free[0] || vs.find(male);
+      if (best) id = best.voice_id;
     } catch (e) { /* keep the default */ }
-    try { localStorage.setItem('polywest.elVoice.' + key, id); } catch (e) { /* not kept */ }
+    this.cast[key] = id;
+    try { localStorage.setItem('polywest.elCast2', JSON.stringify(this.cast)); } catch (e) { /* not kept */ }
     return (this.voiceIds[key] = id);
   },
   // how a mood sounds: less stable = more expression; a little faster when angry, slower when tired
@@ -247,14 +253,14 @@ const DIRECT = {
       let msg = ''; try { const j = await r.json(); msg = (j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* no body */ }
       if (r.status === 401 || r.status === 403) throw this.fail('bad_key', 'ElevenLabs-Schlüssel abgelehnt' + (msg ? ' (' + msg.slice(0, 60) + ')' : ''));
       if (r.status === 404 || /voice/i.test(msg)) {   // the stored voice is gone: look for another next time
-        try { localStorage.removeItem('polywest.elVoice.' + ((npc && npc.id) || 'any')); } catch (e) { /* ignore */ }
-        delete this.voiceIds[(npc && npc.id) || 'any'];
+        if (this.cast) { delete this.cast[this.voiceKey(npc)]; try { localStorage.setItem('polywest.elCast2', JSON.stringify(this.cast)); } catch (e) { /* ignore */ } }
+        delete this.voiceIds[this.voiceKey(npc)];
       }
       if (/quota|credit/i.test(msg)) throw this.fail('no_credit', 'ElevenLabs-Guthaben aufgebraucht (' + msg.slice(0, 120) + ')');
       /* the voice itself may not be used this way (a library voice on the free plan, a voice not shared any more …):
          say why, once, and speak on with another voice (a preview just shows the reason) */
       if (r.status !== 429 && (r.status === 402 || /library|subscription|upgrade|free user|tier|plan|payment|voice/i.test(msg)) && !(npc && npc.voiceId)) {
-        this.badVoices.add(voice); delete this.voiceIds[(npc && npc.id) || 'any'];
+        this.badVoices.add(voice); delete this.voiceIds[this.voiceKey(npc)]; if (this.cast) delete this.cast[this.voiceKey(npc)];
         const lib = /library|subscription|upgrade|free user|tier|plan|payment/i.test(msg) || r.status === 402;
         try { TOAST.show(lib ? 'ElevenLabs lässt diese Stimme im Gratis-Tarif nicht übers Spiel zu (Stimme aus der Bibliothek). Hank spricht mit einer Standardstimme weiter. Geht: Starter-Abo – oder eine eigene Stimme mit „Voice Design“ erstellen.'
           : 'Diese Stimme geht nicht (' + (msg || r.status) + '). Hank spricht mit einer anderen weiter.', 'long'); } catch (e) { /* ignore */ }
@@ -311,7 +317,7 @@ const DIRECT = {
   },
   takeVoice(id) {
     SETTINGS.set('elevenVoice', id);
-    delete this.voiceIds.barkeep;
+    delete this.voiceIds.hank;
   },
   // the settings button: are the keys good?
   async test() {
